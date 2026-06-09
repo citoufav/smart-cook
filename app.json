@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "SmartCook(demo)",
+    "slug": "smart-cook",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "smartcook",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smartcook.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FF6B35"
+      },
+      "package": "com.smartcook.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "smartcook",
+              "host": "*",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-asset"
+    ]
+  }
+}
