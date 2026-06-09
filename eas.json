@@ -4,6 +4,7 @@
   },
   "build": {
     "preview": {
+      "developmentClient": false,
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
