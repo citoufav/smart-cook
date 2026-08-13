@@ -95,7 +95,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         console.log('[CTX_RESTORE] 迁移旧 generatedPlan → menuProposal: prepSteps=', merged.prepSteps.length, 'cookingSteps=', merged.cookingSteps.length);
       }
       // 打印恢复的 missingItems 勾选状态
-      const mi = sess.stages?.menu?.menuProposal?.missingItems || [];
+      const mi = sess?.stages?.menu?.menuProposal?.missingItems || [];
       console.log('[CTX_RESTORE] missingItems purchased:', mi.map((m: any) => ({ type: m.type, name: m.name, purchased: m.isPurchased })));
       return {
         ...state,

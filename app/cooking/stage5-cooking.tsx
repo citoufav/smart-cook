@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
-import { Button } from '../../src/components/Button';
-import { Checkbox } from '../../src/components/Checkbox';
-import { CustomAlert } from '../../src/components/CustomAlert';
-import { CookingStep, IngredientTag, BowlAssignment, StageMode } from '../../src/types';
-import { cookingProgressService } from '../../src/services/cookingProgressService';
+import { CookingStep, IngredientTag } from '../../src/types';
 
 /** 修补 AI 输出中不完整的方括号 */
 function normalizeBrackets(text: string): string {
@@ -104,163 +99,6 @@ const tagStyles = StyleSheet.create({
     fontSize: 13,
   },
 });
-
-export default function Stage5CookingScreen() {
-  const { state, dispatch } = useCooking();
-  const params = useLocalSearchParams<{ readonly?: string }>();
-  const isReadonly = params.readonly === '1';
-  const menuProposal = state.session?.stages.menu?.menuProposal;
-  const ingredientTags = menuProposal?.ingredientTags;
-  const [expandedDishIndex, setExpandedDishIndex] = useState(0);
-  const [checkStates, setCheckStates] = useState<Record<string, boolean>>({});
-  const [showDoneAlert, setShowDoneAlert] = useState(false);
-
-  const allCompletedStages = useMemo(() => {
-    if (!isReadonly) return undefined;
-    const stages = state.session?.stages;
-    const result: string[] = [];
-    if (stages?.menu) result.push('menu');
-    if (stages?.menu?.menuProposal?.prepSteps) result.push('prep');
-    if (stages?.menu?.menuProposal?.cookingSteps) result.push('cooking');
-    return result;
-  }, [isReadonly, state.session]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (state.session && !isReadonly) {
-        cookingProgressService.save(state.session).catch(() => {});
-      }
-    }, [state.session, isReadonly]),
-  );
-
-  const cookingSteps = menuProposal?.cookingSteps;
-
-  if (!menuProposal || !cookingSteps || cookingSteps.length === 0) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>暂无炒制数据</Text>
-          {menuProposal && !cookingSteps && (
-            <Text style={styles.emptyHint}>AI 返回的生成方案中缺少炒制步骤，请返回重新生成</Text>
-          )}
-        </View>
-        {/* CookingProgressBar 移至全局 Pager */}
-      </View>
-    );
-  }
-
-  const groupedDishes = useMemo(() => {
-    const map = new Map<string, CookingStep[]>();
-    for (const step of cookingSteps) {
-      const list = map.get(step.dishName) || [];
-      list.push(step);
-      map.set(step.dishName, list);
-    }
-    return [...map.entries()];
-  }, [cookingSteps]);
-
-  const totalSteps = cookingSteps.length;
-  const completedSteps = isReadonly ? 0 : cookingSteps.filter((s) => checkStates[String(s.stepNumber)]).length;
-  const allCompleted = completedSteps === totalSteps;
-
-  const handleToggle = (stepId: string) => {
-    if (isReadonly) return;
-    setCheckStates((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
-  };
-
-  const handleDone = () => {
-    dispatch({ type: 'COMPLETE_ALL_COOKING_STEPS' });
-    setShowDoneAlert(true);
-  };
-
-  return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>炒制</Text>
-        {!isReadonly && (
-          <Text style={styles.progress}>已完成 {completedSteps}/{totalSteps} 步</Text>
-        )}
-
-        {groupedDishes.map(([dishName, steps], dishIndex) => {
-          const isExpanded = expandedDishIndex === dishIndex;
-          const dishDone = steps.filter((s) => checkStates[String(s.stepNumber)]).length;
-
-          return (
-            <View key={dishName} style={styles.dishCard}>
-              <TouchableOpacity
-                style={styles.dishHeader}
-                onPress={() => setExpandedDishIndex(isExpanded ? -1 : dishIndex)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.dishName}>{dishName}</Text>
-                <View style={styles.dishHeaderRight}>
-                  {!isReadonly && (
-                    <Text style={styles.dishProgress}>{dishDone}/{steps.length} 已完成</Text>
-                  )}
-                  <Text style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</Text>
-                </View>
-              </TouchableOpacity>
-
-              {isExpanded && (
-                <View style={styles.stepList}>
-                  {steps.map((step) => {
-                    const isDone = checkStates[String(step.stepNumber)] ?? false;
-                    return (
-                      <View key={step.stepNumber} style={[styles.stepRow, isDone && styles.stepRowDone]}>
-                        <Checkbox
-                          checked={isDone}
-                          onToggle={() => handleToggle(String(step.stepNumber))}
-                          disabled={isReadonly}
-                          labelContent={
-                            <InstructionText
-                              text={step.instruction}
-                              ingredientTags={ingredientTags}
-                            />
-                          }
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          );
-        })}
-      </ScrollView>
-
-      {!isReadonly && (
-        <View style={styles.bottomBar}>
-          <Button
-            title={allCompleted ? '大功告成！' : `还有 ${totalSteps - completedSteps} 步待完成`}
-            variant="primary"
-            size="lg"
-            fullWidth
-            disabled={!allCompleted}
-            onPress={handleDone}
-            style={allCompleted ? styles.doneButton : undefined}
-          />
-        </View>
-      )}
-      {/* CookingProgressBar 移至全局 Pager */}
-
-      <CustomAlert
-        visible={showDoneAlert}
-        title="恭喜！所有菜品制作完成！"
-        buttons={[
-          {
-            text: '更新库存',
-            variant: 'primary',
-            onPress: () => {
-              setShowDoneAlert(false);
-              router.push('/cooking/inventory-update');
-            },
-          },
-        ]}
-        onDismiss={() => setShowDoneAlert(false)}
-      />
-    </View>
-  );
-}
 
 interface Stage5CookingContentProps {
   mode: 'readonly' | 'interactive';

@@ -1,7 +1,19 @@
-import { Ingredient, Seasoning, SeasoningStatus, IngredientSuggestion, SeasoningSuggestion, Stage2AIInput } from '../types';
+import { Ingredient, Seasoning, SeasoningStatus, IngredientSuggestion, SeasoningSuggestion } from '../types';
 import { logger } from '../utils/logger';
 
 const log = logger('SVC:INV_CALC');
+
+/** 库存更新页的食材消耗输入（从 menuProposal.dishes 推导） */
+export interface IngredientSuggestionInput {
+  dishes: {
+    name: string;
+    ingredients: { name: string; actualGrams: number }[];
+  }[];
+  availableSeasonings: string[];
+  peopleCount: number;
+  mealType: string;
+  calorieTarget: number | undefined;
+}
 
 function normalizeIngredientName(name: string): string {
   return name
@@ -24,7 +36,7 @@ function findMatchingInventory(normalizedName: string, inventory: Ingredient[]):
 }
 
 export function calculateIngredientSuggestions(
-  stage2Input: Stage2AIInput,
+  stage2Input: IngredientSuggestionInput,
   currentInventory: Ingredient[],
 ): IngredientSuggestion[] {
   const ingredientMap = new Map<string, { usedGrams: number; dishes: Set<string> }>();

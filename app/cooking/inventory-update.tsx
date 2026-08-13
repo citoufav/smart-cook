@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TextInput,
-  Alert,
   StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -16,60 +15,42 @@ import { COLORS, SEASONING_STATUS_LABEL } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Button } from '../../src/components/Button';
-import { Input } from '../../src/components/Input';
-import { CustomAlert } from '../../src/components/CustomAlert';
+import { useCustomAlert } from '../../src/components/CustomAlert';
 import { calculateIngredientSuggestions, calculateSeasoningSuggestions } from '../../src/services/inventoryCalculator';
 import { IngredientSuggestion, SeasoningSuggestion } from '../../src/types';
 
 export default function InventoryUpdateScreen() {
-  const { state: cookingState, dispatch, resetSession } = useCooking();
+  const { state: cookingState, dispatch } = useCooking();
   const { reset: resetNutrition } = useNutrition();
   const { state: invState, addIngredient, updateIngredient, addSeasoning, updateSeasoning } = useInventory();
+  const { showAlert } = useCustomAlert();
   const [mode, setMode] = useState<'batch' | 'individual'>('batch');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [ingredientUpdates, setIngredientUpdates] = useState<Record<string, string>>({});
   const [seasoningUpdates, setSeasoningUpdates] = useState<Record<string, string | null>>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [alertState, setAlertState] = useState<{
-    visible: boolean;
-    title: string;
-    message?: string;
-    buttons: { text: string; variant?: 'primary' | 'ghost'; onPress: () => void }[];
-  }>({ visible: false, title: '', buttons: [] });
 
-  const showAlert = (title: string, message?: string, buttons?: { text: string; variant?: 'primary' | 'ghost'; onPress: () => void }[]) => {
-    setAlertState({ visible: true, title, message, buttons: buttons || [] });
-  };
-
-  const weighingData = cookingState.session?.stages.weighing;
+  const menuProposal = cookingState.session?.stages.menu?.menuProposal;
 
   const ingredientSuggestions = useMemo(() => {
-    if (!weighingData || !cookingState.session) return [];
+    if (!cookingState.session || !menuProposal) return [];
     const input = {
-      dishes: cookingState.session.stages.menu?.menuProposal?.dishes.map((d: any) => ({
+      dishes: menuProposal.dishes.map((d: any) => ({
         name: d.name,
         ingredients: d.ingredients.map((i: any) => ({
           name: i.name,
-          actualGrams: weighingData.actualWeights.find((w: any) => w.ingredientName === i.name)?.actualWeight || i.estimatedWeight,
+          actualGrams: i.estimatedWeight, // 无称量数据，用 AI 预估用量
         })),
-      })) || [],
+      })),
       availableSeasonings: [],
       peopleCount: cookingState.session.stages.requirement?.personCount || 2,
       mealType: cookingState.session.stages.requirement?.mealType || 'any',
       calorieTarget: cookingState.session.stages.requirement?.caloriePreference,
     };
     return calculateIngredientSuggestions(input, invState.ingredients);
-  }, [weighingData, invState.ingredients]);
+  }, [menuProposal, invState.ingredients, cookingState.session]);
 
   const seasoningSuggestions = useMemo(() => {
-    // 优先从 weighingData 获取调料列表
-    if (weighingData?.availableSeasonings?.length) {
-      const usedNames = weighingData.availableSeasonings
-        .filter((s: any) => s.isAvailable)
-        .map((s: any) => s.seasoningName);
-      return calculateSeasoningSuggestions(usedNames, invState.seasonings);
-    }
-    // Fallback：从 menuProposal 推导调料列表（兼容旧记录 / weighingData 缺失）
     const menu = cookingState.session?.stages.menu?.menuProposal;
     if (menu) {
       const names = new Set<string>();
@@ -81,7 +62,7 @@ export default function InventoryUpdateScreen() {
       return calculateSeasoningSuggestions([...names], invState.seasonings);
     }
     return [];
-  }, [weighingData, invState.seasonings, cookingState.session]);
+  }, [invState.seasonings, cookingState.session]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -108,25 +89,28 @@ export default function InventoryUpdateScreen() {
         }
       }
       setHasUnsavedChanges(false);
-      showAlert('更新成功', '库存已更新', [
-        {
-          text: '返回库存',
-          variant: 'primary',
-          onPress: () => {
-            setAlertState((prev) => ({ ...prev, visible: false }));
-            dispatch({ type: 'SET_CURRENT_STAGE', payload: 'completed' });
-            // 持久化完成后状态到磁盘，历史记录才能识别为"已完成"
-            if (cookingState.session) {
-              cookingProgressService.save(cookingState.session).catch(() => {});
-            }
-            resetNutrition();
-            router.dismissAll();
-            router.replace('/(tabs)/cooking');
+      showAlert({
+        title: '更新成功',
+        message: '库存已更新',
+        buttons: [
+          {
+            text: '返回库存',
+            style: 'default',
+            onPress: () => {
+              dispatch({ type: 'SET_CURRENT_STAGE', payload: 'completed' });
+              // 持久化完成后状态到磁盘，历史记录才能识别为"已完成"
+              if (cookingState.session) {
+                cookingProgressService.save(cookingState.session).catch(() => {});
+              }
+              resetNutrition();
+              router.dismissAll();
+              router.replace('/(tabs)/cooking');
+            },
           },
-        },
-      ]);
+        ],
+      });
     } catch (error: any) {
-      showAlert('更新失败', String(error));
+      showAlert({ title: '更新失败', message: String(error) });
     } finally {
       setIsSaving(false);
     }
@@ -135,16 +119,6 @@ export default function InventoryUpdateScreen() {
   const handleResetAllSeasonings = () => {
     setSeasoningUpdates({});
     setHasUnsavedChanges(true);
-  };
-
-  const handleBeforeRemove = (e: any) => {
-    if (hasUnsavedChanges) {
-      e.preventDefault();
-      showAlert('确认离开', '你有未保存的修改，是否放弃？', [
-        { text: '取消', onPress: () => setAlertState((prev) => ({ ...prev, visible: false })) },
-        { text: '放弃', variant: 'ghost', onPress: () => router.dismissAll() },
-      ]);
-    }
   };
 
   return (
@@ -230,14 +204,6 @@ export default function InventoryUpdateScreen() {
           <Button title="确认更新" variant="primary" loading={isSaving} onPress={handleSave} style={styles.flex2} />
         </View>
       </View>
-
-      <CustomAlert
-        visible={alertState.visible}
-        title={alertState.title}
-        message={alertState.message}
-        buttons={alertState.buttons}
-        onDismiss={() => setAlertState((prev) => ({ ...prev, visible: false }))}
-      />
     </View>
   );
 }

@@ -119,25 +119,6 @@ export interface MenuProposal {
   ingredientTags?: IngredientTag[];
 }
 
-// ============ 阶段2称量 ============
-export interface IngredientWeight {
-  ingredientName: string;
-  estimatedWeight: number;
-  actualWeight: number;
-  usedInDishes: string[];
-}
-
-export interface AvailableSeasoning {
-  seasoningName: string;
-  seasoningId?: string;
-  isAvailable: boolean;
-}
-
-export interface WeighingData {
-  actualWeights: IngredientWeight[];
-  availableSeasonings: AvailableSeasoning[];
-}
-
 // ============ AI生成方案 ============
 export interface IngredientTag {
   name: string;
@@ -153,14 +134,6 @@ export interface PrepStep {
   dishName?: string;
   isCompleted: boolean;
   order: number;
-}
-
-export interface BowlAssignment {
-  bowlNumber: number;
-  dishName: string;
-  contents: string;
-  ingredients: string[];
-  isCompleted: boolean;
 }
 
 export interface CookingStep {
@@ -215,9 +188,7 @@ export interface InventoryUpdateData {
 export type CookingStage =
   | 'requirement'
   | 'menu'
-  | 'weighing'
   | 'prep'
-  | 'bowl'
   | 'cooking'
   | 'inventoryUpdate'
   | 'completed'
@@ -229,14 +200,9 @@ export interface Stage1Data {
   reasoningContent?: string;
 }
 
-export interface Stage2Data {
-  weighingData: WeighingData;
-}
-
 export interface CookingSessionStages {
   requirement?: RequirementInput;
   menu?: Stage1Data;
-  weighing?: WeighingData;
 }
 
 export interface CookingSession {
@@ -246,7 +212,7 @@ export interface CookingSession {
   createdAt: string;
   updatedAt: string;
   version: number;
-  /** 0-based index of the highest completed stage (menu=0, weighing=1, prep=2, bowl=3, cooking=4). -1 means no stage completed yet */
+  /** 0-based index of the highest completed stage (menu=0, prep=1, cooking=2). -1 means no stage completed yet */
   completedStageIndex: number;
 }
 
@@ -274,29 +240,6 @@ export interface SettingsState {
   error: string | null;
 }
 
-// ============ 执行进度 ============
-export interface ExecutionProgress {
-  sessionId: string;
-  stage3Steps?: Record<string, boolean>;
-  stage4Steps?: Record<string, boolean>;
-  stage5Steps?: Record<string, boolean>;
-  currentStage: CookingStage;
-  savedAt: string;
-}
-
-export interface Stage2Progress {
-  sessionId: string;
-  weighedIngredients: { ingredientName: string; dishName: string; actualWeight: number }[];
-  seasoningChecks: { name: string; checked: boolean }[];
-  savedAt: string;
-}
-
-export interface ShoppingListProgress {
-  sessionId: string;
-  checkedItems: string[];
-  savedAt: string;
-}
-
 // ============ API相关 ============
 export interface APIError {
   type: APIErrorType;
@@ -314,23 +257,6 @@ export type APIErrorType =
   | 'RATE_LIMIT_ERROR'
   | 'SERVER_ERROR'
   | 'TIMEOUT_ERROR';
-
-// ============ 碗验证 ============
-export interface BowlValidationError {
-  type: 'missing_bowl' | 'unreferenced_bowl';
-  bowlNumber: number;
-  severity: 'error' | 'warning';
-  message: string;
-}
-
-export interface BowlValidationResult {
-  isValid: boolean;
-  errors: BowlValidationError[];
-  summary: {
-    errorCount: number;
-    warningCount: number;
-  };
-}
 
 // ============ 导出/导入 ============
 export interface ExportData {
@@ -362,26 +288,6 @@ export interface InventoryCheckResult {
   isEmpty: boolean;
   isLowInventory: boolean;
   ingredientCount: number;
-}
-
-// ============ Stage2 AI Input ============
-export interface Stage2AIInput {
-  dishes: {
-    name: string;
-    ingredients: { name: string; actualGrams: number }[];
-  }[];
-  availableSeasonings: string[];
-  peopleCount: number;
-  mealType: string;
-  calorieTarget: number | undefined;
-}
-
-// ============ Stage2 AI Response ============
-export interface Stage2AIResponse {
-  prepSteps: PrepStep[];
-  bowlAssignments: BowlAssignment[];
-  cookingSteps: CookingStep[];
-  preciseNutrition: NutritionInfo[];
 }
 
 // ============ 阶段模式（三状态模型） ============

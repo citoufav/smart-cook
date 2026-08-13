@@ -5,17 +5,13 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  LayoutAnimation,
 } from 'react-native';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
-import { Button } from '../../src/components/Button';
-import { Checkbox } from '../../src/components/Checkbox';
-import { cookingProgressService } from '../../src/services/cookingProgressService';
 import { IngredientTag, NutritionalData, StageMode } from '../../src/types';
 
 /** 修补 AI 输出中不完整的方括号 */
@@ -106,154 +102,6 @@ const tagStyles = StyleSheet.create({
     fontSize: 13,
   },
 });
-
-export default function Stage3PrepScreen() {
-  const { state, dispatch } = useCooking();
-  const { setPreciseNutrition } = useNutrition();
-  const personCount = state.session?.stages.requirement?.personCount ?? 1;
-  const params = useLocalSearchParams<{ readonly?: string }>();
-  const isReadonly = params.readonly === '1';
-  const menuProposal = state.session?.stages.menu?.menuProposal;
-  const ingredientTags = menuProposal?.ingredientTags;
-  const [checkStates, setCheckStates] = useState<Record<string, boolean>>({});
-
-  const nutritionShownRef = useRef(false);
-
-  const allCompletedStages = useMemo(() => {
-    if (!isReadonly) return undefined;
-    const stages = state.session?.stages;
-    const result: string[] = [];
-    if (stages?.menu) result.push('menu');
-    if (stages?.menu?.menuProposal?.prepSteps) result.push('prep');
-    if (stages?.menu?.menuProposal?.cookingSteps) result.push('cooking');
-    return result;
-  }, [isReadonly, state.session]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!isReadonly && !nutritionShownRef.current && menuProposal?.preciseNutrition) {
-        nutritionShownRef.current = true;
-        if (menuProposal) {
-          const nutritionByDish: Record<string, NutritionalData> = {};
-          for (let i = 0; i < menuProposal.dishes.length; i++) {
-            const dish = menuProposal.dishes[i];
-            if (menuProposal.preciseNutrition[i]) {
-              nutritionByDish[dish.name] = {
-                ...menuProposal.preciseNutrition[i],
-                source: 'precise',
-              };
-            }
-          }
-          if (Object.keys(nutritionByDish).length > 0) {
-            setPreciseNutrition(nutritionByDish, personCount);
-          }
-        }
-      }
-      if (state.session && !isReadonly) {
-        cookingProgressService.save(state.session).catch(() => {});
-      }
-    }, [state.session, isReadonly, menuProposal]),
-  );
-
-  const prepSteps = menuProposal?.prepSteps;
-
-  // 按菜品分组备菜步骤
-  const groupedPrepSteps = useMemo(() => {
-    if (!prepSteps) return [];
-    const map = new Map<string, typeof prepSteps>();
-    const ungrouped: typeof prepSteps = [];
-    for (const step of prepSteps) {
-      if (step.dishName) {
-        const list = map.get(step.dishName) || [];
-        list.push(step);
-        map.set(step.dishName, list);
-      } else {
-        ungrouped.push(step);
-      }
-    }
-    const result = [...map.entries()].map(([dishName, steps]) => ({ dishName, steps }));
-    if (ungrouped.length > 0) result.push({ dishName: '通用备菜', steps: ungrouped });
-    return result;
-  }, [prepSteps]);
-
-  if (!menuProposal || !prepSteps || prepSteps.length === 0) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>暂无备菜数据</Text>
-          {menuProposal && !prepSteps && (
-            <Text style={styles.emptyHint}>AI 返回的生成方案中缺少备菜步骤，请返回重新生成</Text>
-          )}
-        </View>
-        {/* CookingProgressBar 移至全局 Pager */}
-      </View>
-    );
-  }
-
-  const completedCount = Object.values(checkStates).filter(Boolean).length;
-  const totalCount = prepSteps.length;
-  const allDone = completedCount === totalCount;
-
-  const handleToggle = (stepId: string) => {
-    if (isReadonly) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setCheckStates((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
-  };
-
-  const handleComplete = () => {
-    dispatch({ type: 'COMPLETE_ALL_PREP' });
-    router.push('/cooking/stage4-bowl');
-  };
-
-  return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>切菜备菜</Text>
-        {!isReadonly && (
-          <Text style={styles.progress}>已完成 {completedCount}/{totalCount}</Text>
-        )}
-
-        {prepSteps.map((step) => {
-          const isDone = isReadonly ? (step.isCompleted ?? false) : (checkStates[step.id] ?? false);
-          return (
-            <View key={step.id} style={[styles.stepRow, isDone && styles.stepRowDone]}>
-              <Checkbox
-                checked={isDone}
-                onToggle={() => handleToggle(step.id)}
-                disabled={isReadonly}
-                labelContent={
-                  <Text>
-                    {step.ingredientName ? (
-                      <Text style={styles.ingredientBold}>{step.ingredientName} </Text>
-                    ) : null}
-                    {step.quantity ? (
-                      <Text style={styles.quantityText}>{step.quantity} </Text>
-                    ) : null}
-                    <IngredientTagText text={step.description} ingredientTags={ingredientTags} />
-                  </Text>
-                }
-              />
-            </View>
-          );
-        })}
-      </ScrollView>
-
-      {!isReadonly && (
-        <View style={styles.bottomBar}>
-          <Button
-            title={allDone ? '备菜完成，开始分装' : `已完成 ${completedCount}/${totalCount}`}
-            variant={allDone ? 'primary' : 'secondary'}
-            size="lg"
-            fullWidth
-            disabled={!allDone}
-            onPress={handleComplete}
-          />
-        </View>
-      )}
-      {/* CookingProgressBar 移至全局 Pager */}
-    </View>
-  );
-}
 
 interface Stage3PrepContentProps {
   mode: StageMode;

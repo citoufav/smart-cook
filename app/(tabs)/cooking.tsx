@@ -23,7 +23,7 @@ import { LoadingOverlay } from '../../src/components/LoadingOverlay';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
-import { NutritionalData, InventoryCheckResult, CookingStage } from '../../src/types';
+import { NutritionalData, InventoryCheckResult } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
 import { getRecentMeals, addMeals } from '../../src/services/dietMemoryService';
 import { menuHistoryService } from '../../src/services/menuHistoryService';
@@ -36,16 +36,6 @@ const LOOP_REPEAT_COUNT = 5;
 const LOOP_MIN_LEN = 5;
 const LOOP_MAX_LEN = 80;
 const LOOP_WINDOW = 600; // 检测窗口：最近600字
-
-const STAGE_ROUTES: Record<CookingStage, string> = {
-  requirement: '/(tabs)/cooking',
-  menu: '/cooking/stage1-menu',
-  prep: '/cooking/stage3-prep',
-  cooking: '/cooking/stage5-cooking',
-  inventoryUpdate: '/cooking/inventory-update',
-  completed: '/(tabs)/cooking',
-  cancelled: '/(tabs)/cooking',
-};
 
 export default function CookingEntryScreen() {
   const [people, setPeople] = useState(1);
