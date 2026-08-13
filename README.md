@@ -91,6 +91,12 @@ SmartCook_demo/
 
 See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the update history, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deep dive into the architecture and data flow.
 
+## About this project
+
+SmartCook began as a personal project. I wanted to learn cooking, and although AI could generate recipes, plain-text output was too awkward to follow in the kitchen — so I built this app to guide me from fridge to table, step by step.
+
+It is developed with AI-assisted coding tools (Trae IDE) and is currently pre-release: expect rough edges and occasional changes. Feedback and contributions are welcome.
+
 ## License
 
 [MIT](LICENSE) © citoufav
