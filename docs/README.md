@@ -1,10 +1,12 @@
-# 项目文档
+# Documentation
 
-> 本目录只保留项目的「门面」文档：架构总览与更新记录。
+This directory holds the project's public-facing documentation.
 
-## 本目录文档
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Architecture overview: project structure, state management, AI data flow, persistence, and design decisions |
+| [CHANGELOG.md](./CHANGELOG.md) | Update history: notable changes and refactoring milestones |
 
-| 文档 | 说明 |
-|------|------|
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 英文架构总览：分层、状态管理、AI 数据流、持久化、设计决策 |
-| [CHANGELOG.md](./CHANGELOG.md) | 更新记录：历次重要更新与重构里程碑 |
+## Related
+
+- [Project README](../README.md) — overview, features, and getting started

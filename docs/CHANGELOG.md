@@ -1,35 +1,63 @@
-# 更新记录（CHANGELOG）
+# Changelog
 
-> 本文件记录项目的历次重要更新，按时间倒序（最新在上）。
-> 详细设计决策（ADR）与开发记录见仓库根目录：[../../文档/开发记录/](../../文档/开发记录/)
+All notable changes to this project are documented in this file.
 
-## 2026-08-13 · 状态管理重构（5 阶段全部完成）
+The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
-重构动机与完整方案见根目录 [状态管理现状与重构方案.md](../../文档/开发记录/状态管理现状与重构方案.md)。目标：确立单一真相源、理顺 AI 改菜谱链路、清理死代码、统一数据流。**不引入新依赖，沿用 React Context + useReducer。**
+## 2026-08-13 — Open-source readiness & state-management refactor
 
-| 阶段 | 内容 | Commit |
-|------|------|--------|
-| A 单一真相源 | `prepSteps`/`cookingSteps`/`preciseNutrition` 只存于 `MenuProposal`，删除冗余的 `generatedPlan`；`RESTORE_SESSION` 兼容旧数据回填 | `72ea8ea` |
-| B 抽纯函数 | 新增 `recipeEditService.applyRecipeChanges()`，ChatSheet 只做 dispatch + persist | `e3d73ab` |
-| C 清死代码 | 删除 weighing/bowl 阶段类型、重复组件、废弃 storageKey、`bowlValidation.ts`（-999 行） | `6ee0889` |
-| D 收敛历史 | 新增 `MenuHistoryContext`，历史页统一经 context 读取；`handleStreamDone` 单次构造 `menuProposal` 复用到 3 处 | `00a7d38` |
-| E 清退化模型 | 删除 `completedStageIndex` 三状态模型与 `useStageMode`，`status` 成为唯一进度来源 | `e72f226` |
+**Added**
 
-## 2026-08-13 · 项目文档收敛
+- MIT license ([LICENSE](../LICENSE)) and README license section
+- English README with architecture overview and quick start ([README](../README.md))
+- Architecture document ([docs/ARCHITECTURE.md](./ARCHITECTURE.md))
+- `MenuHistoryContext` — history screens now read uniformly from context instead of calling services directly
 
-- `docs/` 下 16 个 ADR + 状态管理方案共 17 个 md 迁移至仓库根目录 `文档/开发记录/`，并建立分类索引 `README.md`
-- `docs/` 瘦身为门面目录：仅保留 `ARCHITECTURE.md`、`README.md` 与本文档
-- 清理 `SmartCook_demo/.trae` 与根目录 `.trae/` 中的残留文档副本
+**Changed**
 
-## 2026-08-13 · 文档体系建设
+- Reworked AI recipe editing: modifications now **regenerate the full menu** via a streamed SSE call (thinking disabled) instead of applying partial patches — keeps nutrition, missing items and summary fields in sync
+- Cleaned up AI prompts: removed bowl references, `bowlReferences` schema field and fragile bracket-pairing rules
+- Made `menuProposal` the single source of truth for the cooking session (`prepSteps`/`cookingSteps`/`preciseNutrition` now live only on the menu)
+- Unified history data flow: `handleStreamDone` builds the menu proposal once and reuses it in three places
+- Migrated to a clean 3-stage progress model; removed the degraded `completedStageIndex` 3-state model — `status` is now the single progress source
+- Removed the avatar settings menu shell (deferred until a backend exists)
+- Fixed web inventory import (uses browser `fetch` where the native file APIs are unavailable)
+- Translated all code comments to English; fixed remaining TypeScript errors (FlatList union type, chat-history role filter)
 
-- 新增英文 README、架构文档（`ARCHITECTURE.md`）与一批设计决策记录（ADR），覆盖烹饪流程演进、AI 聊天改菜谱、UI 打磨等主题（`efd8f2f`）
+**Removed**
 
-## 2026-08-13 · 工程基线整理
+- Dead weighing/bowl stage code, duplicate components and legacy storage keys
+- `recipeEditService` partial-patch logic (superseded by full-menu regeneration)
 
-- gitignore 优化，`node_modules` 取消跟踪，建立可复现的基线工作状态（`299e162`）
+## 2026-06 → 2026-08 — Milestone history (pre-refactor)
 
-## 2026-06-09 · 项目初始化
+The milestones below document the project's evolution before the state-management refactor, reconstructed from internal design records.
 
-- 初始化 Expo + React Native + TypeScript 项目（`46b3748`）
-- 修复构建产物与 Hermes/构建属性配置（`1987fbd`、`b9c1aca`）
+### Cooking flow: 5-stage → 3-stage
+
+- Initial 5-stage flow (menu → weighing → bowl → prep → cooking)
+- Unified the flow into a single swipeable Pager architecture, fixing double-navigation conflicts
+- Removed the weighing and bowl stages — the AI now generates a complete recipe (dishes, nutrition, prep and cooking steps) in a single pass
+- Redesigned step rendering with ingredient/amount tag parsing
+
+### Features
+
+- **Dietary memory** — remembers recently cooked dishes to avoid repetition
+- **Recipe chat assistant** — floating chat ball in the cooking flow; ask questions or let the AI modify the recipe (with confirm/cancel)
+- **Settings drawer** — API key / endpoint / model configuration, dietary restrictions, data import/export
+- **Shopping list** — auto-detects missing ingredients and seasonings, persists checked state
+- **Nutrition tracking** — per-dish and per-meal estimates with a draggable floating ball
+
+### Fixes & polish
+
+- Early bug-fix rounds (3-bug and 4-bug plans): nutrition sum, cooking-stage tag parsing, completion panel, history navigation
+- State management root fix: 5 related bugs (stage guards, index mapping, pager mode, progress bar, migration)
+- Unified progress bar + Pager refactor
+- UI style overhaul, custom alerts replacing native `Alert`
+- Prompt and UI optimizations; Stage 5 tag and navigation fixes
+- Storage-date picker; history / floating-ball fixes; bottom-spacing and animation fixes
+
+## 2026-06-09 — Initial release
+
+- Initialized Expo + React Native + TypeScript project
+- Fixed build artifacts and Hermes / build-properties configuration
