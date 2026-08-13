@@ -3,6 +3,13 @@
  * 过滤掉代码、JSON、英语片段、工具调用格式等，保留中文自然语言内容
  */
 
+import { logger } from './logger';
+
+const log = logger('UTIL:THINK');
+
+let lastReportTime = 0;
+const REPORT_INTERVAL_MS = 5000; // 5秒报告一次
+
 /**
  * 清理思维链文本，移除代码/JSON/纯英文行
  */
@@ -67,7 +74,19 @@ export function cleanThinkingText(rawText: string): string {
     result.push(line);
   }
 
-  return result.join('\n').trim();
+  const output = result.join('\n').trim();
+
+  if (!output) {
+    // 无有效内容，静默
+  } else if (rawText.length - output.length >= Math.max(50, rawText.length * 0.01)) {
+    const now = Date.now();
+    if (now - lastReportTime >= REPORT_INTERVAL_MS) {
+      lastReportTime = now;
+      log.debug('思维链清理状态', { inputLength: rawText.length, outputLength: output.length });
+    }
+  }
+
+  return output;
 }
 
 function containsChinese(text: string): boolean {

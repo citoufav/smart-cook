@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,15 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Modal,
   StyleSheet,
   Animated,
+  ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useInventory } from '../../src/contexts/InventoryContext';
+import { useNutrition } from '../../src/contexts/NutritionContext';
 import { Ingredient, Seasoning, SeasoningStatus } from '../../src/types';
 import { COLORS, SEASONING_STATUS_LABEL, SEASONING_STATUS_COLORS } from '../../src/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +25,9 @@ import { FAB } from '../../src/components/FAB';
 import { Badge, seasoningStatusToBadge } from '../../src/components/Badge';
 import { Button } from '../../src/components/Button';
 import { Checkbox } from '../../src/components/Checkbox';
+import { useCustomAlert } from '../../src/components/CustomAlert';
+import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
+import HeaderBar from '../../src/components/HeaderBar';
 
 function getDaysSince(dateStr: string): number {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -29,14 +36,60 @@ function getDaysSince(dateStr: string): number {
 
 export default function InventoryScreen() {
   const { state, addIngredient, deleteIngredient, updateIngredient, addSeasoning, deleteSeasoning, updateSeasoning } = useInventory();
+  const { hideBall } = useNutrition();
+
+  useFocusEffect(
+    useCallback(() => {
+      hideBall();
+    }, [hideBall]),
+  );
   const [activeTab, setActiveTab] = useState<'ingredients' | 'seasonings'>('ingredients');
   const [searchText, setSearchText] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [formName, setFormName] = useState('');
   const [formWeight, setFormWeight] = useState('');
   const [formStatus, setFormStatus] = useState<SeasoningStatus>('sufficient');
+  const [formDate, setFormDate] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null); // 编辑模式：正在编辑的项 ID
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // 日期选择器 ScrollView refs — 打开弹窗时滚动到选中项居中
+  const yearScrollRef = useRef<ScrollView>(null);
+  const monthScrollRef = useRef<ScrollView>(null);
+  const dayScrollRef = useRef<ScrollView>(null);
+  const ITEM_HEIGHT = 34;
+  const SCROLL_HEIGHT = 180;
+  useEffect(() => {
+    if (showDatePicker) {
+      const yearIdx = years.indexOf(pickerYear);
+      const monthIdx = pickerMonth - 1;
+      const dayIdx = pickerDay - 1;
+      const center = (SCROLL_HEIGHT - ITEM_HEIGHT) / 2;
+      const yearY = Math.max(0, yearIdx * ITEM_HEIGHT - center);
+      const monthY = Math.max(0, monthIdx * ITEM_HEIGHT - center);
+      const dayY = Math.max(0, dayIdx * ITEM_HEIGHT - center);
+      console.log('[DATE_PICKER] scroll to:', { yearY, monthY, dayY, yearIdx, monthIdx, dayIdx, ITEM_HEIGHT, center });
+      setTimeout(() => {
+        yearScrollRef.current?.scrollTo({ y: yearY, animated: false });
+        monthScrollRef.current?.scrollTo({ y: monthY, animated: false });
+        dayScrollRef.current?.scrollTo({ y: dayY, animated: false });
+      }, 50);
+    }
+  }, [showDatePicker]);
+
+  const { showAlert } = useCustomAlert();
+  const { openSettings } = useSettingsDrawer();
+
+  // 日期选择器状态
+  const today = new Date();
+  const [pickerYear, setPickerYear] = useState(today.getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(today.getMonth() + 1);
+  const [pickerDay, setPickerDay] = useState(today.getDate());
+  const years = Array.from({ length: 11 }, (_, i) => today.getFullYear() - 5 + i);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const getDaysInMonth = (y: number, m: number) => new Date(y, m, 0).getDate();
+  const days = Array.from({ length: getDaysInMonth(pickerYear, pickerMonth) }, (_, i) => i + 1);
 
   const filteredIngredients = useMemo(() => {
     const search = searchText.toLowerCase();
@@ -83,9 +136,9 @@ export default function InventoryScreen() {
         return;
       }
       if (editId) {
-        await updateIngredient(editId, { name, weight });
+        await updateIngredient(editId, { name, weight, createDate: formDate || undefined });
       } else {
-        await addIngredient(name, weight);
+        await addIngredient(name, weight, formDate || undefined);
       }
     } else {
       if (editId) {
@@ -102,6 +155,7 @@ export default function InventoryScreen() {
     setFormName('');
     setFormWeight('');
     setFormStatus('sufficient');
+    setFormDate('');
     setFormError(null);
     setEditId(null);
     setShowForm(false);
@@ -112,6 +166,7 @@ export default function InventoryScreen() {
     setEditId(item.id);
     setFormName(item.name);
     setFormWeight(item.weight !== null ? String(item.weight) : '');
+    setFormDate(item.createDate ? item.createDate.slice(0, 10) : '');
     setShowForm(true);
   }, []);
 
@@ -123,7 +178,7 @@ export default function InventoryScreen() {
   }, []);
 
   const handleDelete = useCallback((id: string, name: string) => {
-    Alert.alert('确认删除', `确定要删除"${name}"吗？此操作不可恢复。`, [
+    showAlert({ title: '确认删除', message: `确定要删除"${name}"吗？此操作不可恢复。`, buttons: [
       { text: '取消', style: 'cancel' },
       {
         text: '删除',
@@ -136,8 +191,25 @@ export default function InventoryScreen() {
           }
         },
       },
-    ]);
-  }, [activeTab, deleteIngredient, deleteSeasoning]);
+    ] });
+  }, [activeTab, deleteIngredient, deleteSeasoning, showAlert]);
+
+  const handleOpenDatePicker = useCallback(() => {
+    if (formDate) {
+      const [y, m, d] = formDate.split('-').map(Number);
+      if (y && m && d) { setPickerYear(y); setPickerMonth(m); setPickerDay(d); }
+    } else {
+      setPickerYear(today.getFullYear()); setPickerMonth(today.getMonth() + 1); setPickerDay(today.getDate());
+    }
+    setShowDatePicker(true);
+  }, [formDate]);
+
+  const handleDateConfirm = useCallback(() => {
+    const d = String(pickerDay).padStart(2, '0');
+    const m = String(pickerMonth).padStart(2, '0');
+    setFormDate(`${pickerYear}-${m}-${d}`);
+    setShowDatePicker(false);
+  }, [pickerYear, pickerMonth, pickerDay]);
 
   const renderIngredientItem = ({ item }: { item: Ingredient }) => (
     <TouchableOpacity style={styles.listItem} onPress={() => handleEditIngredient(item)} activeOpacity={0.7}>
@@ -175,9 +247,7 @@ export default function InventoryScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>库存</Text>
-      </View>
+      <HeaderBar title="随煮" onOpenDrawer={openSettings} />
 
       <View style={styles.tabRow}>
         <TouchableOpacity
@@ -240,14 +310,26 @@ export default function InventoryScreen() {
               autoFocus
             />
             {activeTab === 'ingredients' && (
-              <TextInput
-                style={styles.formInput}
-                placeholder="重量（克，可留空）"
-                placeholderTextColor={COLORS.textTertiary}
-                value={formWeight}
-                onChangeText={(t) => setFormWeight(t.replace(/[^0-9]/g, ''))}
-                keyboardType="numeric"
-              />
+              <>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="重量（克，可留空）"
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={formWeight}
+                  onChangeText={(t) => setFormWeight(t.replace(/[^0-9]/g, ''))}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity
+                  style={styles.dateSelector}
+                  onPress={handleOpenDatePicker}
+                  activeOpacity={0.7}
+                >
+                  <Text style={formDate ? styles.dateText : styles.datePlaceholder}>
+                    {formDate ? `${formDate.slice(0, 4)}年${formDate.slice(5, 7)}月${formDate.slice(8, 10)}日` : '选择入库日期（默认今天）'}
+                  </Text>
+                  <Ionicons name="caret-down-outline" size={14} color={COLORS.textTertiary} />
+                </TouchableOpacity>
+              </>
             )}
             {activeTab === 'seasonings' && (
               <View style={styles.statusRow}>
@@ -273,6 +355,54 @@ export default function InventoryScreen() {
         </View>
       )}
 
+      {/* 日期选择器弹窗 */}
+      <Modal visible={showDatePicker} transparent animationType="fade" onRequestClose={() => setShowDatePicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDatePicker(false)}>
+          <View style={styles.datePickerCard}>
+            <Text style={styles.datePickerTitle}>选择入库日期</Text>
+            <View style={styles.pickerRow}>
+              {/* 年 */}
+              <View style={styles.pickerCol}>
+                <Text style={styles.pickerLabel}>年</Text>
+                <ScrollView ref={yearScrollRef} style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                  {years.map((y) => (
+                    <TouchableOpacity key={y} onPress={() => setPickerYear(y)} style={[styles.pickerItem, pickerYear === y && styles.pickerItemActive]}>
+                      <Text style={[styles.pickerItemText, pickerYear === y && styles.pickerItemTextActive]}>{y}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              {/* 月 */}
+              <View style={styles.pickerCol}>
+                <Text style={styles.pickerLabel}>月</Text>
+                <ScrollView ref={monthScrollRef} style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                  {months.map((m) => (
+                    <TouchableOpacity key={m} onPress={() => { setPickerMonth(m); setPickerDay(Math.min(pickerDay, getDaysInMonth(pickerYear, m))); }} style={[styles.pickerItem, pickerMonth === m && styles.pickerItemActive]}>
+                      <Text style={[styles.pickerItemText, pickerMonth === m && styles.pickerItemTextActive]}>{m}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              {/* 日 */}
+              <View style={styles.pickerCol}>
+                <Text style={styles.pickerLabel}>日</Text>
+                <ScrollView ref={dayScrollRef} style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                  {days.map((d) => (
+                    <TouchableOpacity key={d} onPress={() => setPickerDay(d)} style={[styles.pickerItem, pickerDay === d && styles.pickerItemActive]}>
+                      <Text style={[styles.pickerItemText, pickerDay === d && styles.pickerItemTextActive]}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+            <View style={styles.datePickerBtns}>
+              <Button title="取消" variant="ghost" onPress={() => setShowDatePicker(false)} />
+              <Button title="确定" variant="primary" onPress={handleDateConfirm} />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {!showForm && <FAB icon="＋" onPress={() => setShowForm(true)} accessibilityLabel="添加" />}
     </View>
   );
@@ -280,9 +410,7 @@ export default function InventoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { paddingTop: 60, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md, backgroundColor: COLORS.surface },
-  headerTitle: { fontSize: TYPOGRAPHY.h1, fontWeight: '700', color: COLORS.textPrimary },
-  tabRow: { flexDirection: 'row', paddingHorizontal: SPACING.lg, marginBottom: SPACING.sm, backgroundColor: COLORS.surface },
+  tabRow: { flexDirection: 'row', backgroundColor: COLORS.surface, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   tab: { flex: 1, paddingVertical: SPACING.md, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabActive: { borderBottomColor: COLORS.primary },
   tabText: { fontSize: TYPOGRAPHY.body, color: COLORS.textTertiary, fontWeight: '500' },
@@ -306,4 +434,33 @@ const styles = StyleSheet.create({
   statusChipActive: { borderWidth: 2 },
   statusChipText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary },
   formButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md },
+  // 日期选择器
+  modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'center', padding: SPACING.xxl },
+  datePickerCard: { backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.xl, padding: SPACING.xxl },
+  datePickerTitle: { fontSize: TYPOGRAPHY.h3, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.lg, textAlign: 'center' },
+  pickerRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
+  pickerCol: { flex: 1, alignItems: 'center' },
+  pickerLabel: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginBottom: SPACING.xs },
+  pickerScroll: { height: 180 },
+  pickerItem: { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, borderRadius: BORDER_RADIUS.sm, height: 34, justifyContent: 'center' },
+  pickerItemActive: { backgroundColor: COLORS.primaryBg },
+  pickerItemText: { fontSize: TYPOGRAPHY.body, color: COLORS.textSecondary, textAlign: 'center' },
+  pickerItemTextActive: { color: COLORS.primary, fontWeight: '700' },
+  datePickerBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md },
+  // 日期显示
+  dateSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.neutralLight,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  dateText: { fontSize: TYPOGRAPHY.body, color: COLORS.textPrimary },
+  datePlaceholder: { fontSize: TYPOGRAPHY.body, color: COLORS.textTertiary },
 });

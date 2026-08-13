@@ -11,7 +11,7 @@ import { useCooking } from '../../src/contexts/CookingContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
-import { Button } from '../../src/components/Button';
+import { Button } from '../../src/components/Button';
 import { Checkbox } from '../../src/components/Checkbox';
 import { CustomAlert } from '../../src/components/CustomAlert';
 import { CookingStep, IngredientTag, BowlAssignment, StageMode } from '../../src/types';
@@ -30,21 +30,19 @@ function normalizeBrackets(text: string): string {
   return result;
 }
 
-/** 解析 instruction 中的 [碗N] 和 [食材名(克重)] 并渲染为统一标签 */
+/** 解析 instruction 中的 [食材名(克重)] 和 [食材名(非克重)] 并渲染为统一标签 */
 function InstructionText({
   text,
   ingredientTags,
-  bowlAssignments,
 }: {
   text: string;
   ingredientTags?: IngredientTag[];
-  bowlAssignments?: BowlAssignment[];
 }) {
   const normalized = normalizeBrackets(text);
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
-  // 三个分支: 食材(克重) | 碗N | 食材(非克重描述)
-  const regex = /\[(.+?)\((\d+)g\)\]|\[碗(\d+)\]|\[(.+?)\((\S+?)\)\]/g;
+  // 两个分支: 食材(克重) | 食材(非克重描述)
+  const regex = /\[(.+?)\((\d+)g\)\]|\[(.+?)\((\S+?)\)\]/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(normalized)) !== null) {
@@ -54,20 +52,9 @@ function InstructionText({
       );
     }
     if (match[3]) {
-      // [碗N] — 查找食材名
-      const bowlNum = parseInt(match[3], 10);
-      const bowl = bowlAssignments?.find((b) => b.bowlNumber === bowlNum);
-      const ingredientNames = bowl?.ingredients?.join(',') || '';
-      const displayText = ingredientNames ? `碗${bowlNum}(${ingredientNames})` : `碗${bowlNum}`;
-      parts.push(
-        <Text key={match.index} style={tagStyles.bowlTag}>
-          {displayText}
-        </Text>,
-      );
-    } else if (match[4]) {
       // [食材名(非克重)] — 少许、适量、X勺等
-      const tagName = match[4];
-      const tagDesc = match[5];
+      const tagName = match[3];
+      const tagDesc = match[4];
       const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
       parts.push(
         <Text
@@ -106,18 +93,6 @@ const tagStyles = StyleSheet.create({
     fontSize: TYPOGRAPHY.body,
     color: COLORS.textPrimary,
     lineHeight: 22,
-  },
-  bowlTag: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-    color: COLORS.primary,
-    fontWeight: '700',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    overflow: 'hidden',
-    fontSize: 13,
   },
   ingredientTag: {
     color: '#FFFFFF',
@@ -204,7 +179,7 @@ export default function Stage5CookingScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>按碗炒制</Text>
+        <Text style={styles.title}>炒制</Text>
         {!isReadonly && (
           <Text style={styles.progress}>已完成 {completedSteps}/{totalSteps} 步</Text>
         )}
@@ -297,34 +272,10 @@ interface Stage5CookingContentProps {
 }
 
 export function Stage5CookingContent({ mode, onComplete }: Stage5CookingContentProps) {
-  const { state, dispatch } = useCooking();
-  const isReadonly = mode === 'readonly';
+  const { state } = useCooking();
   const generatedPlan = state.session?.stages.generatedPlan;
   const ingredientTags = generatedPlan?.ingredientTags;
-  const bowlAssignments = generatedPlan?.bowlAssignments;
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
-  const [checkStates, setCheckStates] = useState<Record<string, boolean>>({});
-  const [showDoneAlert, setShowDoneAlert] = useState(false);
-
-  const allCompletedStages = useMemo(() => {
-    if (!isReadonly) return undefined;
-    const stages = state.session?.stages;
-    const result: string[] = [];
-    if (stages?.menu) result.push('menu');
-    if (stages?.weighing) result.push('weighing');
-    if (stages?.generatedPlan?.prepSteps) result.push('prep');
-    if (stages?.generatedPlan?.bowlAssignments) result.push('bowl');
-    if (stages?.generatedPlan?.cookingSteps) result.push('cooking');
-    return result;
-  }, [isReadonly, state.session]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (state.session && mode === 'interactive') {
-        cookingProgressService.save(state.session).catch(() => {});
-      }
-    }, [state.session, mode]),
-  );
 
   const cookingSteps = generatedPlan?.cookingSteps;
 
@@ -351,32 +302,13 @@ export function Stage5CookingContent({ mode, onComplete }: Stage5CookingContentP
     return [...map.entries()];
   }, [cookingSteps]);
 
-  const totalSteps = cookingSteps.length;
-  const completedSteps = isReadonly ? 0 : cookingSteps.filter((s) => checkStates[String(s.stepNumber)]).length;
-  const allCompleted = completedSteps === totalSteps;
-
-  const handleToggle = (stepId: string) => {
-    if (isReadonly) return;
-    setCheckStates((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
-  };
-
-  const handleDone = () => {
-    dispatch({ type: 'COMPLETE_ALL_COOKING_STEPS' });
-    setShowDoneAlert(true);
-    onComplete?.();
-  };
-
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>按碗炒制</Text>
-        {!isReadonly && (
-          <Text style={styles.progress}>已完成 {completedSteps}/{totalSteps} 步</Text>
-        )}
+        <Text style={styles.title}>炒制</Text>
 
         {groupedDishes.map(([dishName, steps], dishIndex) => {
           const isExpanded = expandedDishIndex === dishIndex;
-          const dishDone = steps.filter((s) => checkStates[String(s.stepNumber)]).length;
 
           return (
             <View key={dishName} style={styles.dishCard}>
@@ -387,70 +319,26 @@ export function Stage5CookingContent({ mode, onComplete }: Stage5CookingContentP
               >
                 <Text style={styles.dishName}>{dishName}</Text>
                 <View style={styles.dishHeaderRight}>
-                  {!isReadonly && (
-                    <Text style={styles.dishProgress}>{dishDone}/{steps.length} 已完成</Text>
-                  )}
                   <Text style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</Text>
                 </View>
               </TouchableOpacity>
 
               {isExpanded && (
                 <View style={styles.stepList}>
-                  {steps.map((step) => {
-                    const isDone = checkStates[String(step.stepNumber)] ?? false;
-                    return (
-                      <View key={step.stepNumber} style={[styles.stepRow, isDone && styles.stepRowDone]}>
-                        <Checkbox
-                          checked={isDone}
-                          onToggle={() => handleToggle(String(step.stepNumber))}
-                          disabled={isReadonly}
-                          labelContent={
-                            <InstructionText
-                              text={step.instruction}
-                              ingredientTags={ingredientTags}
-                              bowlAssignments={bowlAssignments}
-                            />
-                          }
-                        />
-                      </View>
-                    );
-                  })}
+                  {steps.map((step) => (
+                    <View key={step.stepNumber} style={styles.stepRow}>
+                      <InstructionText
+                        text={step.instruction}
+                        ingredientTags={ingredientTags}
+                      />
+                    </View>
+                  ))}
                 </View>
               )}
             </View>
           );
         })}
       </ScrollView>
-
-      {!isReadonly && (
-        <View style={styles.bottomBar}>
-          <Button
-            title={allCompleted ? '大功告成！' : `还有 ${totalSteps - completedSteps} 步待完成`}
-            variant="primary"
-            size="lg"
-            fullWidth
-            disabled={!allCompleted}
-            onPress={handleDone}
-            style={allCompleted ? styles.doneButton : undefined}
-          />
-        </View>
-      )}
-
-      <CustomAlert
-        visible={showDoneAlert}
-        title="恭喜！所有菜品制作完成！"
-        buttons={[
-          {
-            text: '更新库存',
-            variant: 'primary',
-            onPress: () => {
-              setShowDoneAlert(false);
-              router.push('/cooking/inventory-update');
-            },
-          },
-        ]}
-        onDismiss={() => setShowDoneAlert(false)}
-      />
     </View>
   );
 }

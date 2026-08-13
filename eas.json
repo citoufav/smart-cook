@@ -3,11 +3,16 @@
     "version": ">= 20.0.0"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "preview": {
       "developmentClient": false,
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
+        "buildType": "apk"
       }
     }
   }

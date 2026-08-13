@@ -8,53 +8,62 @@ interface LoadingOverlayProps {
   visible: boolean;
   message?: string;
   thinkingText?: string;
-  isStalled?: boolean;
+  isLooping?: boolean;
   onRetry?: () => void;
+  showThinking?: boolean;
 }
 
 export function LoadingOverlay({
   visible,
   message,
   thinkingText,
-  isStalled,
+  isLooping,
   onRetry,
+  showThinking = true,
 }: LoadingOverlayProps) {
   const { width: screenWidth } = useWindowDimensions();
 
   if (!visible) return null;
 
   const cleanText = thinkingText ? cleanThinkingText(thinkingText) : '';
-  const cardWidth = Math.min(screenWidth * 0.88, 400);
+  const cardWidth = showThinking
+    ? Math.min(screenWidth * 0.88, 400)
+    : Math.min(screenWidth * 0.45, 200);
 
   return (
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.overlay}>
-        <View style={[styles.card, { width: cardWidth }]}>
+        <View style={[styles.card, { width: cardWidth, padding: showThinking ? SPACING.xl : SPACING.lg }]}>
           <ActivityIndicator size="large" color={COLORS.primary} />
 
-          <Text style={styles.thinkingLabel}>AI 深度思考中...</Text>
+          {showThinking ? (
+            <>
+              <Text style={styles.thinkingLabel}>AI 深度思考中...</Text>
+              <View style={styles.thinkingWindow}>
+                <ScrollView
+                  style={styles.thinkingScroll}
+                  nestedScrollEnabled
+                  ref={(ref) => {
+                    if (ref) {
+                      setTimeout(() => ref.scrollToEnd?.({ animated: false }), 50);
+                    }
+                  }}
+                >
+                  {cleanText ? (
+                    <Text style={styles.thinkingDetail}>{cleanText}</Text>
+                  ) : (
+                    <Text style={styles.thinkingPlaceholder}>等待 AI 响应...</Text>
+                  )}
+                </ScrollView>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.simpleThinkingText}>AI 正在思考中...</Text>
+          )}
 
-          <View style={styles.thinkingWindow}>
-            <ScrollView
-              style={styles.thinkingScroll}
-              nestedScrollEnabled
-              ref={(ref) => {
-                if (ref) {
-                  setTimeout(() => ref.scrollToEnd?.({ animated: false }), 50);
-                }
-              }}
-            >
-              {cleanText ? (
-                <Text style={styles.thinkingDetail}>{cleanText}</Text>
-              ) : (
-                <Text style={styles.thinkingPlaceholder}>等待 AI 响应...</Text>
-              )}
-            </ScrollView>
-          </View>
-
-          {isStalled && (
+          {isLooping && (
             <View style={styles.stallBanner}>
-              <Text style={styles.stallText}>AI 思考时间较长</Text>
+              <Text style={styles.stallText}>检测到思考死循环</Text>
               {onRetry && (
                 <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.7}>
                   <Text style={styles.retryText}>重试</Text>
@@ -86,6 +95,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.primary,
     fontWeight: '600',
+    marginTop: SPACING.md,
+  },
+  simpleThinkingText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
     marginTop: SPACING.md,
   },
   // 底部思考细节窗口

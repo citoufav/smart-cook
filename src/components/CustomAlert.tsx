@@ -1,172 +1,154 @@
-import React, { useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import {
   View,
   Text,
+  Modal,
   TouchableOpacity,
-  Animated,
   StyleSheet,
-  Dimensions,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
-import { SPACING, BORDER_RADIUS, SHADOWS } from '../constants/spacing';
+import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = Math.min(SCREEN_WIDTH - 64, 320);
-
-export interface CustomAlertButton {
+interface AlertButton {
   text: string;
-  variant?: 'primary' | 'ghost';
-  onPress: () => void;
+  style?: 'default' | 'cancel' | 'destructive';
+  onPress?: () => void;
 }
 
-interface CustomAlertProps {
-  visible: boolean;
+interface AlertConfig {
   title: string;
-  message?: string;
-  buttons: CustomAlertButton[];
-  onDismiss?: () => void;
+  message: string;
+  buttons?: AlertButton[];
 }
 
-export function CustomAlert({ visible, title, message, buttons, onDismiss }: CustomAlertProps) {
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const cardScale = useRef(new Animated.Value(0.85)).current;
-  const cardOpacity = useRef(new Animated.Value(0)).current;
+interface CustomAlertContextValue {
+  showAlert: (config: AlertConfig) => void;
+}
 
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.spring(cardScale, { toValue: 1, friction: 8, tension: 80, useNativeDriver: true }),
-        Animated.timing(cardOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(cardScale, { toValue: 0.85, duration: 150, useNativeDriver: true }),
-        Animated.timing(cardOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [visible]);
+const CustomAlertContext = createContext<CustomAlertContextValue>({
+  showAlert: () => {},
+});
 
-  if (!visible && (backdropOpacity as any)._value === 0) return null;
+export function useCustomAlert() {
+  return useContext(CustomAlertContext);
+}
+
+export function CustomAlertProvider({ children }: { children: React.ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  const [config, setConfig] = useState<AlertConfig>({ title: '', message: '' });
+
+  const showAlert = useCallback((cfg: AlertConfig) => {
+    setConfig(cfg);
+    setVisible(true);
+  }, []);
+
+  const handlePress = useCallback(
+    (btn: AlertButton) => {
+      setVisible(false);
+      btn.onPress?.();
+    },
+    [],
+  );
+
+  const buttons = config.buttons?.length
+    ? config.buttons
+    : [{ text: '确定', style: 'default' as const }];
 
   return (
-    <View style={styles.container} pointerEvents="box-none">
-      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
-        <TouchableOpacity
-          style={styles.backdropTouch}
-          activeOpacity={1}
-          onPress={onDismiss}
-        />
-      </Animated.View>
-
-      <Animated.View
-        style={[
-          styles.card,
-          {
-            opacity: cardOpacity,
-            transform: [{ scale: cardScale }],
-          },
-        ]}
-      >
-        <Text style={styles.title}>{title}</Text>
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-        <View style={styles.buttonRow}>
-          {buttons.map((btn, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={[
-                styles.button,
-                btn.variant === 'primary' && styles.buttonPrimary,
-                idx > 0 && styles.buttonGap,
-              ]}
-              onPress={btn.onPress}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.buttonText,
-                  btn.variant === 'primary' && styles.buttonTextPrimary,
-                ]}
-              >
-                {btn.text}
-              </Text>
-            </TouchableOpacity>
-          ))}
+    <CustomAlertContext.Provider value={{ showAlert }}>
+      {children}
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.card}>
+            <Text style={styles.title}>{config.title}</Text>
+            <Text style={styles.message}>{config.message}</Text>
+            <View style={styles.btnRow}>
+              {buttons.map((btn, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    styles.btn,
+                    btn.style === 'cancel' && styles.btnCancel,
+                    btn.style === 'destructive' && styles.btnDestructive,
+                  ]}
+                  onPress={() => handlePress(btn)}
+                >
+                  <Text
+                    style={[
+                      styles.btnText,
+                      btn.style === 'destructive' && styles.btnTextDestructive,
+                      btn.style === 'cancel' && styles.btnTextCancel,
+                    ]}
+                  >
+                    {btn.text}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
-      </Animated.View>
-    </View>
+      </Modal>
+    </CustomAlertContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 3000,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  backdropTouch: {
+  overlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xxl,
   },
   card: {
-    width: CARD_WIDTH,
     backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.lg,
-    ...SHADOWS.lg,
+    borderRadius: BORDER_RADIUS.xl,
+    padding: SPACING.xxl,
+    width: '100%',
+    maxWidth: 320,
   },
   title: {
-    fontSize: 17,
+    fontSize: TYPOGRAPHY.h4,
     fontWeight: '700',
     color: COLORS.textPrimary,
-    textAlign: 'center',
     marginBottom: SPACING.sm,
+    textAlign: 'center',
   },
   message: {
-    fontSize: 14,
+    fontSize: TYPOGRAPHY.body,
     color: COLORS.textSecondary,
+    lineHeight: 22,
     textAlign: 'center',
-    lineHeight: 20,
     marginBottom: SPACING.lg,
   },
-  buttonRow: {
+  btnRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: SPACING.sm,
+    gap: SPACING.md,
   },
-  button: {
+  btn: {
     flex: 1,
-    paddingVertical: SPACING.md,
+    paddingVertical: 10,
     borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.primary,
     alignItems: 'center',
+  },
+  btnCancel: {
     backgroundColor: COLORS.neutralLight,
   },
-  buttonPrimary: {
-    backgroundColor: COLORS.primary,
+  btnDestructive: {
+    backgroundColor: '#FF4444',
   },
-  buttonGap: {
-    marginLeft: 0,
-  },
-  buttonText: {
-    fontSize: 15,
+  btnText: {
+    fontSize: TYPOGRAPHY.bodySmall,
     fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  buttonTextPrimary: {
     color: COLORS.textWhite,
+  },
+  btnTextDestructive: {
+    color: COLORS.textWhite,
+  },
+  btnTextCancel: {
+    color: COLORS.textSecondary,
   },
 });

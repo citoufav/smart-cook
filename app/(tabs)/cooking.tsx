@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   TextInput,
-  Alert,
   Modal,
   StyleSheet,
   TouchableOpacity,
@@ -21,21 +20,27 @@ import { PEOPLE_OPTIONS, MEAL_TYPE_OPTIONS, CALORIE_OPTIONS } from '../../src/co
 import { Button } from '../../src/components/Button';
 import { SelectableChip } from '../../src/components/SelectableChip';
 import { LoadingOverlay } from '../../src/components/LoadingOverlay';
-import { RequirementInput, NutritionalData, InventoryCheckResult, CookingStage } from '../../src/types';
+import { useCustomAlert } from '../../src/components/CustomAlert';
+import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
+import HeaderBar from '../../src/components/HeaderBar';
+import { NutritionalData, InventoryCheckResult, CookingStage } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
+import { getRecentMeals, addMeals } from '../../src/services/dietMemoryService';
 import { menuHistoryService } from '../../src/services/menuHistoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
 import { SSEStreamController } from '../../src/utils/sseStream';
 import { generateId } from '../../src/utils/uuid';
 
-const STALL_TIMEOUT_MS = 20_000;
+// 思考链死循环检测：同一段内容（5-80字）连续重复5次则判定死循环
+const LOOP_REPEAT_COUNT = 5;
+const LOOP_MIN_LEN = 5;
+const LOOP_MAX_LEN = 80;
+const LOOP_WINDOW = 600; // 检测窗口：最近600字
 
 const STAGE_ROUTES: Record<CookingStage, string> = {
   requirement: '/(tabs)/cooking',
   menu: '/cooking/stage1-menu',
-  weighing: '/cooking/stage2-weighing',
   prep: '/cooking/stage3-prep',
-  bowl: '/cooking/stage4-bowl',
   cooking: '/cooking/stage5-cooking',
   inventoryUpdate: '/cooking/inventory-update',
   completed: '/(tabs)/cooking',
@@ -54,12 +59,17 @@ export default function CookingEntryScreen() {
   const [customInputText, setCustomInputText] = useState('');
   const [screenState, setScreenState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [thinkingText, setThinkingText] = useState('');
-  const [isStalled, setIsStalled] = useState(false);
-  const [progressRecords, setProgressRecords] = useState<CookingProgressRecord[]>([]);
+  const [isLooping, setIsLooping] = useState(false);
+  const [activeRecords, setActiveRecords] = useState<CookingProgressRecord[]>([]);
+  const [completedRecords, setCompletedRecords] = useState<CookingProgressRecord[]>([]);
+  const [recentMeals, setRecentMeals] = useState<string[]>([]);
+  const { showAlert } = useCustomAlert();
+  const { openSettings } = useSettingsDrawer();
 
   const streamRef = useRef<SSEStreamController | null>(null);
-  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingResultRef = useRef<any>(null);
+  const reasoningBufRef = useRef('');
+  const loopAbortedRef = useRef(false);
 
   const { state: invState } = useInventory();
   const { startSession, setStage1Result, restoreSession } = useCooking();
@@ -71,78 +81,62 @@ export default function CookingEntryScreen() {
   useFocusEffect(
     useCallback(() => {
       hideBall();
-      // 加载进行中的做菜记录
-      cookingProgressService.getAllRecords().then(setProgressRecords).catch(() => {});
+      // 加载进行中的做菜记录（排除已完成的）
+      cookingProgressService.getActiveRecords().then(setActiveRecords).catch(() => {});
+      // 加载已完成的记录
+      cookingProgressService.getAllRecords().then((all) => {
+        setCompletedRecords(all.filter((r) => r.isCompleted));
+      }).catch(() => {});
+      // 加载饮食记忆
+      getRecentMeals(3).then(setRecentMeals).catch(() => {});
     }, [hideBall]),
   );
 
-  // 恢复做菜进度
-  const handleResume = useCallback((record: CookingProgressRecord) => {
+  // 继续做菜（恢复进行中的会话）
+  const handleContinueRecord = useCallback((record: CookingProgressRecord) => {
     restoreSession(record.session);
-    // 恢复营养数据
-    const dishes = record.session?.stages?.menu?.menuProposal?.dishes;
-    if (dishes && dishes.length > 0) {
-      const nutritionByDish: Record<string, NutritionalData> = {};
-      for (const dish of dishes) {
-        if (dish.estimatedNutrition) {
-          nutritionByDish[dish.name] = { ...dish.estimatedNutrition, source: 'estimated' as const };
-        }
-      }
-      if (Object.keys(nutritionByDish).length > 0) {
-        const pc = record.session?.stages?.requirement?.personCount ?? 1;
-        setEstimatedNutrition(nutritionByDish, pc);
-      }
-    }
     setTimeout(() => {
-      router.push('/cooking/pager' as any);
+      router.push('/cooking/pager');
     }, 50);
-  }, [restoreSession, setEstimatedNutrition]);
+  }, [restoreSession]);
 
-  // 查看记录（只读模式）
+  // 查看已完成的记录（只读模式）
   const handleViewRecord = useCallback((record: CookingProgressRecord) => {
     restoreSession(record.session);
-    // 恢复营养数据
-    const dishes = record.session?.stages?.menu?.menuProposal?.dishes;
-    if (dishes && dishes.length > 0) {
-      const nutritionByDish: Record<string, NutritionalData> = {};
-      for (const dish of dishes) {
-        if (dish.estimatedNutrition) {
-          nutritionByDish[dish.name] = { ...dish.estimatedNutrition, source: 'estimated' as const };
-        }
-      }
-      if (Object.keys(nutritionByDish).length > 0) {
-        const pc = record.session?.stages?.requirement?.personCount ?? 1;
-        setEstimatedNutrition(nutritionByDish, pc);
-      }
-    }
     setTimeout(() => {
-      router.push(`/cooking/pager?historyMode=1&initialStage=${record.currentStage}` as any);
+      router.push('/cooking/pager?historyMode=1' as any);
     }, 50);
-  }, [restoreSession, setEstimatedNutrition]);
+  }, [restoreSession]);
 
   // 删除进度记录
   const handleDeleteRecord = useCallback((record: CookingProgressRecord) => {
-    Alert.alert('删除记录', `确定删除「${record.name}」吗？`, [
+    showAlert({ title: '删除记录', message: `确定删除「${record.name}」吗？`, buttons: [
       { text: '取消', style: 'cancel' },
       {
         text: '删除',
         style: 'destructive',
         onPress: () => {
           cookingProgressService.remove(record.id).then(() => {
-            setProgressRecords((prev) => prev.filter((r) => r.id !== record.id));
+            setActiveRecords((prev) => prev.filter((r) => r.id !== record.id));
+            setCompletedRecords((prev) => prev.filter((r) => r.id !== record.id));
           }).catch(() => {});
         },
       },
-    ]);
-  }, []);
+    ] });
+  }, [showAlert]);
 
   useEffect(() => {
     (async () => {
       const defaults = await loadLastCookingDefaults();
       if (defaults) {
-        setPeople(defaults.personCount);
+        console.log('[COOKING_RESTORE]', { people: defaults.people, personCount: defaults.personCount, calorieTarget: defaults.calorieTarget, hasCustom: defaults.customPeople !== undefined && defaults.customPeople !== null });
+        // 人员：优先用选择器值（支持 -1=自定义）
+        setPeople(defaults.people ?? defaults.personCount ?? 2);
         setMealType(defaults.mealType);
-        if (defaults.caloriePreference !== undefined) {
+        // 热量：优先用选择器值（支持 -1=自定义）
+        if (defaults.calorieTarget !== undefined) {
+          setCalorieTarget(defaults.calorieTarget);
+        } else if (defaults.caloriePreference !== undefined) {
           setCalorieTarget(defaults.caloriePreference);
         }
         if (defaults.customPeople) setCustomPeople(defaults.customPeople);
@@ -151,6 +145,21 @@ export default function CookingEntryScreen() {
       }
     })();
   }, []);
+
+  // 动态保存：人员/餐类/热量变更时自动持久化
+  useEffect(() => {
+    console.log('[CUSTOM_SAVE] people:', people, 'customPeople:', customPeople, 'mealType:', mealType, 'customMealType:', customMealType, 'calorieTarget:', calorieTarget, 'customCalorie:', customCalorie);
+    saveLastCookingDefaults({
+      people,           // 预设选择器值（-1=自定义，1-9=预设人数）
+      personCount: effectivePeople,
+      mealType,
+      calorieTarget,    // 热量选择器值（-1=自定义）
+      caloriePreference: effectiveCalorie,
+      customPeople,
+      customMealType,
+      customCalorie,
+    });
+  }, [people, mealType, calorieTarget, customPeople, customMealType, customCalorie]);
 
   const checkInventory = useCallback((): InventoryCheckResult => {
     const count = invState.ingredients.length;
@@ -162,19 +171,26 @@ export default function CookingEntryScreen() {
   }, [invState.ingredients]);
 
   const clearStallTimer = useCallback(() => {
-    if (stallTimerRef.current) {
-      clearTimeout(stallTimerRef.current);
-      stallTimerRef.current = null;
-    }
+    // 不再使用定时器，保留空函数兼容现有调用
   }, []);
 
   const resetStallTimer = useCallback(() => {
-    clearStallTimer();
-    setIsStalled(false);
-    stallTimerRef.current = setTimeout(() => {
-      setIsStalled(true);
-    }, STALL_TIMEOUT_MS);
-  }, [clearStallTimer]);
+    // 不再使用定时器，改为循环检测
+  }, []);
+
+  /**
+   * 检测思考链是否陷入死循环
+   * 在最近 LOOP_WINDOW 字中，查找连续重复 LOOP_REPEAT_COUNT 次的片段
+   * @returns 检测到的重复片段，null 表示无循环
+   */
+  const detectLoop = useCallback((reasoningText: string): string | null => {
+    const buf = reasoningText.slice(-LOOP_WINDOW);
+    if (buf.length < LOOP_MIN_LEN * LOOP_REPEAT_COUNT) return null;
+    // 用正则：捕获任意 LOOP_MIN_LEN-LOOP_MAX_LEN 字符，检查是否连续重复 LOOP_REPEAT_COUNT 次
+    const re = new RegExp(`(.{${LOOP_MIN_LEN},${LOOP_MAX_LEN}}?)\\1{${LOOP_REPEAT_COUNT - 1},}`, 's');
+    const m = buf.match(re);
+    return m ? m[1] : null;
+  }, []);
 
   const effectivePeople = people === -1 ? (customPeople || 2) : people;
   const effectiveMealType = mealType === 'custom' ? (customMealType || '自定义') : mealType;
@@ -204,6 +220,10 @@ export default function CookingEntryScreen() {
       },
       { calories: 0, protein: 0, fat: 0, carbs: 0 },
     );
+
+    // 构建 ingredientTags（每道菜的食材名+预估用量，用于标签颜色）
+    const ingredientTags: any[] = [];
+
     setStage1Result({
       menuProposal: {
         dishes: result.dishes || [],
@@ -219,6 +239,9 @@ export default function CookingEntryScreen() {
         cookingOrderDescription: result.cookingOrderDescription || '',
         flavorDescription: result.flavorDescription || '',
         summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
+        prepSteps: result.prepSteps || [],
+        cookingSteps: result.cookingSteps || [],
+        preciseNutrition: result.preciseNutrition || [],
       },
       requirementInput: {
         personCount: effectivePeople,
@@ -245,16 +268,19 @@ export default function CookingEntryScreen() {
     }
 
     saveLastCookingDefaults({
+      people,
       personCount: effectivePeople,
       mealType,
+      calorieTarget,
       caloriePreference: effectiveCalorie,
       customPeople,
       customMealType,
       customCalorie,
     });
 
-    // 自动保存到历史记录
+    // 保存菜单历史
     const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
+    console.log('[MENU_SAVE] prepSteps:', result.prepSteps?.length, 'cookingSteps:', result.cookingSteps?.length, 'preciseNutrition:', result.preciseNutrition?.length);
     menuHistoryService.add({
       name: `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`,
       menuProposal: {
@@ -264,6 +290,9 @@ export default function CookingEntryScreen() {
         cookingOrderDescription: result.cookingOrderDescription || '',
         flavorDescription: result.flavorDescription || '',
         summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
+        prepSteps: result.prepSteps || [],
+        cookingSteps: result.cookingSteps || [],
+        preciseNutrition: result.preciseNutrition || [],
       },
       reasoningContent: result.reasoningContent || '',
       requirement: {
@@ -272,7 +301,8 @@ export default function CookingEntryScreen() {
         caloriePreference: effectiveCalorie,
         customRequirement: customRequest,
       },
-    }).catch(() => {}); // 静默失败，不影响主流程
+      sessionId,
+    }).catch((e: any) => console.log('[MENU_HIST] save error:', e?.message || e));
 
     // 自动保存做菜进度
     cookingProgressService.save({
@@ -295,9 +325,17 @@ export default function CookingEntryScreen() {
             cookingOrderDescription: result.cookingOrderDescription || '',
             flavorDescription: result.flavorDescription || '',
             summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
+            prepSteps: result.prepSteps || [],
+            cookingSteps: result.cookingSteps || [],
+            preciseNutrition: result.preciseNutrition || [],
           },
-          requirementInput: { personCount: people, mealType: mealType as any, caloriePreference: calorieTarget, customRequirement: customRequest },
+          requirementInput: { personCount: effectivePeople, mealType: mealType as any, caloriePreference: effectiveCalorie, customRequirement: customRequest },
           reasoningContent: result.reasoningContent || '',
+        },
+        generatedPlan: {
+          prepSteps: result.prepSteps || [],
+          cookingSteps: result.cookingSteps || [],
+          preciseNutrition: result.preciseNutrition || [],
         },
       },
       createdAt: new Date().toISOString(),
@@ -306,6 +344,12 @@ export default function CookingEntryScreen() {
       completedStageIndex: -1,
     }, `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`).catch(() => {});
 
+    // 保存到饮食记忆
+    const mealNames = (result.dishes || []).map((d: any) => d.name).filter(Boolean);
+    if (mealNames.length > 0) {
+      addMeals(mealNames).then(() => getRecentMeals(3).then(setRecentMeals)).catch(() => {});
+    }
+
     setScreenState('idle');
     router.push('/cooking/pager');
   }, [effectivePeople, mealType, effectiveCalorie, customRequest, customPeople, customMealType, customCalorie, startSession, setStage1Result, setEstimatedNutrition, saveLastCookingDefaults, clearStallTimer]);
@@ -313,7 +357,9 @@ export default function CookingEntryScreen() {
   const submitToAI = useCallback(() => {
     setScreenState('loading');
     setThinkingText('');
-    setIsStalled(false);
+    setIsLooping(false);
+    reasoningBufRef.current = '';
+    loopAbortedRef.current = false;
     pendingResultRef.current = null;
 
     const stream = callAIStage1Stream(
@@ -334,29 +380,50 @@ export default function CookingEntryScreen() {
       },
       settingsState.preferences.dietaryRestrictions,
       settingsState.preferences,
+      recentMeals,
       {
         onReasoning: (text: string) => {
           setThinkingText((prev) => prev + text);
-          resetStallTimer();
+          reasoningBufRef.current += text;
+          const loopFragment = detectLoop(reasoningBufRef.current);
+          if (loopFragment) {
+            console.log('[LOOP_DETECT] 思考链死循环，重复片段:', JSON.stringify(loopFragment));
+            loopAbortedRef.current = true;
+            setIsLooping(true);
+            streamRef.current?.abort();
+          }
         },
         onContent: (_text: string) => {
-          resetStallTimer();
+          // content 到了说明 AI 在正常输出 JSON，不需要特殊处理
         },
         onData: () => {
-          resetStallTimer();
+          // 低层接收原始数据，维持兼容
         },
         onDone: (result: any) => {
+          if (loopAbortedRef.current) {
+            clearStallTimer();
+            return; // 已由 onReasoning 触发 abort，不重复处理
+          }
           pendingResultRef.current = result;
           clearStallTimer();
           handleStreamDone(result);
         },
         onError: (error: Error) => {
+          if (loopAbortedRef.current) {
+            // 死循环导致的中止，用专用提示
+            setScreenState('error');
+            showAlert({ title: '思考过程异常', message: 'AI 陷入重复思考，请重试或关闭思考模式。', buttons: [
+              { text: '取消', onPress: () => setScreenState('idle') },
+              { text: '重试', onPress: () => submitToAI() },
+            ] });
+            return;
+          }
           clearStallTimer();
           setScreenState('error');
-          Alert.alert('AI 菜单生成失败', error.message || '请检查网络和 API 配置后重试。', [
+          showAlert({ title: 'AI 菜单生成失败', message: error.message || '请检查网络和 API 配置后重试。', buttons: [
             { text: '取消', onPress: () => setScreenState('idle') },
             { text: '重试', onPress: () => submitToAI() },
-          ]);
+          ] });
         },
       },
     );
@@ -364,7 +431,7 @@ export default function CookingEntryScreen() {
     streamRef.current = stream;
     // 启动首个卡顿检测
     resetStallTimer();
-  }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, resetStallTimer, clearStallTimer, handleStreamDone]);
+  }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, resetStallTimer, clearStallTimer, handleStreamDone, showAlert]);
 
   const handleRetry = useCallback(() => {
     // 取消当前请求
@@ -381,22 +448,22 @@ export default function CookingEntryScreen() {
     const check = checkInventory();
 
     if (check.isEmpty) {
-      Alert.alert('库存暂无食材', '请先添加食材后再开始做菜。', [
+      showAlert({ title: '库存暂无食材', message: '请先添加食材后再开始做菜。', buttons: [
         { text: '取消', style: 'cancel' },
         { text: '去添加食材', onPress: () => router.replace('/(tabs)') },
-      ]);
+      ] });
       return;
     }
 
     if (check.isLowInventory) {
-      Alert.alert(
-        '库存紧张',
-        `当前仅有 ${check.ingredientCount} 种食材，AI 将尽力搭配。建议添加更多食材以获得更好的菜单。`,
-        [
+      showAlert({
+        title: '库存紧张',
+        message: `当前仅有 ${check.ingredientCount} 种食材，AI 将尽力搭配。建议添加更多食材以获得更好的菜单。`,
+        buttons: [
           { text: '去添加食材', onPress: () => router.replace('/(tabs)') },
           { text: '继续', onPress: () => submitToAI() },
         ],
-      );
+      });
       return;
     }
 
@@ -411,18 +478,20 @@ export default function CookingEntryScreen() {
       case 'people': {
         const num = parseInt(val, 10);
         if (!val || isNaN(num) || num <= 0) {
-          Alert.alert('输入错误', '请输入有效的正整数');
+          showAlert({ title: '输入错误', message: '请输入有效的正整数' });
           return;
         }
+        console.log('[CUSTOM_SET] people:', num, '→ setPeople(-1)');
         setCustomPeople(num);
         setPeople(-1);
         break;
       }
       case 'meal': {
         if (!val) {
-          Alert.alert('输入错误', '请输入餐类描述');
+          showAlert({ title: '输入错误', message: '请输入餐类描述' });
           return;
         }
+        console.log('[CUSTOM_SET] meal:', JSON.stringify(val), '→ setMealType(custom)');
         setCustomMealType(val);
         setMealType('custom');
         break;
@@ -430,9 +499,10 @@ export default function CookingEntryScreen() {
       case 'calorie': {
         const num = parseInt(val, 10);
         if (!val || isNaN(num) || num <= 0) {
-          Alert.alert('输入错误', '请输入有效的卡路里数');
+          showAlert({ title: '输入错误', message: '请输入有效的卡路里数' });
           return;
         }
+        console.log('[CUSTOM_SET] calorie:', num, '→ setCalorieTarget(-1)');
         setCustomCalorie(num);
         setCalorieTarget(-1);
         break;
@@ -440,10 +510,11 @@ export default function CookingEntryScreen() {
     }
     setCustomModal(null);
     setCustomInputText('');
-  }, [customModal, customInputText]);
+  }, [customModal, customInputText, showAlert]);
 
   // 自定义按钮点击
   const handleCustomPress = useCallback((type: 'people' | 'meal' | 'calorie') => {
+    console.log('[CUSTOM_OPEN] type:', type);
     let currentValue = '';
     switch (type) {
       case 'people': currentValue = customPeople !== null ? String(customPeople) : ''; break;
@@ -456,9 +527,17 @@ export default function CookingEntryScreen() {
 
   return (
     <View style={styles.container}>
+      <HeaderBar title="随煮" onOpenDrawer={openSettings} />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>今天吃什么？</Text>
         <Text style={styles.subtitle}>告诉 AI 你的需求，让它为你搭配菜单</Text>
+
+        {recentMeals.length > 0 && (
+          <View style={styles.recentMealsRow}>
+            <Text style={styles.recentMealsLabel}>最近吃过：</Text>
+            <Text style={styles.recentMealsText}>{recentMeals.join('、')}</Text>
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>用餐人数</Text>
         <View style={styles.chipRow}>
@@ -473,6 +552,7 @@ export default function CookingEntryScreen() {
                 } else {
                   setPeople(opt.value as number);
                   setCustomPeople(null);
+                  console.log('[CUSTOM_CLEAR] people → preset:', opt.value);
                 }
               }}
             />
@@ -492,6 +572,7 @@ export default function CookingEntryScreen() {
                 } else {
                   setMealType(opt.value as string);
                   setCustomMealType('');
+                  console.log('[CUSTOM_CLEAR] meal → preset:', opt.value);
                 }
               }}
             />
@@ -511,6 +592,7 @@ export default function CookingEntryScreen() {
                 } else {
                   setCalorieTarget(opt.value);
                   setCustomCalorie(null);
+                  console.log('[CUSTOM_CLEAR] calorie → preset:', opt.value);
                 }
               }}
             />
@@ -530,12 +612,12 @@ export default function CookingEntryScreen() {
           accessibilityLabel="个性需求输入框"
         />
 
-        {/* 历史记录 */}
-        <Text style={styles.sectionTitle}>历史记录</Text>
-        {progressRecords.length === 0 ? (
+        {/* 历史记录 — 进行中 */}
+        <Text style={styles.sectionTitle}>进行中的菜单</Text>
+        {activeRecords.length === 0 ? (
           <Text style={styles.emptyRecords}>暂无进行中的菜单</Text>
         ) : (
-          progressRecords.map((record) => (
+          activeRecords.map((record) => (
             <View key={record.id} style={styles.recordCard}>
               <View style={styles.recordInfo}>
                 <Text style={styles.recordName} numberOfLines={1}>{record.name}</Text>
@@ -547,23 +629,13 @@ export default function CookingEntryScreen() {
                 </View>
               </View>
               <View style={styles.recordActions}>
-                {record.session.completedStageIndex >= 4 ? (
-                  <TouchableOpacity
-                    style={styles.viewRecordBtn}
-                    onPress={() => handleViewRecord(record)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.viewRecordBtnText}>查看</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.resumeBtn}
-                    onPress={() => handleResume(record)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.resumeBtnText}>继续</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={styles.continueRecordBtn}
+                  onPress={() => handleContinueRecord(record)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.continueRecordBtnText}>继续</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.deleteRecordBtn}
                   onPress={() => handleDeleteRecord(record)}
@@ -574,6 +646,42 @@ export default function CookingEntryScreen() {
               </View>
             </View>
           ))
+        )}
+
+        {/* 历史记录 — 已完成 */}
+        {completedRecords.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { marginTop: SPACING.lg }]}>已完成的菜单</Text>
+            {completedRecords.map((record) => (
+              <View key={record.id} style={[styles.recordCard, styles.recordCardCompleted]}>
+                <View style={styles.recordInfo}>
+                  <Text style={styles.recordName} numberOfLines={1}>{record.name}</Text>
+                  <View style={styles.recordMeta}>
+                    <Text style={styles.recordStageCompleted}>已完成</Text>
+                    <Text style={styles.recordDate}>
+                      {new Date(record.updatedAt).toLocaleDateString('zh-CN')}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.recordActions}>
+                  <TouchableOpacity
+                    style={styles.viewRecordBtn}
+                    onPress={() => handleViewRecord(record)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.viewRecordBtnText}>查看</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteRecordBtn}
+                    onPress={() => handleDeleteRecord(record)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.deleteRecordBtnText}>删除</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </>
         )}
       </ScrollView>
 
@@ -591,8 +699,9 @@ export default function CookingEntryScreen() {
       <LoadingOverlay
         visible={screenState === 'loading'}
         thinkingText={thinkingText}
-        isStalled={isStalled}
+        isLooping={isLooping}
         onRetry={handleRetry}
+        showThinking={settingsState.preferences.thinkingEnabled}
       />
 
       {/* 自定义输入弹窗 */}
@@ -638,9 +747,12 @@ export default function CookingEntryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  scrollContent: { padding: SPACING.lg, paddingTop: 60, paddingBottom: SPACING.xxl },
+  scrollContent: { padding: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.xxl },
   title: { fontSize: TYPOGRAPHY.h1, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.xs },
-  subtitle: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, marginBottom: SPACING.xxl },
+  subtitle: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, marginBottom: SPACING.xs },
+  recentMealsRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF3E0', borderRadius: BORDER_RADIUS.md, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, marginBottom: SPACING.lg },
+  recentMealsLabel: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary },
+  recentMealsText: { fontSize: TYPOGRAPHY.caption, color: COLORS.primary, fontWeight: '500', flex: 1 },
   sectionTitle: { fontSize: TYPOGRAPHY.body, fontWeight: '600', color: COLORS.textPrimary, marginBottom: SPACING.md, marginTop: SPACING.lg },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   customInput: { backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: BORDER_RADIUS.md, padding: SPACING.md, fontSize: TYPOGRAPHY.body, color: COLORS.textPrimary, minHeight: 100, ...SHADOWS.sm },
@@ -670,13 +782,23 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.sm,
   },
   viewRecordBtnText: { fontSize: 13, color: COLORS.primary, fontWeight: '500' },
-  resumeBtn: {
+  continueRecordBtn: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: BORDER_RADIUS.sm,
   },
-  resumeBtnText: { fontSize: 13, color: '#fff', fontWeight: '600' },
+  continueRecordBtnText: { fontSize: 13, color: COLORS.textWhite, fontWeight: '600' },
+  recordCardCompleted: { opacity: 0.7 },
+  recordStageCompleted: {
+    fontSize: 11,
+    color: '#2D9F4E',
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
   deleteRecordBtn: {
     borderWidth: 1,
     borderColor: COLORS.border,

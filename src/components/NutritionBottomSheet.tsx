@@ -15,20 +15,27 @@ import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { getDailyPercent, getPerPersonNutrition } from '../utils/nutrition';
 import { DAILY_RECOMMENDED } from '../constants/cooking';
+import { logger } from '../utils/logger';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_MAX_HEIGHT = 450;
+
+const log = logger('COMP:SHEET');
 
 export function NutritionBottomSheet() {
   const { state, dispatch } = useNutrition();
   const translateY = useRef(new Animated.Value(SHEET_MAX_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const [activeTabIndex, setActiveTabIndex] = useState(-1); // -1 = 总计
+  const [activeTabIndex, setActiveTabIndex] = useState(-1);
+  const [mounted, setMounted] = useState(false);
 
   const close = () => dispatch({ type: 'CLOSE_SHEET' });
 
   useEffect(() => {
     if (state.isDetailOpen) {
+      setMounted(true);
+      setActiveTabIndex(-1); // 每次打开默认选中总计
+      log.info('OPEN', { isDetailOpen: true });
       Animated.parallel([
         Animated.spring(translateY, { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
@@ -37,31 +44,40 @@ export function NutritionBottomSheet() {
       Animated.parallel([
         Animated.timing(translateY, { toValue: SHEET_MAX_HEIGHT, duration: 250, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
-      ]).start();
+      ]).start(() => {
+        // 动画完成后卸载组件，释放触摸事件
+        setMounted(false);
+      });
     }
   }, [state.isDetailOpen]);
 
-  if (!state.isDetailOpen && translateY._value === SHEET_MAX_HEIGHT) return null;
+  if (!mounted && !state.isDetailOpen) return null;
 
   const activeData = activeTabIndex === -1
     ? getPerPersonNutrition(state.totalNutrition, state.personCount)
     : state.nutritionByDish[state.dishNames[activeTabIndex]];
 
-  console.log('[NUTRITION:SHEET] 渲染面板 | activeTab:', activeTabIndex, '| activeData:', JSON.stringify(activeData), '| personCount:', state.personCount);
+  // 总计tab同时显示总营养（用于对比各菜品）
+  const totalData = activeTabIndex === -1 ? state.totalNutrition : null;
 
-  const nutritionRows = [
-    { label: '热量', value: activeData?.calories || 0, unit: '大卡', dailyValue: DAILY_RECOMMENDED.calories, color: '#FF6B35' },
-    { label: '蛋白质', value: activeData?.protein || 0, unit: 'g', dailyValue: DAILY_RECOMMENDED.protein, color: '#2196F3' },
-    { label: '脂肪', value: activeData?.fat || 0, unit: 'g', dailyValue: DAILY_RECOMMENDED.fat, color: '#FFC107' },
-    { label: '碳水', value: activeData?.carbs || 0, unit: 'g', dailyValue: DAILY_RECOMMENDED.carbs, color: '#4CAF50' },
+  log.info('SHEET_RENDER', { activeTab: activeTabIndex, personCount: state.personCount });
+
+  const makeRows = (data: typeof activeData, labelPrefix?: string) => [
+    { label: `${labelPrefix || ''}热量`, value: data?.calories || 0, unit: '大卡', dailyValue: DAILY_RECOMMENDED.calories, color: '#FF6B35' },
+    { label: `${labelPrefix || ''}蛋白质`, value: data?.protein || 0, unit: 'g', dailyValue: DAILY_RECOMMENDED.protein, color: '#2196F3' },
+    { label: `${labelPrefix || ''}脂肪`, value: data?.fat || 0, unit: 'g', dailyValue: DAILY_RECOMMENDED.fat, color: '#FFC107' },
+    { label: `${labelPrefix || ''}碳水`, value: data?.carbs || 0, unit: 'g', dailyValue: DAILY_RECOMMENDED.carbs, color: '#4CAF50' },
   ];
+
+  const nutritionRows = makeRows(activeData);
+  const totalRows = totalData ? makeRows(totalData) : null;
 
   return (
     <View style={styles.container}>
       {/* 遮罩层 — 使用 Pressable 确保可点击 */}
       <Animated.View
         style={[styles.backdrop, { opacity: backdropOpacity }]}
-        pointerEvents="auto"
+        pointerEvents={state.isDetailOpen ? 'auto' : 'none'}
       >
         <Pressable
           onPress={close}
@@ -86,7 +102,10 @@ export function NutritionBottomSheet() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
           <TouchableOpacity
             style={[styles.tab, activeTabIndex === -1 && styles.tabActive]}
-            onPress={() => setActiveTabIndex(-1)}
+            onPress={() => {
+              log.debug('TAB_CHANGE', { tabIndex: -1 });
+              setActiveTabIndex(-1);
+            }}
           >
             <Text style={[styles.tabText, activeTabIndex === -1 && styles.tabTextActive]}>总计</Text>
           </TouchableOpacity>
@@ -94,16 +113,66 @@ export function NutritionBottomSheet() {
             <TouchableOpacity
               key={name}
               style={[styles.tab, activeTabIndex === idx && styles.tabActive]}
-              onPress={() => setActiveTabIndex(idx)}
+              onPress={() => {
+                log.debug('TAB_CHANGE', { tabIndex: idx });
+                setActiveTabIndex(idx);
+              }}
             >
               <Text style={[styles.tabText, activeTabIndex === idx && styles.tabTextActive]}>{name}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        {/* 营养行 */}
+        <ScrollView style={styles.bodyScroll} showsVerticalScrollIndicator={false}>
+        {/* 总计tab：总营养 + 分隔线 + 人均 */}
+        {totalRows && (
+          <>
+            <Text style={styles.sectionTitle}>
+              总营养 ({state.personCount}人份)
+            </Text>
+            {totalRows.map((row) => {
+              const percent = getDailyPercent(row.value, row.dailyValue * state.personCount);
+              return (
+                <View key={'total-' + row.label} style={styles.nutritionRow}>
+                  <View style={styles.nutritionHeader}>
+                    <Text style={styles.nutritionLabel}>{row.label}</Text>
+                    <Text style={styles.nutritionValue}>
+                      {Math.round(row.value)} {row.unit}
+                    </Text>
+                  </View>
+                  <View style={styles.progressBarBg}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${Math.min(percent, 100)}%`,
+                          backgroundColor: percent > 100 ? '#E74C3C' : row.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.percentText}>{percent}% 日推荐</Text>
+                </View>
+              );
+            })}
+            <View style={styles.divider} />
+            <Text style={styles.sectionTitle}>
+              人均 (÷{state.personCount})
+            </Text>
+          </>
+        )}
+
+        {/* 菜品tab：菜品总营养（仅显示在该菜标签下） */}
+        {activeTabIndex >= 0 && (
+          <Text style={styles.sectionTitle}>
+            菜品总营养
+          </Text>
+        )}
+
+        {/* 当前tab的营养行（总计=人均，菜品=菜品总营养） */}
         {nutritionRows.map((row) => {
-          const percent = getDailyPercent(row.value, row.dailyValue);
+          const displayValue = activeTabIndex === -1 ? row.value : row.value / state.personCount;
+          const percent = getDailyPercent(displayValue, row.dailyValue);
           return (
             <View key={row.label} style={styles.nutritionRow}>
               <View style={styles.nutritionHeader}>
@@ -128,9 +197,46 @@ export function NutritionBottomSheet() {
           );
         })}
 
+        {/* 菜品tab：在总营养后追加显示人均 */}
+        {activeTabIndex >= 0 && (
+          <>
+            <View style={styles.divider} />
+            <Text style={styles.sectionTitle}>
+              人均 (÷{state.personCount || 1})
+            </Text>
+            {nutritionRows.map((row) => {
+              const perValue = state.personCount > 0 ? row.value / state.personCount : row.value;
+              const percent = getDailyPercent(perValue, row.dailyValue);
+              return (
+                <View key={'per-' + row.label} style={styles.nutritionRow}>
+                  <View style={styles.nutritionHeader}>
+                    <Text style={styles.nutritionLabel}>{row.label}</Text>
+                    <Text style={styles.nutritionValue}>
+                      {Math.round(perValue)} {row.unit}
+                    </Text>
+                  </View>
+                  <View style={styles.progressBarBg}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${Math.min(percent, 100)}%`,
+                          backgroundColor: percent > 100 ? '#E74C3C' : row.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.percentText}>{percent}% 日推荐</Text>
+                </View>
+              );
+            })}
+          </>
+        )}
+
         <Text style={styles.footer}>
-          {state.accuracy === 'estimated' ? '基于 AI 估算' : '基于实际称量估算'}
-        </Text>
+                  {state.accuracy === 'estimated' ? '基于 AI 估算' : '基于实际称量估算'}
+                </Text>
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -179,6 +285,7 @@ const styles = StyleSheet.create({
   title: { fontSize: TYPOGRAPHY.h3, fontWeight: '700', color: COLORS.textPrimary },
   closeBtn: { fontSize: 22, color: COLORS.textSecondary, padding: 4 },
   tabScroll: { marginBottom: SPACING.md, maxHeight: 40 },
+  bodyScroll: { flex: 1 },
   tab: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, marginRight: SPACING.sm, borderRadius: BORDER_RADIUS.xl, backgroundColor: COLORS.neutralLight },
   tabActive: { backgroundColor: COLORS.primary },
   tabText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary },
@@ -190,5 +297,7 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 6, backgroundColor: COLORS.neutralLight, borderRadius: 3, overflow: 'hidden' },
   progressBarFill: { height: '100%', borderRadius: 3 },
   percentText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginTop: 2, textAlign: 'right' },
+  sectionTitle: { fontSize: TYPOGRAPHY.caption, fontWeight: '600', color: COLORS.textSecondary, marginBottom: SPACING.sm },
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
   footer: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, textAlign: 'center', marginTop: SPACING.md },
 });

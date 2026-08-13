@@ -1,11 +1,9 @@
-// 做菜阶段合法转换
+// 做菜阶段合法转换（3阶段模型：menu → prep → cooking）
 export const VALID_TRANSITIONS: Record<string, string[]> = {
   requirement: ['menu', 'cancelled'],
-  menu: ['weighing', 'requirement', 'cancelled'],
-  weighing: ['prep', 'menu', 'cancelled'],
-  prep: ['bowl', 'weighing', 'cancelled'],
-  bowl: ['cooking', 'prep', 'cancelled'],
-  cooking: ['inventoryUpdate', 'bowl', 'cancelled'],
+  menu: ['prep', 'requirement', 'cancelled'],
+  prep: ['cooking', 'menu', 'cancelled'],
+  cooking: ['inventoryUpdate', 'prep', 'cancelled'],
   inventoryUpdate: ['completed', 'cooking', 'cancelled'],
   completed: [],
   cancelled: [],

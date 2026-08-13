@@ -2,6 +2,9 @@ import { storageService } from './storageService';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { Seasoning, SeasoningCreateInput, SeasoningStatus } from '../types';
 import { generateId } from '../utils/uuid';
+import { logger } from '../utils/logger';
+
+const log = logger('SVC:SEASONING');
 
 function sortByCreatedAt(items: Seasoning[]): Seasoning[] {
   return [...items].sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime());
@@ -10,7 +13,11 @@ function sortByCreatedAt(items: Seasoning[]): Seasoning[] {
 export const seasoningService = {
   async getAll(): Promise<Seasoning[]> {
     const result = await storageService.get<Seasoning[]>(STORAGE_KEYS.INVENTORY_SEASONINGS);
-    if (result.success && result.data) return sortByCreatedAt(result.data);
+    if (result.success && result.data) {
+      const sorted = sortByCreatedAt(result.data);
+      log.debug('getAll seasonings', { count: sorted.length });
+      return sorted;
+    }
     return [];
   },
 
@@ -26,6 +33,7 @@ export const seasoningService = {
     const all = await this.getAll();
     all.push(seasoning);
     await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(all));
+    log.info('Added seasoning', { name: seasoning.name, id: seasoning.id });
     return seasoning;
   },
 
@@ -40,6 +48,7 @@ export const seasoningService = {
       updateDate: new Date().toISOString(),
     };
     await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(all));
+    log.info('Updated seasoning', { name: all[index].name, id });
     return all[index];
   },
 
@@ -48,6 +57,7 @@ export const seasoningService = {
     const filtered = all.filter((s) => s.id !== id);
     if (filtered.length === all.length) return false;
     await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(filtered));
+    log.info('Removed seasoning', { id });
     return true;
   },
 

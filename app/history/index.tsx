@@ -4,7 +4,6 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
-  Alert,
   TextInput,
   StyleSheet,
 } from 'react-native';
@@ -14,12 +13,14 @@ import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { EmptyState } from '../../src/components/EmptyState';
 import { Button } from '../../src/components/Button';
+import { useCustomAlert } from '../../src/components/CustomAlert';
 import { menuHistoryService, MenuHistoryItem } from '../../src/services/menuHistoryService';
 
 export default function HistoryListScreen() {
   const [sessions, setSessions] = useState<MenuHistoryItem[]>([]);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
+  const { showAlert } = useCustomAlert();
 
   const loadHistory = useCallback(async () => {
     const items = await menuHistoryService.getAllItems();
@@ -33,7 +34,7 @@ export default function HistoryListScreen() {
   );
 
   const handleDelete = useCallback((id: string, name: string) => {
-    Alert.alert('确认删除', `确定要删除"${name}"吗？`, [
+    showAlert({ title: '确认删除', message: `确定要删除"${name}"吗？`, buttons: [
       { text: '取消', style: 'cancel' },
       {
         text: '删除',
@@ -43,8 +44,8 @@ export default function HistoryListScreen() {
           loadHistory();
         },
       },
-    ]);
-  }, [loadHistory]);
+    ] });
+  }, [loadHistory, showAlert]);
 
   const handleRenameStart = useCallback((item: MenuHistoryItem) => {
     setRenameId(item.id);

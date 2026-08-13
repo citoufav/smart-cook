@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Card } from '../../src/components/Card';
+import { useChatSheet } from '../../src/contexts/ChatSheetContext';
+import { RecipeContext } from '../../src/services/chatService';
 import { menuHistoryService, MenuHistoryItem } from '../../src/services/menuHistoryService';
 
 export default function HistoryDetailScreen() {
@@ -19,6 +22,7 @@ export default function HistoryDetailScreen() {
   const [item, setItem] = useState<MenuHistoryItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [showReasoning, setShowReasoning] = useState(false);
+  const { showChatSheet } = useChatSheet();
 
   useEffect(() => {
     (async () => {
@@ -47,11 +51,24 @@ export default function HistoryDetailScreen() {
 
   const menu = item.menuProposal;
   const dishes = menu?.dishes || [];
+  const prepSteps: any[] = menu?.prepSteps || menu?.generatedPlan?.prepSteps || [];
+  const cookingSteps: any[] = menu?.cookingSteps || menu?.generatedPlan?.cookingSteps || [];
+
+  // 构建菜谱上下文给聊天窗
+  const recipeContext: RecipeContext = useMemo(() => ({
+    dishes: dishes || [],
+    prepSteps,
+    cookingSteps,
+    sessionId: item.sessionId || item.id,
+  }), [dishes, prepSteps, cookingSteps, item.sessionId, item.id]);
+
+  console.log('[HISTORY] prepSteps count:', prepSteps.length, 'cookingSteps count:', cookingSteps.length);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* 基本信息 */}
-      <Card title={item.name}>
+    <View style={styles.rootContainer}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* 基本信息 */}
+        <Card title={item.name}>
         <Text style={styles.meta}>
           生成时间：{new Date(item.createdAt).toLocaleString('zh-CN')}
         </Text>
@@ -87,6 +104,40 @@ export default function HistoryDetailScreen() {
         </Card>
       )}
 
+      {/* 备菜步骤 */}
+      {prepSteps.length > 0 && (
+        <Card title="备菜步骤">
+          {prepSteps.map((step: any, idx: number) => (
+            <View key={step.id || idx} style={styles.stepItemRow}>
+              <Text style={styles.stepIndex}>{idx + 1}.</Text>
+              <View style={styles.stepContent}>
+                {step.ingredientName ? (
+                  <Text style={styles.stepName}>{step.ingredientName} {step.quantity || ''}</Text>
+                ) : null}
+                <Text style={styles.stepDesc}>{step.description}</Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
+
+      {/* 炒制步骤 */}
+      {cookingSteps.length > 0 && (
+        <Card title="炒制步骤">
+          {cookingSteps.map((step: any, idx: number) => (
+            <View key={step.stepNumber || idx} style={styles.stepItemRow}>
+              <Text style={styles.stepIndex}>{step.stepNumber || idx + 1}.</Text>
+              <View style={styles.stepContent}>
+                {step.dishName ? (
+                  <Text style={styles.stepName}>{step.dishName}</Text>
+                ) : null}
+                <Text style={styles.stepDesc}>{step.instruction}</Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
+
       {/* AI 摘要 */}
       {menu?.summary?.description && (
         <Card title="AI 摘要">
@@ -111,11 +162,22 @@ export default function HistoryDetailScreen() {
           <Text style={styles.reasoningText}>{item.reasoningContent}</Text>
         </View>
       )}
-    </ScrollView>
+
+      {/* 聊天悬浮按钮 */}
+      <TouchableOpacity
+        style={styles.chatFab}
+        onPress={() => showChatSheet(recipeContext)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="chatbubble-ellipses" size={24} color={COLORS.textWhite} />
+      </TouchableOpacity>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: { flex: 1 },
   container: { padding: SPACING.lg, paddingBottom: 100 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   notFound: { fontSize: TYPOGRAPHY.body, color: COLORS.textSecondary },
@@ -130,6 +192,11 @@ const styles = StyleSheet.create({
   ingredientRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   ingredient: { fontSize: 12, color: COLORS.textSecondary },
   nutritionText: { fontSize: 11, color: COLORS.textTertiary, marginTop: 4 },
+  stepItemRow: { flexDirection: 'row', marginBottom: 8, paddingLeft: 4 },
+  stepIndex: { fontSize: 13, fontWeight: '600', color: COLORS.primary, width: 24 },
+  stepContent: { flex: 1 },
+  stepName: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 2 },
+  stepDesc: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18 },
   summaryText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textBody, lineHeight: 20 },
   reasoningHeader: {
     flexDirection: 'row',
@@ -149,4 +216,20 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   reasoningText: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18 },
+  chatFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 40,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FF6B35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
+  },
 });

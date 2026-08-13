@@ -1,4 +1,7 @@
 import { Ingredient, Seasoning, SeasoningStatus, IngredientSuggestion, SeasoningSuggestion, Stage2AIInput } from '../types';
+import { logger } from '../utils/logger';
+
+const log = logger('SVC:INV_CALC');
 
 function normalizeIngredientName(name: string): string {
   return name
@@ -60,6 +63,7 @@ export function calculateIngredientSuggestions(
     });
   }
 
+  log.info('calculateIngredientSuggestions', { resultCount: suggestions.length });
   return suggestions;
 }
 
@@ -67,7 +71,7 @@ export function calculateSeasoningSuggestions(
   usedSeasoningNames: string[],
   currentSeasonings: Seasoning[],
 ): SeasoningSuggestion[] {
-  return usedSeasoningNames.map((name) => {
+  const suggestions = usedSeasoningNames.map((name) => {
     const match = currentSeasonings.find(
       (s) => s.name.trim() === name.trim(),
     );
@@ -90,4 +94,7 @@ export function calculateSeasoningSuggestions(
       wasUsed: true,
     };
   });
+
+  log.info('calculateSeasoningSuggestions', { resultCount: suggestions.length });
+  return suggestions;
 }

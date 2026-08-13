@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 import { NutritionState, NutritionInfo, NutritionalData } from '../types';
 import { calculateTotalNutrition } from '../utils/nutrition';
+import { logger } from '../utils/logger';
 
 type NutritionAction =
   | { type: 'SET_NUTRITION'; payload: { data: Record<string, NutritionalData>; source: string; personCount: number } }
@@ -10,6 +11,8 @@ type NutritionAction =
   | { type: 'OPEN_SHEET' }
   | { type: 'CLOSE_SHEET' }
   | { type: 'RESET' };
+
+const log = logger('CTX:NUTRITION');
 
 const INITIAL_STATE: NutritionState = {
   nutritionByDish: {},
@@ -26,6 +29,7 @@ function nutritionReducer(state: NutritionState, action: NutritionAction): Nutri
   switch (action.type) {
     case 'SET_NUTRITION': {
       const dishNames = Object.keys(action.payload.data);
+      log.info('SET_NUTRITION', { source: action.payload.source, dishCount: dishNames.length, personCount: action.payload.personCount });
       const totalNutrition = calculateTotalNutrition(action.payload.data);
       console.log('[NUTRITION:CTX] SET_NUTRITION | source:', action.payload.source, '| dishNames:', dishNames, '| personCount:', action.payload.personCount);
       console.log('[NUTRITION:CTX]   totalNutrition:', JSON.stringify(totalNutrition));
@@ -43,14 +47,19 @@ function nutritionReducer(state: NutritionState, action: NutritionAction): Nutri
     case 'TOGGLE_DETAIL':
       return { ...state, isDetailOpen: !state.isDetailOpen };
     case 'HIDE_BALL':
+      log.debug('HIDE_BALL');
       return { ...state, isVisible: false, isDetailOpen: false };
     case 'SHOW_BALL':
+      log.debug('SHOW_BALL');
       return { ...state, isVisible: true };
     case 'OPEN_SHEET':
+      log.info('OPEN_SHEET');
       return { ...state, isDetailOpen: true };
     case 'CLOSE_SHEET':
+      log.debug('CLOSE_SHEET');
       return { ...state, isDetailOpen: false };
     case 'RESET':
+      log.info('RESET');
       return { ...INITIAL_STATE };
     default:
       return state;
@@ -74,17 +83,31 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(nutritionReducer, INITIAL_STATE);
 
   const setEstimatedNutrition = useCallback((data: Record<string, NutritionalData>, personCount: number) => {
+    log.info('setEstimatedNutrition called', { dishCount: Object.keys(data).length, personCount });
     dispatch({ type: 'SET_NUTRITION', payload: { data, source: 'estimated', personCount } });
   }, []);
 
   const setPreciseNutrition = useCallback((data: Record<string, NutritionalData>, personCount: number) => {
+    log.info('setPreciseNutrition called', { dishCount: Object.keys(data).length, personCount });
     dispatch({ type: 'SET_NUTRITION', payload: { data, source: 'precise', personCount } });
   }, []);
 
-  const openSheet = useCallback(() => dispatch({ type: 'OPEN_SHEET' }), []);
-  const closeSheet = useCallback(() => dispatch({ type: 'CLOSE_SHEET' }), []);
-  const hideBall = useCallback(() => dispatch({ type: 'HIDE_BALL' }), []);
-  const reset = useCallback(() => dispatch({ type: 'RESET' }), []);
+  const openSheet = useCallback(() => {
+    log.info('openSheet called');
+    dispatch({ type: 'OPEN_SHEET' });
+  }, []);
+  const closeSheet = useCallback(() => {
+    log.debug('closeSheet called');
+    dispatch({ type: 'CLOSE_SHEET' });
+  }, []);
+  const hideBall = useCallback(() => {
+    log.debug('hideBall called');
+    dispatch({ type: 'HIDE_BALL' });
+  }, []);
+  const reset = useCallback(() => {
+    log.info('reset called');
+    dispatch({ type: 'RESET' });
+  }, []);
 
   return (
     <NutritionContext.Provider

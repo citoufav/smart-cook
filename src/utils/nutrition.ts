@@ -1,4 +1,7 @@
 import { NutritionInfo, NutritionalData } from '../types';
+import { logger } from './logger';
+
+const log = logger('UTIL:NUTRITION');
 
 export function sumNutrition(dataList: NutritionalData[]): NutritionInfo {
   return dataList.reduce(
@@ -16,12 +19,12 @@ export function calculateTotalNutrition(
   nutritionByDish: Record<string, NutritionalData>,
 ): NutritionInfo {
   const values = Object.values(nutritionByDish);
-  console.log('[NUTRITION:CALC] calculateTotalNutrition 入参 | 菜品数:', values.length);
+  log.info('calculateTotalNutrition 开始', { dishCount: values.length });
   values.forEach((d, i) => {
-    console.log(`[NUTRITION:CALC]   菜${i + 1}: calories=${d.calories}, protein=${d.protein}, fat=${d.fat}, carbs=${d.carbs}`);
+    log.debug(`菜${i + 1} 营养信息`, { calories: d.calories, protein: d.protein, fat: d.fat, carbs: d.carbs });
   });
   const result = sumNutrition(values);
-  console.log('[NUTRITION:CALC] 求和结果:', JSON.stringify(result));
+  log.info('calculateTotalNutrition 完成', { calories: result.calories, protein: result.protein, fat: result.fat, carbs: result.carbs });
   return result;
 }
 
@@ -35,9 +38,9 @@ export function getPerPersonNutrition(
   total: NutritionInfo,
   personCount: number,
 ): NutritionInfo {
-  console.log('[NUTRITION:PER] getPerPersonNutrition | total:', JSON.stringify(total), '| personCount:', personCount);
+  log.debug('getPerPersonNutrition', { personCount, total });
   if (personCount <= 0) {
-    console.log('[NUTRITION:PER] → personCount<=0，返回原始total');
+    log.debug('getPerPersonNutrition: personCount<=0，返回原始total');
     return total;
   }
   const result = {
@@ -46,6 +49,6 @@ export function getPerPersonNutrition(
     fat: Math.round(total.fat / personCount),
     carbs: Math.round(total.carbs / personCount),
   };
-  console.log('[NUTRITION:PER] 人均结果:', JSON.stringify(result));
+  log.debug('getPerPersonNutrition 结果', { personCount, result });
   return result;
 }

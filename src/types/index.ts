@@ -10,6 +10,7 @@ export interface Ingredient {
 export interface IngredientCreateInput {
   name: string;
   weight: number | null;
+  createDate?: string;
 }
 
 export interface Seasoning {
@@ -112,6 +113,9 @@ export interface MenuProposal {
   cookingOrderDescription: string;
   flavorDescription: string;
   summary: MenuSummary;
+  prepSteps?: PrepStep[];
+  cookingSteps?: CookingStep[];
+  preciseNutrition?: NutritionInfo[];
 }
 
 // ============ 阶段2称量 ============
@@ -145,6 +149,7 @@ export interface PrepStep {
   ingredientName: string;
   quantity: string;
   description: string;
+  dishName?: string;
   isCompleted: boolean;
   order: number;
 }
@@ -167,7 +172,7 @@ export interface CookingStep {
 
 export interface GeneratedPlan {
   prepSteps: PrepStep[];
-  bowlAssignments: BowlAssignment[];
+  bowlAssignments?: BowlAssignment[];
   cookingSteps: CookingStep[];
   preciseNutrition: NutritionInfo[];
   ingredientTags?: IngredientTag[];
@@ -257,7 +262,6 @@ export interface CookingSession {
 export interface CookingState {
   session: CookingSession | null;
   error: string | null;
-  bowlValidationRetries: number;
 }
 
 // ============ 营养Context状态 ============
@@ -393,16 +397,14 @@ export interface Stage2AIResponse {
 /** 页面所处的模式：locked=未开始不可查看，readonly=已完成只读，interactive=进行中可操作 */
 export type StageMode = 'locked' | 'readonly' | 'interactive';
 
-/** 做菜阶段索引（0-4），对应菜单→称量→备菜→分装→制作 */
+/** 做菜阶段索引（0-2），对应菜谱→备菜→炒制 */
 export const STAGE_INDEX_MAP: Record<string, number> = {
   menu: 0,
-  weighing: 1,
-  prep: 2,
-  bowl: 3,
-  cooking: 4,
+  prep: 1,
+  cooking: 2,
 };
 
-export const STAGE_KEYS: CookingStage[] = ['menu', 'weighing', 'prep', 'bowl', 'cooking'];
+export const STAGE_KEYS: CookingStage[] = ['menu', 'prep', 'cooking'];
 
 /** 根据 CookingStage 获取 0-based 索引 */
 export function getStageIndex(stage: CookingStage): number {

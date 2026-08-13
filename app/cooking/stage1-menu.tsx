@@ -98,6 +98,24 @@ export default function Stage1MenuScreen() {
           </View>
         ) : null}
 
+        {/* 采购清单提醒 — 放在 AI 摘要和菜品清单之间 */}
+        {menuProposal.missingItems.length > 0 && (
+          <View style={styles.missingAlert}>
+            <Text style={styles.missingTitle}>⚠ 以下食材/调料库存不足：</Text>
+            {menuProposal.missingItems.map((item) => (
+              <Text key={item.id} style={styles.missingItem}>
+                · {item.type === 'ingredient' ? '食材' : '调料'} {item.name} - {item.suggestedAmount}（用于 {item.forDish}）
+              </Text>
+            ))}
+            <TouchableOpacity
+              style={styles.shoppingBtn}
+              onPress={() => router.push('/cooking/shopping-list')}
+            >
+              <Text style={styles.shoppingBtnText}>查看采购清单 →</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 菜品清单 */}
         {menuProposal.dishes.length === 0 ? (
           <View style={styles.emptyDishesAlert}>
@@ -157,24 +175,6 @@ export default function Stage1MenuScreen() {
         </Card>
         )}
 
-        {/* 缺失清单提醒 */}
-        {menuProposal.missingItems.length > 0 && (
-          <View style={styles.missingAlert}>
-            <Text style={styles.missingTitle}>⚠ 以下食材/调料库存不足：</Text>
-            {menuProposal.missingItems.map((item) => (
-              <Text key={item.id} style={styles.missingItem}>
-                · {item.type === 'ingredient' ? '食材' : '调料'} {item.name} - {item.suggestedAmount}（用于 {item.forDish}）
-              </Text>
-            ))}
-            <TouchableOpacity
-              style={styles.shoppingBtn}
-              onPress={() => router.push('/cooking/shopping-list')}
-            >
-              <Text style={styles.shoppingBtnText}>查看采购清单 →</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* 营养初估 */}
         <Card title="营养成分（初估）">
           <Text style={styles.nutritionNote}>基于 AI 估算用量，称量后将更新为精确值</Text>
@@ -218,12 +218,11 @@ interface Stage1MenuContentProps {
   onComplete?: () => void;
 }
 
-export function Stage1MenuContent({ mode, onComplete }: Stage1MenuContentProps) {
-  const { state, setCurrentStage } = useCooking();
+export function Stage1MenuContent({ mode }: Stage1MenuContentProps) {
+  const { state } = useCooking();
   const { state: nutritionState } = useNutrition();
   const requirement = useSafeJsonParam<RequirementInput>('requirement');
   const [showReasoning, setShowReasoning] = useState(false);
-  const isReadonly = mode === 'readonly';
 
   const menuProposal: MenuProposal | undefined = state.session?.stages.menu?.menuProposal;
   const reasoningContent: string = state.session?.stages.menu?.reasoningContent || '';
@@ -280,6 +279,24 @@ export function Stage1MenuContent({ mode, onComplete }: Stage1MenuContentProps) 
           </View>
         ) : null}
 
+        {/* 采购清单提醒 — 放在 AI 摘要和菜品清单之间 */}
+        {menuProposal.missingItems.length > 0 && (
+          <View style={styles.missingAlert}>
+            <Text style={styles.missingTitle}>⚠ 以下食材/调料库存不足：</Text>
+            {menuProposal.missingItems.map((item) => (
+              <Text key={item.id} style={styles.missingItem}>
+                · {item.type === 'ingredient' ? '食材' : '调料'} {item.name} - {item.suggestedAmount}（用于 {item.forDish}）
+              </Text>
+            ))}
+            <TouchableOpacity
+              style={styles.shoppingBtn}
+              onPress={() => router.push('/cooking/shopping-list')}
+            >
+              <Text style={styles.shoppingBtnText}>查看采购清单 →</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 菜品清单 */}
         {menuProposal.dishes.length === 0 ? (
           <View style={styles.emptyDishesAlert}>
@@ -339,24 +356,6 @@ export function Stage1MenuContent({ mode, onComplete }: Stage1MenuContentProps) 
         </Card>
         )}
 
-        {/* 缺失清单提醒 */}
-        {menuProposal.missingItems.length > 0 && (
-          <View style={styles.missingAlert}>
-            <Text style={styles.missingTitle}>⚠ 以下食材/调料库存不足：</Text>
-            {menuProposal.missingItems.map((item) => (
-              <Text key={item.id} style={styles.missingItem}>
-                · {item.type === 'ingredient' ? '食材' : '调料'} {item.name} - {item.suggestedAmount}（用于 {item.forDish}）
-              </Text>
-            ))}
-            <TouchableOpacity
-              style={styles.shoppingBtn}
-              onPress={() => router.push('/cooking/shopping-list')}
-            >
-              <Text style={styles.shoppingBtnText}>查看采购清单 →</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* 营养初估 */}
         <Card title="营养成分（初估）">
           <Text style={styles.nutritionNote}>基于 AI 估算用量，称量后将更新为精确值</Text>
@@ -380,15 +379,6 @@ export function Stage1MenuContent({ mode, onComplete }: Stage1MenuContentProps) 
           </View>
         </Card>
       </ScrollView>
-
-      {/* 底部按钮 */}
-      {!isReadonly && (
-        <View style={styles.bottomBar}>
-          <Button title="返回修改" variant="secondary" onPress={() => router.back()} style={styles.flex1} />
-          <View style={{ width: 12 }} />
-          <Button title="确认菜单，开始称量" variant="primary" onPress={() => { setCurrentStage('weighing'); onComplete?.(); }} style={styles.flex2} />
-        </View>
-      )}
     </View>
   );
 }
@@ -424,6 +414,19 @@ const styles = StyleSheet.create({
   missingItem: { fontSize: TYPOGRAPHY.caption, color: COLORS.warningText, marginBottom: 2 },
   shoppingBtn: { marginTop: SPACING.sm, alignSelf: 'flex-end' },
   shoppingBtnText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary, fontWeight: '600' },
+  shoppingBanner: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  shoppingBannerText: {
+    fontSize: TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
+    color: '#E65100',
+  },
   nutritionNote: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginBottom: SPACING.md },
   nutritionGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   nutritionItem: { width: '48%', alignItems: 'center', padding: SPACING.md, backgroundColor: COLORS.neutralLight, borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.sm, marginRight: '2%' },

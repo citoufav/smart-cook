@@ -2,13 +2,12 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { getStageIndex } from '../types';
+import { logger } from '../utils/logger';
 
 export const PROGRESS_STAGES = [
   { key: 'menu', label: '菜谱', route: '/cooking/stage1-menu' },
-  { key: 'weighing', label: '称量', route: '/cooking/stage2-weighing' },
   { key: 'prep', label: '备菜', route: '/cooking/stage3-prep' },
-  { key: 'bowl', label: '分装', route: '/cooking/stage4-bowl' },
-  { key: 'cooking', label: '制作', route: '/cooking/stage5-cooking' },
+  { key: 'cooking', label: '炒制', route: '/cooking/stage5-cooking' },
 ] as const;
 
 export type ProgressStageKey = (typeof PROGRESS_STAGES)[number]['key'];
@@ -19,37 +18,42 @@ interface CookingProgressBarProps {
   readonly?: boolean;
   /** Pager 模式下通过回调通知跳转，而非 router.push */
   onStagePress?: (stageKey: string) => void;
+  /** 进度条可访问的最大阶段索引（0-based）。超出此索引的阶段不可点击 */
+  maxAccessibleIndex?: number;
+  /** 所有阶段统一样式，无 future/accessible 区分 */
+  allAccessible?: boolean;
 }
+
+const log = logger('COMP:PROGRESS');
 
 export default function CookingProgressBar({
   currentStage,
   completedStages,
   readonly,
   onStagePress,
+  maxAccessibleIndex,
+  allAccessible,
 }: CookingProgressBarProps) {
   const currentIndex = getStageIndex(currentStage as any);
 
   const getStatus = (stageKey: string, index: number) => {
     if (stageKey === currentStage) return 'current';
-    if (completedStages.includes(stageKey) || index < currentIndex) return 'done';
+    // allAccessible 模式下统一返回 accessible（无未来/已完成区分）
+    if (allAccessible) return 'accessible';
+    if (completedStages.includes(stageKey)) return 'done';
+    if (index < currentIndex) return 'done';
+    if (maxAccessibleIndex !== undefined && index <= maxAccessibleIndex) return 'accessible';
     return 'future';
   };
 
   const handleStagePress = (stageKey: string, index: number) => {
     const status = getStatus(stageKey, index);
-    // console.log('[PROGRESS] handleStagePress | stageKey=', stageKey, '| index=', index, '| status=', status, '| hasOnStagePress=', !!onStagePress, '| currentStage=', currentStage, '| currentIndex=', currentIndex, '| completedStages=', completedStages);
-    if (status === 'future') {
-      // console.log('[PROGRESS] → 跳过(future)');
-      return;
-    }
+    // allAccessible 或非 future 均可点击
+    if (!allAccessible && status === 'future') return;
 
     if (onStagePress) {
-      // console.log('[PROGRESS] → 调用 onStagePress(', stageKey, ')');
       onStagePress(stageKey);
-      return;
     }
-
-    // console.log('[PROGRESS] → 无 onStagePress，忽略点击');
   };
 
   return (
@@ -63,14 +67,15 @@ export default function CookingProgressBar({
             <TouchableOpacity
               style={styles.nodeWrapper}
               onPress={() => handleStagePress(stage.key, index)}
-              activeOpacity={status === 'future' ? 1 : 0.6}
-              disabled={status === 'future'}
+              activeOpacity={allAccessible || status !== 'future' ? 0.6 : 1}
+              disabled={!allAccessible && status === 'future'}
             >
               <View
                 style={[
                   styles.dot,
                   status === 'current' && styles.dotCurrent,
                   status === 'done' && styles.dotDone,
+                  status === 'accessible' && styles.dotAccessible,
                   status === 'future' && styles.dotFuture,
                 ]}
               />
@@ -79,6 +84,7 @@ export default function CookingProgressBar({
                   styles.label,
                   status === 'current' && styles.labelCurrent,
                   status === 'done' && styles.labelDone,
+                  status === 'accessible' && styles.labelAccessible,
                   status === 'future' && styles.labelFuture,
                 ]}
               >
@@ -134,6 +140,11 @@ const styles = StyleSheet.create({
   dotDone: {
     backgroundColor: COLORS.primaryLight,
   },
+  dotAccessible: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.primaryLight,
+  },
   dotFuture: {
     backgroundColor: COLORS.border,
   },
@@ -156,6 +167,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   labelDone: {
+    color: COLORS.primaryLight,
+  },
+  labelAccessible: {
     color: COLORS.primaryLight,
   },
   labelFuture: {

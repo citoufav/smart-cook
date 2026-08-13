@@ -5,15 +5,14 @@ import {
   RequirementInput,
   MenuProposal,
   Stage1Data,
-  WeighingData,
-  GeneratedPlan,
   StageMode,
   getStageIndex,
   getStageMode,
   STAGE_KEYS,
 } from '../types';
-import { VALID_TRANSITIONS, MAX_RETRY_COUNT } from '../constants/cooking';
+import { VALID_TRANSITIONS } from '../constants/cooking';
 import { generateId } from '../utils/uuid';
+import { logger } from '../utils/logger';
 
 type CookingAction =
   | { type: 'START_SESSION'; payload: { id: string; requirement: RequirementInput } }
@@ -21,41 +20,30 @@ type CookingAction =
   | { type: 'SET_REQUIREMENT'; payload: RequirementInput }
   | { type: 'SET_MENU_PROPOSAL'; payload: MenuProposal }
   | { type: 'SET_STAGE1_RESULT'; payload: Stage1Data }
-  | { type: 'SET_STAGE2_RESULT'; payload: { weighingData: WeighingData; generatedPlan: GeneratedPlan } }
-  | { type: 'SET_GENERATED_PLAN'; payload: GeneratedPlan }
-  | { type: 'TOGGLE_PREP_STEP'; payload: string }
-  | { type: 'COMPLETE_ALL_PREP' }
-  | { type: 'TOGGLE_BOWL'; payload: number }
-  | { type: 'COMPLETE_ALL_BOWLS' }
-  | { type: 'TOGGLE_COOKING_STEP'; payload: string }
-  | { type: 'COMPLETE_ALL_COOKING_STEPS' }
+  | { type: 'UPDATE_PLAN'; payload: { menuProposal: MenuProposal; prepSteps: any[]; cookingSteps: any[] } }
   | { type: 'ADVANCE_STAGE'; payload: CookingStage }
   | { type: 'SET_CURRENT_STAGE'; payload: CookingStage }
   | { type: 'TOGGLE_SHOPPING_ITEM'; payload: string }
-  | { type: 'INCREMENT_RETRY' }
-  | { type: 'RESET_RETRY' }
   | { type: 'RESET_SESSION' }
   | { type: 'SET_ERROR'; payload: string | null };
+
+const log = logger('CTX:COOKING');
 
 const INITIAL_STATE: CookingState = {
   session: null,
   error: null,
-  bowlValidationRetries: 0,
 };
 
 /** 确保旧数据也有 completedStageIndex（向后兼容迁移） */
 function ensureCompletedStageIndex(session: CookingState['session']): CookingState['session'] {
   if (!session) return session;
   if (session.completedStageIndex !== undefined) return session;
-  // 迁移：根据 status 和已有 stage 数据推导
+  // 迁移：根据已有 stage 数据推导 (menu=0, prep=1, cooking=2)
   let idx = -1;
   const stages = session.stages;
   if (stages.menu) idx = Math.max(idx, 0);
-  if (stages.weighing || stages.generatedPlan?.prepSteps) idx = Math.max(idx, 1);
-  const bowlAssignments = stages.generatedPlan?.bowlAssignments;
-  if (bowlAssignments && bowlAssignments.length > 0 && bowlAssignments.every((b) => b.isCompleted)) idx = Math.max(idx, 3);
-  const cookingSteps = stages.generatedPlan?.cookingSteps;
-  if (cookingSteps && cookingSteps.length > 0 && cookingSteps.every((s) => s.isCompleted)) idx = Math.max(idx, 4);
+  if (stages.generatedPlan?.prepSteps) idx = Math.max(idx, 1);
+  if (stages.generatedPlan?.cookingSteps) idx = Math.max(idx, 2);
   // 兜底：根据 status 推断
   const statusIdx = getStageIndex(session.status);
   if (statusIdx > 0 && idx < statusIdx - 1) {
@@ -65,15 +53,16 @@ function ensureCompletedStageIndex(session: CookingState['session']): CookingSta
   if (idx > statusIdx && statusIdx >= 0) {
     idx = statusIdx;
   }
-  // console.log('[CTX] ensureCompletedStageIndex 迁移 | status=', session.status, '| statusIdx=', statusIdx, '| derived completedIdx=', idx);
   return { ...session, completedStageIndex: idx };
 }
 
 function cookingReducer(state: CookingState, action: CookingAction): CookingState {
+  log.debug('REDUCER', { type: action.type });
   const now = new Date().toISOString();
 
   switch (action.type) {
     case 'START_SESSION':
+      log.info('START_SESSION', { id: action.payload.id, people: action.payload.requirement.personCount, mealType: action.payload.requirement.mealType });
       return {
         ...state,
         error: null,
@@ -88,14 +77,28 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         },
       };
 
-    case 'RESTORE_SESSION':
-      // console.log('[CTX] RESTORE_SESSION | status=', action.payload?.status, '| saved completedIdx=', action.payload?.completedStageIndex);
+    case 'RESTORE_SESSION': {
+      log.info('RESTORE_SESSION', { status: action.payload?.status, completedStageIndex: action.payload?.completedStageIndex });
+      const sess = ensureCompletedStageIndex(action.payload);
+      // 修复：如果 restored session 缺少 generatedPlan，从 menu.menuProposal 重建
+      if (sess && !sess.stages.generatedPlan && sess.stages.menu?.menuProposal) {
+        const mp = sess.stages.menu.menuProposal;
+        sess.stages.generatedPlan = {
+          prepSteps: mp.prepSteps || [],
+          cookingSteps: mp.cookingSteps || [],
+          preciseNutrition: mp.preciseNutrition || [],
+        };
+        console.log('[CTX_RESTORE] rebuilt generatedPlan: prepSteps=', sess.stages.generatedPlan.prepSteps.length, 'cookingSteps=', sess.stages.generatedPlan.cookingSteps.length);
+      }
+      // 打印恢复的 missingItems 勾选状态
+      const mi = sess.stages?.menu?.menuProposal?.missingItems || [];
+      console.log('[CTX_RESTORE] missingItems purchased:', mi.map((m: any) => ({ type: m.type, name: m.name, purchased: m.isPurchased })));
       return {
         ...state,
         error: null,
-        bowlValidationRetries: 0,
-        session: ensureCompletedStageIndex(action.payload),
+        session: sess,
       };
+    }
 
     case 'SET_REQUIREMENT': {
       if (!state.session) return state;
@@ -127,169 +130,46 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
 
     case 'SET_STAGE1_RESULT': {
       if (!state.session) return state;
-      // console.log('[CTX] SET_STAGE1_RESULT | status=menu | prev completedIdx=', state.session.completedStageIndex);
+      const mp = action.payload.menuProposal;
+      log.info('SET_STAGE1_RESULT', { dishCount: mp.dishes?.length });
+      console.log('[CTX_STAGE1] prepSteps:', mp.prepSteps?.length, 'cookingSteps:', mp.cookingSteps?.length, 'preciseNutrition:', mp.preciseNutrition?.length);
       return {
         ...state,
         session: {
           ...state.session,
           status: 'menu',
-          stages: { ...state.session.stages, menu: action.payload },
+          stages: {
+            ...state.session.stages,
+            menu: action.payload,
+            generatedPlan: {
+              prepSteps: mp.prepSteps || [],
+              cookingSteps: mp.cookingSteps || [],
+              preciseNutrition: mp.preciseNutrition || [],
+            },
+          },
           updatedAt: now,
-          // 菜单尚未确认，completedStageIndex 保持 -1
-          completedStageIndex: state.session.completedStageIndex,
+          completedStageIndex: 0,
         },
       };
     }
 
-    case 'SET_STAGE2_RESULT': {
+    case 'UPDATE_PLAN': {
       if (!state.session) return state;
-      // console.log('[CTX] SET_STAGE2_RESULT | status=prep | completedIdx=1');
-      return {
-        ...state,
-        session: {
-          ...state.session,
-          status: 'prep',
-          stages: {
-            ...state.session.stages,
-            weighing: action.payload.weighingData,
-            generatedPlan: action.payload.generatedPlan,
-          },
-          updatedAt: now,
-          completedStageIndex: 1,
-        },
-      };
-    }
-
-    case 'SET_GENERATED_PLAN': {
-      if (!state.session) return state;
-      return {
-        ...state,
-        bowlValidationRetries: 0,
-        session: {
-          ...state.session,
-          status: 'prep',
-          stages: { ...state.session.stages, generatedPlan: action.payload },
-          updatedAt: now,
-        },
-      };
-    }
-
-    case 'TOGGLE_PREP_STEP': {
-      if (!state.session?.stages.generatedPlan) return state;
-      const prepSteps = state.session.stages.generatedPlan.prepSteps.map((s) =>
-        s.id === action.payload ? { ...s, isCompleted: !s.isCompleted } : s,
-      );
+      const { menuProposal, prepSteps, cookingSteps } = action.payload;
       return {
         ...state,
         session: {
           ...state.session,
           stages: {
             ...state.session.stages,
-            generatedPlan: { ...state.session.stages.generatedPlan, prepSteps },
+            menu: state.session.stages.menu
+              ? { ...state.session.stages.menu, menuProposal: { ...state.session.stages.menu.menuProposal, ...menuProposal } }
+              : state.session.stages.menu,
+            generatedPlan: state.session.stages.generatedPlan
+              ? { ...state.session.stages.generatedPlan, prepSteps, cookingSteps }
+              : state.session.stages.generatedPlan,
           },
           updatedAt: now,
-        },
-      };
-    }
-
-    case 'COMPLETE_ALL_PREP': {
-      if (!state.session?.stages.generatedPlan) return state;
-      // console.log('[CTX] COMPLETE_ALL_PREP | status=bowl | completedIdx=2');
-      const prepSteps = state.session.stages.generatedPlan.prepSteps.map((s) => ({
-        ...s,
-        isCompleted: true,
-      }));
-      return {
-        ...state,
-        session: {
-          ...state.session,
-          status: 'bowl',
-          stages: {
-            ...state.session.stages,
-            generatedPlan: { ...state.session.stages.generatedPlan, prepSteps },
-          },
-          updatedAt: now,
-          completedStageIndex: 2,
-        },
-      };
-    }
-
-    case 'TOGGLE_BOWL': {
-      if (!state.session?.stages.generatedPlan) return state;
-      const bowlAssignments = state.session.stages.generatedPlan.bowlAssignments.map((b) =>
-        b.bowlNumber === action.payload ? { ...b, isCompleted: !b.isCompleted } : b,
-      );
-      return {
-        ...state,
-        session: {
-          ...state.session,
-          stages: {
-            ...state.session.stages,
-            generatedPlan: { ...state.session.stages.generatedPlan, bowlAssignments },
-          },
-          updatedAt: now,
-        },
-      };
-    }
-
-    case 'COMPLETE_ALL_BOWLS': {
-      if (!state.session?.stages.generatedPlan) return state;
-      // console.log('[CTX] COMPLETE_ALL_BOWLS | status=cooking | completedIdx=3');
-      const bowlAssignments = state.session.stages.generatedPlan.bowlAssignments.map((b) => ({
-        ...b,
-        isCompleted: true,
-      }));
-      return {
-        ...state,
-        session: {
-          ...state.session,
-          status: 'cooking',
-          stages: {
-            ...state.session.stages,
-            generatedPlan: { ...state.session.stages.generatedPlan, bowlAssignments },
-          },
-          updatedAt: now,
-          completedStageIndex: 3,
-        },
-      };
-    }
-
-    case 'TOGGLE_COOKING_STEP': {
-      if (!state.session?.stages.generatedPlan) return state;
-      const cookingSteps = state.session.stages.generatedPlan.cookingSteps.map((s) =>
-        String(s.stepNumber) === action.payload ? { ...s, isCompleted: !s.isCompleted } : s,
-      );
-      return {
-        ...state,
-        session: {
-          ...state.session,
-          stages: {
-            ...state.session.stages,
-            generatedPlan: { ...state.session.stages.generatedPlan, cookingSteps },
-          },
-          updatedAt: now,
-        },
-      };
-    }
-
-    case 'COMPLETE_ALL_COOKING_STEPS': {
-      if (!state.session?.stages.generatedPlan) return state;
-      // console.log('[CTX] COMPLETE_ALL_COOKING_STEPS | status=inventoryUpdate | completedIdx=4');
-      const cookingSteps = state.session.stages.generatedPlan.cookingSteps.map((s) => ({
-        ...s,
-        isCompleted: true,
-      }));
-      return {
-        ...state,
-        session: {
-          ...state.session,
-          status: 'inventoryUpdate',
-          stages: {
-            ...state.session.stages,
-            generatedPlan: { ...state.session.stages.generatedPlan, cookingSteps },
-          },
-          updatedAt: now,
-          completedStageIndex: 4,
         },
       };
     }
@@ -307,6 +187,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         console.warn(`非法阶段转换: ${current} -> ${action.payload}，合法目标: ${validTargets.join(', ')}`);
         return state;
       }
+      log.info('ADVANCE_STAGE', { from: current, to: action.payload });
       return {
         ...state,
         session: { ...state.session, status: action.payload, updatedAt: now },
@@ -315,6 +196,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
 
     case 'SET_CURRENT_STAGE': {
       if (!state.session) return state;
+      log.info('SET_CURRENT_STAGE', { from: state.session.status, to: action.payload, completedStageIndex: state.session.completedStageIndex });
       // 特殊处理 'completed'：标记所有阶段完成
       if (action.payload === 'completed') {
         return {
@@ -350,6 +232,9 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
 
     case 'TOGGLE_SHOPPING_ITEM': {
       if (!state.session?.stages.menu?.menuProposal) return state;
+      const allIds = state.session.stages.menu.menuProposal.missingItems.map((m) => ({ id: m.id, type: m.type, name: m.name }));
+      const found = allIds.find((m) => m.id === action.payload);
+      console.log('[TOGGLE_SHOP] payload:', action.payload, '| found:', found ? `${found.type} ${found.name}` : 'NOT FOUND', '| allIds:', JSON.stringify(allIds));
       const missingItems = state.session.stages.menu.menuProposal.missingItems.map((item) =>
         item.id === action.payload ? { ...item, isPurchased: !item.isPurchased } : item,
       );
@@ -372,16 +257,11 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
       };
     }
 
-    case 'INCREMENT_RETRY':
-      return { ...state, bowlValidationRetries: Math.min(state.bowlValidationRetries + 1, MAX_RETRY_COUNT) };
-
-    case 'RESET_RETRY':
-      return { ...state, bowlValidationRetries: 0 };
-
     case 'RESET_SESSION':
-      return { ...state, session: null, error: null, bowlValidationRetries: 0 };
+      return { ...state, session: null, error: null };
 
     case 'SET_ERROR':
+      log.error('SET_ERROR', { error: action.payload });
       return { ...state, error: action.payload };
 
     default:
@@ -395,7 +275,6 @@ interface CookingContextValue {
   startSession: (requirement: RequirementInput, id?: string) => void;
   restoreSession: (session: CookingState['session']) => void;
   setStage1Result: (data: Stage1Data) => void;
-  setStage2Result: (weighingData: WeighingData, generatedPlan: GeneratedPlan) => void;
   setCurrentStage: (stage: CookingStage) => void;
   resetSession: () => void;
 }
@@ -406,34 +285,35 @@ export function CookingProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(cookingReducer, INITIAL_STATE);
 
   const startSession = useCallback((requirement: RequirementInput, id?: string) => {
+    log.info('startSession called', { people: requirement.personCount, mealType: requirement.mealType });
     dispatch({ type: 'START_SESSION', payload: { id: id || generateId(), requirement } });
   }, []);
 
   const restoreSession = useCallback((session: CookingState['session']) => {
     if (session) {
+      log.info('restoreSession called', { status: session.status, completedStageIndex: session.completedStageIndex });
       dispatch({ type: 'RESTORE_SESSION', payload: session });
     }
   }, []);
 
   const setStage1Result = useCallback((data: Stage1Data) => {
+    log.info('setStage1Result called', { dishCount: data.menuProposal?.dishes?.length });
     dispatch({ type: 'SET_STAGE1_RESULT', payload: data });
   }, []);
 
-  const setStage2Result = useCallback((weighingData: WeighingData, generatedPlan: GeneratedPlan) => {
-    dispatch({ type: 'SET_STAGE2_RESULT', payload: { weighingData, generatedPlan } });
-  }, []);
-
   const setCurrentStage = useCallback((stage: CookingStage) => {
+    log.info('setCurrentStage called', { stage });
     dispatch({ type: 'SET_CURRENT_STAGE', payload: stage });
   }, []);
 
   const resetSession = useCallback(() => {
+    log.info('resetSession called');
     dispatch({ type: 'RESET_SESSION' });
   }, []);
 
   return (
     <CookingContext.Provider
-      value={{ state, dispatch, startSession, restoreSession, setStage1Result, setStage2Result, setCurrentStage, resetSession }}
+      value={{ state, dispatch, startSession, restoreSession, setStage1Result, setCurrentStage, resetSession }}
     >
       {children}
     </CookingContext.Provider>
@@ -452,6 +332,8 @@ export function useStageMode(stageIndex: number): StageMode {
   return useMemo(() => {
     if (!state.session) return 'locked';
     const currentIndex = getStageIndex(state.session.status);
-    return getStageMode(stageIndex, Math.max(currentIndex, state.session.completedStageIndex + 1));
+    const mode = getStageMode(stageIndex, Math.max(currentIndex, state.session.completedStageIndex + 1));
+    log.debug('useStageMode', { stageIndex, mode, currentIndex, completedStageIndex: state.session.completedStageIndex });
+    return mode;
   }, [state.session, stageIndex]);
 }

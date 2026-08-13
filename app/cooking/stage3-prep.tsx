@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   ScrollView,
+  TouchableOpacity,
   StyleSheet,
   LayoutAnimation,
 } from 'react-native';
@@ -11,7 +12,7 @@ import { useCooking } from '../../src/contexts/CookingContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
-import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
+import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { Button } from '../../src/components/Button';
 import { Checkbox } from '../../src/components/Checkbox';
 import { cookingProgressService } from '../../src/services/cookingProgressService';
@@ -159,6 +160,25 @@ export default function Stage3PrepScreen() {
 
   const prepSteps = generatedPlan?.prepSteps;
 
+  // 按菜品分组备菜步骤
+  const groupedPrepSteps = useMemo(() => {
+    if (!prepSteps) return [];
+    const map = new Map<string, typeof prepSteps>();
+    const ungrouped: typeof prepSteps = [];
+    for (const step of prepSteps) {
+      if (step.dishName) {
+        const list = map.get(step.dishName) || [];
+        list.push(step);
+        map.set(step.dishName, list);
+      } else {
+        ungrouped.push(step);
+      }
+    }
+    const result = [...map.entries()].map(([dishName, steps]) => ({ dishName, steps }));
+    if (ungrouped.length > 0) result.push({ dishName: '通用备菜', steps: ungrouped });
+    return result;
+  }, [prepSteps]);
+
   if (!generatedPlan || !prepSteps || prepSteps.length === 0) {
     return (
       <View style={styles.container}>
@@ -244,31 +264,18 @@ interface Stage3PrepContentProps {
 }
 
 export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) {
-  const { state, dispatch } = useCooking();
+  const { state } = useCooking();
   const { setPreciseNutrition } = useNutrition();
   const personCount = state.session?.stages.requirement?.personCount ?? 1;
-  const isReadonly = mode === 'readonly';
   const generatedPlan = state.session?.stages.generatedPlan;
   const ingredientTags = generatedPlan?.ingredientTags;
-  const [checkStates, setCheckStates] = useState<Record<string, boolean>>({});
+  const [expandedDishIndex, setExpandedDishIndex] = useState(0);
 
   const nutritionShownRef = useRef(false);
 
-  const allCompletedStages = useMemo(() => {
-    if (!isReadonly) return undefined;
-    const stages = state.session?.stages;
-    const result: string[] = [];
-    if (stages?.menu) result.push('menu');
-    if (stages?.weighing) result.push('weighing');
-    if (stages?.generatedPlan?.prepSteps) result.push('prep');
-    if (stages?.generatedPlan?.bowlAssignments) result.push('bowl');
-    if (stages?.generatedPlan?.cookingSteps) result.push('cooking');
-    return result;
-  }, [isReadonly, state.session]);
-
   useFocusEffect(
     useCallback(() => {
-      if (!isReadonly && !nutritionShownRef.current && generatedPlan?.preciseNutrition) {
+      if (!nutritionShownRef.current && generatedPlan?.preciseNutrition) {
         nutritionShownRef.current = true;
         const menuProposal = state.session?.stages.menu?.menuProposal;
         if (menuProposal) {
@@ -287,13 +294,29 @@ export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) 
           }
         }
       }
-      if (state.session && mode === 'interactive') {
-        cookingProgressService.save(state.session).catch(() => {});
-      }
-    }, [state.session, mode, isReadonly, generatedPlan]),
+    }, [state.session, generatedPlan]),
   );
 
   const prepSteps = generatedPlan?.prepSteps;
+
+  // 按菜品分组备菜步骤
+  const groupedPrepSteps = useMemo(() => {
+    if (!prepSteps) return [];
+    const map = new Map<string, typeof prepSteps>();
+    const ungrouped: typeof prepSteps = [];
+    for (const step of prepSteps) {
+      if (step.dishName) {
+        const list = map.get(step.dishName) || [];
+        list.push(step);
+        map.set(step.dishName, list);
+      } else {
+        ungrouped.push(step);
+      }
+    }
+    const result = [...map.entries()].map(([dishName, steps]) => ({ dishName, steps }));
+    if (ungrouped.length > 0) result.push({ dishName: '通用备菜', steps: ungrouped });
+    return result;
+  }, [prepSteps]);
 
   if (!generatedPlan || !prepSteps || prepSteps.length === 0) {
     return (
@@ -308,65 +331,46 @@ export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) 
     );
   }
 
-  const completedCount = Object.values(checkStates).filter(Boolean).length;
-  const totalCount = prepSteps.length;
-  const allDone = completedCount === totalCount;
-
-  const handleToggle = (stepId: string) => {
-    if (isReadonly) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setCheckStates((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
-  };
-
-  const handleComplete = () => {
-    dispatch({ type: 'COMPLETE_ALL_PREP' });
-    onComplete?.();
-  };
-
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>切菜备菜</Text>
-        {!isReadonly && (
-          <Text style={styles.progress}>已完成 {completedCount}/{totalCount}</Text>
-        )}
 
-        {prepSteps.map((step) => {
-          const isDone = checkStates[step.id] ?? false;
+        {groupedPrepSteps.map((group, dishIndex) => {
+          const isExpanded = expandedDishIndex === dishIndex;
+
           return (
-            <View key={step.id} style={[styles.stepRow, isDone && styles.stepRowDone]}>
-              <Checkbox
-                checked={isDone}
-                onToggle={() => handleToggle(step.id)}
-                labelContent={
-                  <Text>
-                    {step.ingredientName ? (
-                      <Text style={styles.ingredientBold}>{step.ingredientName} </Text>
-                    ) : null}
-                    {step.quantity ? (
-                      <Text style={styles.quantityText}>{step.quantity} </Text>
-                    ) : null}
-                    <IngredientTagText text={step.description} ingredientTags={ingredientTags} />
-                  </Text>
-                }
-              />
+            <View key={group.dishName} style={styles.dishCard}>
+              <TouchableOpacity
+                style={styles.dishHeader}
+                onPress={() => setExpandedDishIndex(isExpanded ? -1 : dishIndex)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.dishName}>{group.dishName}</Text>
+                <Text style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <View style={styles.stepList}>
+                  {group.steps.map((step) => (
+                    <View key={step.id} style={styles.cardStepRow}>
+                      <Text>
+                        {step.ingredientName ? (
+                          <Text style={styles.ingredientBold}>{step.ingredientName} </Text>
+                        ) : null}
+                        {step.quantity ? (
+                          <Text style={styles.quantityText}>{step.quantity} </Text>
+                        ) : null}
+                        <IngredientTagText text={step.description} ingredientTags={ingredientTags} />
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           );
         })}
       </ScrollView>
-
-      {!isReadonly && (
-        <View style={styles.bottomBar}>
-          <Button
-            title={allDone ? '备菜完成，开始分装' : `已完成 ${completedCount}/${totalCount}`}
-            variant={allDone ? 'primary' : 'secondary'}
-            size="lg"
-            fullWidth
-            disabled={!allDone}
-            onPress={handleComplete}
-          />
-        </View>
-      )}
     </View>
   );
 }
@@ -378,8 +382,16 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: TYPOGRAPHY.body, color: COLORS.textSecondary },
   emptyHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.danger, marginTop: SPACING.sm, textAlign: 'center', paddingHorizontal: SPACING.lg },
   title: { fontSize: TYPOGRAPHY.h2, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.sm },
+  groupBlock: { marginBottom: SPACING.md },
+  groupTitle: { fontSize: TYPOGRAPHY.h4, fontWeight: '700', color: COLORS.primary, marginBottom: SPACING.sm, marginTop: SPACING.sm },
   progress: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, marginBottom: SPACING.lg },
+  dishCard: { backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.lg, marginBottom: SPACING.md, ...SHADOWS.sm, overflow: 'hidden' },
+  dishHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.lg },
+  dishName: { fontSize: TYPOGRAPHY.h4, fontWeight: '700', color: COLORS.textPrimary },
+  expandIcon: { fontSize: 12, color: COLORS.textSecondary },
+  stepList: { padding: SPACING.lg, paddingTop: 0 },
   stepRow: { backgroundColor: COLORS.surface, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.sm },
+  cardStepRow: { paddingVertical: SPACING.sm },
   stepRowDone: { opacity: 0.6 },
   ingredientBold: { fontSize: TYPOGRAPHY.body, fontWeight: '700', color: COLORS.textPrimary },
   quantityText: { fontSize: TYPOGRAPHY.body, color: COLORS.textSecondary },

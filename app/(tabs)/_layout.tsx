@@ -7,7 +7,6 @@ import { COLORS } from '../../src/constants/colors';
 const TAB_ICONS: Record<string, { focused: string; unfocused: string }> = {
   inventory: { focused: 'cube', unfocused: 'cube-outline' },
   restaurant: { focused: 'restaurant', unfocused: 'restaurant-outline' },
-  settings: { focused: 'settings', unfocused: 'settings-outline' },
 };
 
 function TabIcon({ name, color, size, focused }: { name: string; color: string; size: number; focused: boolean }) {
@@ -49,13 +48,6 @@ export default function TabLayout() {
         options={{
           title: '做菜',
           tabBarIcon: ({ color, size, focused }) => <TabIcon name="restaurant" color={color} size={size} focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: '设置',
-          tabBarIcon: ({ color, size, focused }) => <TabIcon name="settings" color={color} size={size} focused={focused} />,
         }}
       />
     </Tabs>

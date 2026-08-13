@@ -3,6 +3,10 @@
  * 使用 XMLHttpRequest.onprogress 实现 React Native 兼容的 SSE 流解析
  */
 
+import { logger } from './logger';
+
+const log = logger('UTIL:SSE');
+
 export interface SSECallbacks {
   /** 收到推理内容片段时回调 */
   onReasoning: (text: string) => void;
@@ -10,10 +14,18 @@ export interface SSECallbacks {
   onContent: (text: string) => void;
   /** 收到任意原始数据时回调（用于心跳/卡顿检测） */
   onData?: () => void;
-  /** 流结束，返回完整拼接结果 */
-  onDone: (fullContent: string, fullReasoning: string) => void;
+  /** 收到 tool_call delta 时回调（仅当模型调用工具时触发） */
+  onToolCallDelta?: (toolCalls: Array<{ index: number; id?: string; name?: string; arguments: string }>) => void;
+  /** 流结束，返回完整拼接结果和 tool_calls */
+  onDone: (fullContent: string, fullReasoning: string, toolCalls?: Array<{ id: string; name: string; arguments: string }>) => void;
   /** 出错时回调 */
   onError: (error: Error) => void;
+}
+
+interface AccumulatedToolCall {
+  id: string;
+  name: string;
+  arguments: string;
 }
 
 export interface SSEStreamController {
@@ -45,10 +57,16 @@ export function sseStreamFetch(
     xhr.setRequestHeader(key, value);
   });
 
+  log.info('开始 SSE 流式请求');
+  let sseChunkCount = 0;
+
   let fullContent = '';
   let fullReasoning = '';
   let lastProcessedIndex = 0;
   let buffer = '';
+
+  // 工具调用累积（按 index 分组）
+  const toolCallMap = new Map<number, AccumulatedToolCall>();
 
   // 超时处理
   const timeoutId = setTimeout(() => {
@@ -57,6 +75,7 @@ export function sseStreamFetch(
   }, timeoutMs);
 
   const abort = () => {
+    log.info('SSE 流被中止');
     clearTimeout(timeoutId);
     try { xhr.abort(); } catch {}
   };
@@ -99,13 +118,34 @@ export function sseStreamFetch(
           if (delta.reasoning_content) {
             fullReasoning += delta.reasoning_content;
             callbacks.onReasoning(delta.reasoning_content);
+            sseChunkCount++;
+            log.trace('SSE 事件', { type: 'reasoning' });
           }
           if (delta.content) {
             fullContent += delta.content;
             callbacks.onContent(delta.content);
+            sseChunkCount++;
+            log.trace('SSE 事件', { type: 'content' });
+          }
+          // 处理 tool_calls delta（流式工具调用）
+          if (delta.tool_calls && callbacks.onToolCallDelta) {
+            for (const tc of delta.tool_calls) {
+              const idx: number = tc.index ?? 0;
+              let acc = toolCallMap.get(idx);
+              if (!acc) {
+                acc = { id: tc.id || '', name: tc.function?.name || '', arguments: '' };
+                toolCallMap.set(idx, acc);
+              }
+              if (tc.id) acc.id = tc.id;
+              if (tc.function?.name) acc.name = tc.function.name;
+              if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+            }
+            const current: Array<{ index: number; id?: string; name?: string; arguments: string }> = [];
+            toolCallMap.forEach((v, k) => current.push({ index: k, id: v.id, name: v.name, arguments: v.arguments }));
+            callbacks.onToolCallDelta(current);
           }
         } catch {
-          // 忽略解析失败的片段
+          log.warn('JSON 解析失败，跳过此 SSE chunk');
         }
       }
     }
@@ -115,6 +155,7 @@ export function sseStreamFetch(
     clearTimeout(timeoutId);
 
     if (xhr.status >= 200 && xhr.status < 300) {
+      log.info(`SSE 流结束`, { totalChunks: sseChunkCount });
       // 处理 buffer 中可能残留的最后事件
       if (buffer.trim() && buffer.trim() !== 'data: [DONE]') {
         const lines = buffer.trim().split('\n');
@@ -131,10 +172,25 @@ export function sseStreamFetch(
             if (delta?.reasoning_content) {
               fullReasoning += delta.reasoning_content;
             }
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx: number = tc.index ?? 0;
+                let acc = toolCallMap.get(idx);
+                if (!acc) {
+                  acc = { id: tc.id || '', name: tc.function?.name || '', arguments: '' };
+                  toolCallMap.set(idx, acc);
+                }
+                if (tc.id) acc.id = tc.id;
+                if (tc.function?.name) acc.name = tc.function.name;
+                if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+              }
+            }
           } catch {}
         }
       }
-      callbacks.onDone(fullContent, fullReasoning);
+      const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+      toolCallMap.forEach((v) => toolCalls.push({ id: v.id, name: v.name, arguments: v.arguments }));
+      callbacks.onDone(fullContent, fullReasoning, toolCalls.length > 0 ? toolCalls : undefined);
     } else {
       // 错误处理
       if (xhr.status === 401) {
@@ -156,6 +212,7 @@ export function sseStreamFetch(
 
   xhr.onerror = () => {
     clearTimeout(timeoutId);
+    log.error('SSE 网络连接失败');
     callbacks.onError(new Error('网络连接失败，请检查网络后重试'));
   };
 

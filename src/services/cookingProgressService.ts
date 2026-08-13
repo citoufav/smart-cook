@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CookingSession, CookingStage } from '../types';
+import { logger } from '../utils/logger';
 
 const STORAGE_KEY = '@v1:cooking:progress_records';
 
@@ -10,15 +11,14 @@ export interface CookingProgressRecord {
   updatedAt: string;
   currentStage: CookingStage;
   session: CookingSession;
+  isCompleted?: boolean; // true = 已完成，显示"查看"；false/undefined = 进行中，显示"继续"
 }
 
 /** Stage → 可读中文 */
 export const STAGE_LABELS: Record<CookingStage, string> = {
   requirement: '需求确认',
-  menu: '查看菜单',
-  weighing: '称量确认',
+  menu: '查看菜谱',
   prep: '备菜',
-  bowl: '分装碗',
   cooking: '炒制',
   inventoryUpdate: '更新库存',
   completed: '已完成',
@@ -26,12 +26,17 @@ export const STAGE_LABELS: Record<CookingStage, string> = {
 };
 
 class CookingProgressService {
+  private log = logger('SVC:PROGRESS');
+
   private async getAll(): Promise<CookingProgressRecord[]> {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     try {
-      return JSON.parse(raw);
-    } catch {
+      const records: CookingProgressRecord[] = JSON.parse(raw);
+      this.log.debug('Loaded progress records', { count: records.length });
+      return records;
+    } catch (e) {
+      this.log.error('Failed to parse progress records', e);
       return [];
     }
   }
@@ -52,6 +57,7 @@ class CookingProgressService {
       existing.updatedAt = now;
       if (name) existing.name = name;
       await this.saveAll(all);
+      this.log.info('Updated progress record', { status: session.status, completedStageIndex: session.completedStageIndex, recordCount: all.length });
       return existing;
     }
 
@@ -66,12 +72,34 @@ class CookingProgressService {
     all.unshift(record);
     if (all.length > 50) all.length = 50;
     await this.saveAll(all);
+    this.log.info('Created progress record', { status: session.status, completedStageIndex: session.completedStageIndex, recordCount: all.length });
     return record;
   }
 
-  /** 获取所有进度记录 */
+  /** 标记为已完成 */
+  async markCompleted(sessionId: string): Promise<boolean> {
+    const all = await this.getAll();
+    const record = all.find((r) => r.session.id === sessionId);
+    if (!record) return false;
+    record.isCompleted = true;
+    record.currentStage = 'completed';
+    record.updatedAt = new Date().toISOString();
+    await this.saveAll(all);
+    this.log.info('Marked progress record as completed', { sessionId });
+    return true;
+  }
+
+  /** 获取进行中的记录（未完成） */
+  async getActiveRecords(): Promise<CookingProgressRecord[]> {
+    const all = await this.getAll();
+    return all.filter((r) => !r.isCompleted);
+  }
+
+  /** 获取所有进度记录（含已完成） */
   async getAllRecords(): Promise<CookingProgressRecord[]> {
-    return this.getAll();
+    const records = await this.getAll();
+    this.log.debug('getAllRecords', { count: records.length });
+    return records;
   }
 
   /** 删除一条记录 */
@@ -80,6 +108,7 @@ class CookingProgressService {
     const filtered = all.filter((r) => r.id !== recordId);
     if (filtered.length === all.length) return false;
     await this.saveAll(filtered);
+    this.log.info('Removed progress record', { recordId });
     return true;
   }
 
@@ -90,6 +119,7 @@ class CookingProgressService {
     if (!item) return false;
     item.name = newName.trim();
     await this.saveAll(all);
+    this.log.info('Renamed progress record', { recordId, newName });
     return true;
   }
 }
