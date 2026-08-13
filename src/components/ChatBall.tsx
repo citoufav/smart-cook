@@ -8,7 +8,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useCooking } from '../contexts/CookingContext';
-import { getStageIndex } from '../types';
 import { COLORS } from '../constants/colors';
 import { SHADOWS } from '../constants/spacing';
 
@@ -43,15 +42,10 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
   const onPressRef = useRef(onPress);
   onPressRef.current = onPress;
 
-  const session = cookingState.session;
-  const currentStage = session?.status || '';
-
+  // 进行中的进度阶段（prep/cooking）才需要为底部操作栏留出空间
   const isInteractive = useMemo(() => {
-    if (!session) return false;
-    const stageIdx = getStageIndex(session.status);
-    if (stageIdx < 0) return false;
-    return stageIdx > session.completedStageIndex;
-  }, [session?.status, session?.completedStageIndex]);
+    return cookingState.session?.status === 'prep' || cookingState.session?.status === 'cooking';
+  }, [cookingState.session?.status]);
 
   const bottomOffset = useMemo(
     () => (isInteractive ? BOTTOM_BAR_OFFSET : NO_BAR_OFFSET),

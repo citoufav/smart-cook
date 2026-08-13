@@ -212,8 +212,6 @@ export interface CookingSession {
   createdAt: string;
   updatedAt: string;
   version: number;
-  /** 0-based index of the highest completed stage (menu=0, prep=1, cooking=2). -1 means no stage completed yet */
-  completedStageIndex: number;
 }
 
 export interface CookingState {
@@ -290,10 +288,7 @@ export interface InventoryCheckResult {
   ingredientCount: number;
 }
 
-// ============ 阶段模式（三状态模型） ============
-/** 页面所处的模式：locked=未开始不可查看，readonly=已完成只读，interactive=进行中可操作 */
-export type StageMode = 'locked' | 'readonly' | 'interactive';
-
+// ============ 阶段模型 ============
 /** 做菜阶段索引（0-2），对应菜谱→备菜→炒制 */
 export const STAGE_INDEX_MAP: Record<string, number> = {
   menu: 0,
@@ -311,11 +306,4 @@ export function getStageIndex(stage: CookingStage): number {
 /** 根据索引获取 CookingStage */
 export function getStageKeyByIndex(index: number): CookingStage {
   return STAGE_KEYS[index] || 'menu';
-}
-
-/** 根据 stage 索引和当前进度计算阶段模式 */
-export function getStageMode(stageIndex: number, currentStageIndex: number): StageMode {
-  if (stageIndex < currentStageIndex) return 'readonly';
-  if (stageIndex === currentStageIndex) return 'interactive';
-  return 'locked';
 }

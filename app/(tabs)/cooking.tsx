@@ -286,7 +286,6 @@ export default function CookingEntryScreen() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 1,
-      completedStageIndex: -1,
     }, sessionName).catch(() => {});
 
     // 保存到饮食记忆

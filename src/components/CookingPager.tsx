@@ -68,7 +68,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   useEffect(() => {
     if (!session) return;
-    log.info('RENDER', { historyMode, status: session.status, completedStageIndex: session.completedStageIndex });
+    log.info('RENDER', { historyMode, status: session.status });
   }, []);
 
   // 控制聊天悬浮球的显示和点击行为（ref 方式，不触发父组件 re-render）
@@ -88,9 +88,11 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   const statusIndex = getStageIndex(session.status);
 
-  // 初始页面定位
+  // 初始页面定位：历史查看时定位到最后一个有数据的阶段
   const initialPage = historyMode
-    ? Math.max(0, session.completedStageIndex)
+    ? (session.stages.menu?.menuProposal?.cookingSteps?.length ? 2
+        : session.stages.menu?.menuProposal?.prepSteps?.length ? 1
+        : 0)
     : statusIndex < 0 ? 0 : statusIndex;
 
   // 进度条点击跳转 + 滚动联动
@@ -121,8 +123,6 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   const currentLabel = STAGE_LABELS[currentPage] || '菜谱概览';
 
-  const commonProps = { mode: 'readonly' as const };
-
   return (
     <View style={styles.container}>
       {/* 顶部步骤状态栏 */}
@@ -141,13 +141,13 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
         style={styles.stageContent}
       >
         <View style={{ width: screenWidth, flex: 1 }}>
-          <Stage1MenuContent {...commonProps} />
+          <Stage1MenuContent />
         </View>
         <View style={{ width: screenWidth, flex: 1 }}>
-          <Stage3PrepContent {...commonProps} />
+          <Stage3PrepContent />
         </View>
         <View style={{ width: screenWidth, flex: 1 }}>
-          <Stage5CookingContent {...commonProps} />
+          <Stage5CookingContent />
         </View>
       </ScrollView>
 

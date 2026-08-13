@@ -10,7 +10,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNutrition } from '../contexts/NutritionContext';
 import { useCooking } from '../contexts/CookingContext';
-import { getStageIndex } from '../types';
 import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SHADOWS } from '../constants/spacing';
@@ -49,15 +48,10 @@ export function FloatingBall({ otherBallRect, onPositionUpdate }: FloatingBallPr
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const session = cookingState.session;
-  const currentStage = session?.status || '';
-
+  // 进行中的进度阶段（prep/cooking）才需要为底部操作栏留出空间
   const isInteractive = useMemo(() => {
-    if (!session) return false;
-    const stageIdx = getStageIndex(session.status);
-    if (stageIdx < 0) return false;
-    return stageIdx > session.completedStageIndex;
-  }, [session?.status, session?.completedStageIndex]);
+    return cookingState.session?.status === 'prep' || cookingState.session?.status === 'cooking';
+  }, [cookingState.session?.status]);
 
   const bottomOffset = useMemo(
     () => (isInteractive ? BOTTOM_BAR_OFFSET : NO_BAR_OFFSET),
@@ -149,7 +143,7 @@ export function FloatingBall({ otherBallRect, onPositionUpdate }: FloatingBallPr
     lastPos.current = { x: defaultX, y: defaultY };
     positionAnim.setValue({ x: defaultX, y: defaultY });
     onPositionUpdate?.(defaultX, defaultY);
-    log.info('BALL_REPOSITION', { stage: currentStage, isInteractive, bottomOffset });
+    log.info('BALL_REPOSITION', { stage: cookingState.session?.status || '', isInteractive, bottomOffset });
   }, [bottomOffset]);
 
   // 显示/隐藏
@@ -176,7 +170,7 @@ export function FloatingBall({ otherBallRect, onPositionUpdate }: FloatingBallPr
     }
   }, [state.isVisible]);
 
-  if (!state.isVisible && scaleAnim._value === 0) return null;
+  if (!state.isVisible && (scaleAnim as any)._value === 0) return null;
 
   const perPerson = getPerPersonNutrition(state.totalNutrition, state.personCount);
   const calories = Math.round(perPerson.calories);

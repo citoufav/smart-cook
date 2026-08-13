@@ -100,12 +100,7 @@ const tagStyles = StyleSheet.create({
   },
 });
 
-interface Stage5CookingContentProps {
-  mode: 'readonly' | 'interactive';
-  onComplete?: () => void;
-}
-
-export function Stage5CookingContent({ mode, onComplete }: Stage5CookingContentProps) {
+export function Stage5CookingContent() {
   const { state } = useCooking();
   const menuProposal = state.session?.stages.menu?.menuProposal;
   const ingredientTags = menuProposal?.ingredientTags;

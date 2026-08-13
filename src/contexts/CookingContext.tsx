@@ -1,13 +1,11 @@
-import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import {
   CookingState,
   CookingStage,
   RequirementInput,
   MenuProposal,
   Stage1Data,
-  StageMode,
   getStageIndex,
-  getStageMode,
   STAGE_KEYS,
 } from '../types';
 import { VALID_TRANSITIONS } from '../constants/cooking';
@@ -34,28 +32,6 @@ const INITIAL_STATE: CookingState = {
   error: null,
 };
 
-/** 确保旧数据也有 completedStageIndex（向后兼容迁移） */
-function ensureCompletedStageIndex(session: CookingState['session']): CookingState['session'] {
-  if (!session) return session;
-  if (session.completedStageIndex !== undefined) return session;
-  // 迁移：根据已有 stage 数据推导 (menu=0, prep=1, cooking=2)
-  let idx = -1;
-  const stages = session.stages;
-  if (stages.menu) idx = Math.max(idx, 0);
-  if (stages.menu?.menuProposal?.prepSteps) idx = Math.max(idx, 1);
-  if (stages.menu?.menuProposal?.cookingSteps) idx = Math.max(idx, 2);
-  // 兜底：根据 status 推断
-  const statusIdx = getStageIndex(session.status);
-  if (statusIdx > 0 && idx < statusIdx - 1) {
-    idx = statusIdx - 1;
-  }
-  // 当前阶段不可被标记为已完成
-  if (idx > statusIdx && statusIdx >= 0) {
-    idx = statusIdx;
-  }
-  return { ...session, completedStageIndex: idx };
-}
-
 function cookingReducer(state: CookingState, action: CookingAction): CookingState {
   log.debug('REDUCER', { type: action.type });
   const now = new Date().toISOString();
@@ -73,13 +49,12 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
           createdAt: now,
           updatedAt: now,
           version: 1,
-          completedStageIndex: -1,
         },
       };
 
     case 'RESTORE_SESSION': {
-      log.info('RESTORE_SESSION', { status: action.payload?.status, completedStageIndex: action.payload?.completedStageIndex });
-      const sess = ensureCompletedStageIndex(action.payload);
+      log.info('RESTORE_SESSION', { status: action.payload?.status });
+      const sess = action.payload;
       // 数据迁移：旧数据把步骤存在 stages.generatedPlan，将其回填到 menu.menuProposal
       const legacyGp = (sess as any)?.stages?.generatedPlan;
       if (sess && legacyGp && sess.stages.menu?.menuProposal) {
@@ -147,7 +122,6 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
             menu: action.payload,
           },
           updatedAt: now,
-          completedStageIndex: 0,
         },
       };
     }
@@ -192,35 +166,29 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
 
     case 'SET_CURRENT_STAGE': {
       if (!state.session) return state;
-      log.info('SET_CURRENT_STAGE', { from: state.session.status, to: action.payload, completedStageIndex: state.session.completedStageIndex });
-      // 特殊处理 'completed'：标记所有阶段完成
+      log.info('SET_CURRENT_STAGE', { from: state.session.status, to: action.payload });
+      // 特殊处理 'completed'：标记为最终完成阶段
       if (action.payload === 'completed') {
         return {
           ...state,
           session: {
             ...state.session,
             status: STAGE_KEYS[STAGE_KEYS.length - 1],
-            completedStageIndex: STAGE_KEYS.length - 1,
             updatedAt: now,
           },
         };
       }
       const targetIndex = getStageIndex(action.payload);
-      const currentCompleted = state.session.completedStageIndex;
-      console.log('[CTX] SET_CURRENT_STAGE | payload:', action.payload, '| targetIdx:', targetIndex, '| currentCompletedIdx:', currentCompleted, '| currentStatus:', state.session.status);
       // 拒绝非进度阶段
       if (targetIndex < 0 || targetIndex >= STAGE_KEYS.length) {
         console.log('[CTX] → 拒绝：非进度阶段');
         return state;
       }
-      // 允许跳转（包括回退到已完成阶段，进度条已做 maxAccessible 拦截）
-      console.log('[CTX] → 允许，new completedIdx=', Math.max(currentCompleted, targetIndex - 1));
       return {
         ...state,
         session: {
           ...state.session,
           status: action.payload,
-          completedStageIndex: Math.max(currentCompleted, targetIndex - 1),
           updatedAt: now,
         },
       };
@@ -287,7 +255,7 @@ export function CookingProvider({ children }: { children: React.ReactNode }) {
 
   const restoreSession = useCallback((session: CookingState['session']) => {
     if (session) {
-      log.info('restoreSession called', { status: session.status, completedStageIndex: session.completedStageIndex });
+      log.info('restoreSession called', { status: session.status });
       dispatch({ type: 'RESTORE_SESSION', payload: session });
     }
   }, []);
@@ -320,16 +288,4 @@ export function useCooking() {
   const ctx = useContext(CookingContext);
   if (!ctx) throw new Error('useCooking must be used within CookingProvider');
   return ctx;
-}
-
-/** 获取指定 stage 索引的 StageMode */
-export function useStageMode(stageIndex: number): StageMode {
-  const { state } = useCooking();
-  return useMemo(() => {
-    if (!state.session) return 'locked';
-    const currentIndex = getStageIndex(state.session.status);
-    const mode = getStageMode(stageIndex, Math.max(currentIndex, state.session.completedStageIndex + 1));
-    log.debug('useStageMode', { stageIndex, mode, currentIndex, completedStageIndex: state.session.completedStageIndex });
-    return mode;
-  }, [state.session, stageIndex]);
 }

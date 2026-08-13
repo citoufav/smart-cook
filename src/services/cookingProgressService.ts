@@ -57,7 +57,7 @@ class CookingProgressService {
       existing.updatedAt = now;
       if (name) existing.name = name;
       await this.saveAll(all);
-      this.log.info('Updated progress record', { status: session.status, completedStageIndex: session.completedStageIndex, recordCount: all.length });
+      this.log.info('Updated progress record', { status: session.status, recordCount: all.length });
       return existing;
     }
 
@@ -72,7 +72,7 @@ class CookingProgressService {
     all.unshift(record);
     if (all.length > 50) all.length = 50;
     await this.saveAll(all);
-    this.log.info('Created progress record', { status: session.status, completedStageIndex: session.completedStageIndex, recordCount: all.length });
+    this.log.info('Created progress record', { status: session.status, recordCount: all.length });
     return record;
   }
 

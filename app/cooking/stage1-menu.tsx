@@ -9,7 +9,7 @@ import {
 import { router } from 'expo-router';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
-import { MenuProposal, DishPlan, StageMode } from '../../src/types';
+import { MenuProposal, DishPlan } from '../../src/types';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
@@ -17,12 +17,7 @@ import { Card } from '../../src/components/Card';
 import { useSafeJsonParam } from '../../src/hooks/useSafeJsonParam';
 import { RequirementInput } from '../../src/types';
 
-interface Stage1MenuContentProps {
-  mode: StageMode;
-  onComplete?: () => void;
-}
-
-export function Stage1MenuContent({ mode }: Stage1MenuContentProps) {
+export function Stage1MenuContent() {
   const { state } = useCooking();
   const { state: nutritionState } = useNutrition();
   const requirement = useSafeJsonParam<RequirementInput>('requirement');

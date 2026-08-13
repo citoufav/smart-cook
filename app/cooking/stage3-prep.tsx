@@ -12,7 +12,7 @@ import { useNutrition } from '../../src/contexts/NutritionContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
-import { IngredientTag, NutritionalData, StageMode } from '../../src/types';
+import { IngredientTag, NutritionalData } from '../../src/types';
 
 /** 修补 AI 输出中不完整的方括号 */
 function normalizeBrackets(text: string): string {
@@ -103,12 +103,7 @@ const tagStyles = StyleSheet.create({
   },
 });
 
-interface Stage3PrepContentProps {
-  mode: StageMode;
-  onComplete?: () => void;
-}
-
-export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) {
+export function Stage3PrepContent() {
   const { state } = useCooking();
   const { setPreciseNutrition } = useNutrition();
   const personCount = state.session?.stages.requirement?.personCount ?? 1;
