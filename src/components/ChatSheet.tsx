@@ -21,6 +21,7 @@ import { useCooking } from '../contexts/CookingContext';
 import { callAIChatStream, RecipeContext, ToolCallResult, sendChatMessage } from '../services/chatService';
 import { saveChat, loadChat, estimateTokens } from '../services/chatHistoryService';
 import { cookingProgressService } from '../services/cookingProgressService';
+import { applyRecipeChanges, RecipeChange } from '../services/recipeEditService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { SSEStreamController } from '../utils/sseStream';
@@ -172,172 +173,28 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     const session = cookingState.session;
     if (!session) return '无活跃做菜会话';
 
-    const results: string[] = [];
     for (const tc of toolCalls) {
       if (tc.name !== 'modify_recipe') continue;
       try {
         const args = JSON.parse(tc.arguments);
         const reason: string = args.reason || '菜谱修改';
-        const changes: any[] = args.changes || [];
+        const changes: RecipeChange[] = args.changes || [];
         if (changes.length === 0) continue;
 
-        // 深拷贝
-        const mp = JSON.parse(JSON.stringify(session.stages.menu?.menuProposal || {}));
-        const dishes: any[] = mp.dishes || [];
-        const prepSteps: any[] = mp.prepSteps || [];
-        const cookingSteps: any[] = mp.cookingSteps || [];
-
-        // 同时准备 generatedPlan 的步骤（菜谱页和炒制页都更新）
-        const gpPrepSteps: any[] = JSON.parse(JSON.stringify(session.stages.generatedPlan?.prepSteps || prepSteps));
-        const gpCookingSteps: any[] = JSON.parse(JSON.stringify(session.stages.generatedPlan?.cookingSteps || cookingSteps));
-
-        for (const change of changes) {
-          const dishName: string = change.dish || '';
-          const dish = dishes.find((d: any) => d.name === dishName);
-          switch (change.type) {
-            case 'adjust_ingredient': {
-              if (!dish) break;
-              const ing = dish.ingredients?.find((i: any) => i.name === change.ingredient);
-              if (ing && change.new_weight != null) {
-                ing.estimatedWeight = change.new_weight;
-                results.push(`✅ ${dish.name}: ${change.ingredient} → ${change.new_weight}g`);
-              }
-              break;
-            }
-            case 'replace_ingredient': {
-              if (!dish) break;
-              const ing = dish.ingredients?.find((i: any) => i.name === change.ingredient);
-              if (ing && change.new_ingredient) {
-                ing.name = change.new_ingredient;
-                results.push(`✅ ${dish.name}: ${change.ingredient} → ${change.new_ingredient}`);
-              }
-              break;
-            }
-            case 'add_ingredient': {
-              if (!dish) break;
-              if (!dish.ingredients) dish.ingredients = [];
-              if (change.ingredient && !dish.ingredients.find((i: any) => i.name === change.ingredient)) {
-                dish.ingredients.push({ name: change.ingredient, estimatedWeight: change.new_weight || 10 });
-                results.push(`✅ ${dish.name}: 添加食材 ${change.ingredient}`);
-              }
-              break;
-            }
-            case 'remove_ingredient': {
-              if (!dish) break;
-              dish.ingredients = (dish.ingredients || []).filter((i: any) => i.name !== change.ingredient);
-              results.push(`✅ ${dish.name}: 移除食材 ${change.ingredient}`);
-              break;
-            }
-            case 'update_step': {
-              const stepNum: number = change.step_number;
-              // 同时查备菜和炒制步骤
-              let found = false;
-              for (const steps of [prepSteps, cookingSteps, gpPrepSteps, gpCookingSteps]) {
-                const target = steps.find((s: any) => (s.order ?? s.stepNumber) === stepNum);
-                if (target && change.new_description) {
-                  target.description = change.new_description;
-                  target.instruction = change.new_description;
-                  found = true;
-                }
-              }
-              if (found) results.push(`✅ 步骤 ${stepNum} 已更新`);
-              else results.push(`⚠ 未找到步骤 ${stepNum}`);
-              break;
-            }
-            case 'add_step': {
-              if (change.add_after_step != null && change.new_description) {
-                const afterStep = change.add_after_step;
-                const newStep: any = {
-                  description: change.new_description,
-                  instruction: change.new_description,
-                  dishName: change.dish || '',
-                  id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  isCompleted: false,
-                };
-                // 判断是加在备菜还是炒制
-                const inPrep = prepSteps.some((s: any) => (s.order ?? s.stepNumber) === afterStep);
-                const inCook = cookingSteps.some((s: any) => (s.order ?? s.stepNumber) === afterStep)
-                  || gpCookingSteps.some((s: any) => (s.order ?? s.stepNumber) === afterStep);
-
-                if (inPrep) {
-                  const idx = prepSteps.findIndex((s: any) => (s.order ?? s.stepNumber) === afterStep);
-                  newStep.order = afterStep + 1;
-                  if (idx >= 0) prepSteps.splice(idx + 1, 0, newStep);
-                  else prepSteps.push(newStep);
-                  // 同步到 gp
-                  const gpidx = gpPrepSteps.findIndex((s: any) => (s.order ?? s.stepNumber) === afterStep);
-                  if (gpidx >= 0) {
-                    const gpNew = { ...newStep };
-                    delete (gpNew as any).dishName;
-                    gpPrepSteps.splice(gpidx + 1, 0, gpNew);
-                  }
-                } else if (inCook) {
-                  newStep.stepNumber = afterStep + 1;
-                  if (!cookingSteps.find((s: any) => (s.order ?? s.stepNumber) === afterStep + 1)) {
-                    cookingSteps.push(newStep);
-                  }
-                  const gpNewCook = { ...newStep };
-                  if (!gpCookingSteps.find((s: any) => (s.order ?? s.stepNumber) === afterStep + 1)) {
-                    gpCookingSteps.push(gpNewCook);
-                  }
-                } else {
-                  // 默认加到备菜
-                  prepSteps.push({ ...newStep, order: (prepSteps.length || 0) + 1 });
-                }
-                results.push(`✅ 在步骤 ${afterStep} 后添加了新步骤`);
-              }
-              break;
-            }
-            case 'remove_step': {
-              const stepNum: number = change.step_number;
-              let removed = false;
-              for (const arr of [prepSteps, gpPrepSteps]) {
-                const before = arr.length;
-                const filtered = arr.filter((s: any) => (s.order ?? s.stepNumber) !== stepNum);
-                if (filtered.length < before) {
-                  arr.length = 0;
-                  arr.push(...filtered);
-                  removed = true;
-                }
-              }
-              for (const arr of [cookingSteps, gpCookingSteps]) {
-                const before = arr.length;
-                const filtered = arr.filter((s: any) => (s.order ?? s.stepNumber) !== stepNum);
-                if (filtered.length < before) {
-                  arr.length = 0;
-                  arr.push(...filtered);
-                  removed = true;
-                }
-              }
-              if (removed) results.push(`✅ 步骤 ${stepNum} 已移除`);
-              else results.push(`⚠ 未找到步骤 ${stepNum}`);
-              break;
-            }
-            case 'rename_dish': {
-              if (dish && change.new_dish) {
-                const oldName = dish.name;
-                dish.name = change.new_dish;
-                // 同步更新步骤里的 dishName
-                for (const steps of [prepSteps, cookingSteps, gpPrepSteps, gpCookingSteps]) {
-                  for (const s of steps) {
-                    if (s.dishName === oldName) s.dishName = change.new_dish;
-                  }
-                }
-                results.push(`✅ 菜品更名: ${oldName} → ${change.new_dish}`);
-              }
-              break;
-            }
-          }
-        }
-
-        mp.dishes = dishes;
-        mp.prepSteps = prepSteps;
-        mp.cookingSteps = cookingSteps;
+        // 纯函数：把修改应用到菜单方案（不修改原对象，返回新方案）
+        const { proposal, messages } = applyRecipeChanges(
+          session.stages.menu?.menuProposal || ({} as any),
+          changes,
+        );
 
         // 使用 UPDATE_PLAN 一次性更新，不重置进度
         cookingDispatch({
           type: 'UPDATE_PLAN',
-          payload: { menuProposal: mp, prepSteps: gpPrepSteps, cookingSteps: gpCookingSteps },
+          payload: {
+            menuProposal: proposal,
+            prepSteps: proposal.prepSteps || [],
+            cookingSteps: proposal.cookingSteps || [],
+          },
         });
 
         // 持久化到 cookingProgressService
@@ -346,16 +203,16 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
           stages: {
             ...session.stages,
             menu: session.stages.menu
-              ? { ...session.stages.menu, menuProposal: mp }
+              ? { ...session.stages.menu, menuProposal: proposal }
               : session.stages.menu,
             generatedPlan: session.stages.generatedPlan
-              ? { ...session.stages.generatedPlan, prepSteps: gpPrepSteps, cookingSteps: gpCookingSteps }
+              ? { ...session.stages.generatedPlan, prepSteps: proposal.prepSteps || [], cookingSteps: proposal.cookingSteps || [] }
               : session.stages.generatedPlan,
           },
         };
         cookingProgressService.save(updatedSession).catch(() => {});
 
-        return `🔧 ${reason}\n${results.join('\n')}`;
+        return `🔧 ${reason}\n${messages.join('\n')}`;
       } catch (e: any) {
         return `❌ 修改失败: ${e.message}`;
       }
