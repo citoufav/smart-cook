@@ -48,7 +48,8 @@
           "android": {
             "enableProguardOnRelease": false,
             "minSdkVersion": 24,
-            "windowSoftInputMode": "adjustResize"
+            "windowSoftInputMode": "adjustResize",
+            "buildArchs": ["arm64-v8a"]
           }
         }
       ]
