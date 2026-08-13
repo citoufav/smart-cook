@@ -20,7 +20,7 @@ type CookingAction =
   | { type: 'SET_REQUIREMENT'; payload: RequirementInput }
   | { type: 'SET_MENU_PROPOSAL'; payload: MenuProposal }
   | { type: 'SET_STAGE1_RESULT'; payload: Stage1Data }
-  | { type: 'UPDATE_PLAN'; payload: { menuProposal: MenuProposal; prepSteps: any[]; cookingSteps: any[] } }
+  | { type: 'UPDATE_PLAN'; payload: { menuProposal: MenuProposal } }
   | { type: 'ADVANCE_STAGE'; payload: CookingStage }
   | { type: 'SET_CURRENT_STAGE'; payload: CookingStage }
   | { type: 'TOGGLE_SHOPPING_ITEM'; payload: string }
@@ -42,8 +42,8 @@ function ensureCompletedStageIndex(session: CookingState['session']): CookingSta
   let idx = -1;
   const stages = session.stages;
   if (stages.menu) idx = Math.max(idx, 0);
-  if (stages.generatedPlan?.prepSteps) idx = Math.max(idx, 1);
-  if (stages.generatedPlan?.cookingSteps) idx = Math.max(idx, 2);
+  if (stages.menu?.menuProposal?.prepSteps) idx = Math.max(idx, 1);
+  if (stages.menu?.menuProposal?.cookingSteps) idx = Math.max(idx, 2);
   // 兜底：根据 status 推断
   const statusIdx = getStageIndex(session.status);
   if (statusIdx > 0 && idx < statusIdx - 1) {
@@ -80,15 +80,19 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
     case 'RESTORE_SESSION': {
       log.info('RESTORE_SESSION', { status: action.payload?.status, completedStageIndex: action.payload?.completedStageIndex });
       const sess = ensureCompletedStageIndex(action.payload);
-      // 修复：如果 restored session 缺少 generatedPlan，从 menu.menuProposal 重建
-      if (sess && !sess.stages.generatedPlan && sess.stages.menu?.menuProposal) {
+      // 数据迁移：旧数据把步骤存在 stages.generatedPlan，将其回填到 menu.menuProposal
+      const legacyGp = (sess as any)?.stages?.generatedPlan;
+      if (sess && legacyGp && sess.stages.menu?.menuProposal) {
         const mp = sess.stages.menu.menuProposal;
-        sess.stages.generatedPlan = {
-          prepSteps: mp.prepSteps || [],
-          cookingSteps: mp.cookingSteps || [],
-          preciseNutrition: mp.preciseNutrition || [],
+        const merged = {
+          ...mp,
+          prepSteps: mp.prepSteps?.length ? mp.prepSteps : legacyGp.prepSteps || [],
+          cookingSteps: mp.cookingSteps?.length ? mp.cookingSteps : legacyGp.cookingSteps || [],
+          preciseNutrition: mp.preciseNutrition?.length ? mp.preciseNutrition : legacyGp.preciseNutrition || [],
+          ingredientTags: mp.ingredientTags || legacyGp.ingredientTags,
         };
-        console.log('[CTX_RESTORE] rebuilt generatedPlan: prepSteps=', sess.stages.generatedPlan.prepSteps.length, 'cookingSteps=', sess.stages.generatedPlan.cookingSteps.length);
+        sess.stages.menu = { ...sess.stages.menu, menuProposal: merged };
+        console.log('[CTX_RESTORE] 迁移旧 generatedPlan → menuProposal: prepSteps=', merged.prepSteps.length, 'cookingSteps=', merged.cookingSteps.length);
       }
       // 打印恢复的 missingItems 勾选状态
       const mi = sess.stages?.menu?.menuProposal?.missingItems || [];
@@ -141,11 +145,6 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
           stages: {
             ...state.session.stages,
             menu: action.payload,
-            generatedPlan: {
-              prepSteps: mp.prepSteps || [],
-              cookingSteps: mp.cookingSteps || [],
-              preciseNutrition: mp.preciseNutrition || [],
-            },
           },
           updatedAt: now,
           completedStageIndex: 0,
@@ -155,7 +154,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
 
     case 'UPDATE_PLAN': {
       if (!state.session) return state;
-      const { menuProposal, prepSteps, cookingSteps } = action.payload;
+      const { menuProposal } = action.payload;
       return {
         ...state,
         session: {
@@ -165,9 +164,6 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
             menu: state.session.stages.menu
               ? { ...state.session.stages.menu, menuProposal: { ...state.session.stages.menu.menuProposal, ...menuProposal } }
               : state.session.stages.menu,
-            generatedPlan: state.session.stages.generatedPlan
-              ? { ...state.session.stages.generatedPlan, prepSteps, cookingSteps }
-              : state.session.stages.generatedPlan,
           },
           updatedAt: now,
         },

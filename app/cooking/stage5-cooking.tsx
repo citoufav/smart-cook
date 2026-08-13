@@ -109,9 +109,8 @@ export default function Stage5CookingScreen() {
   const { state, dispatch } = useCooking();
   const params = useLocalSearchParams<{ readonly?: string }>();
   const isReadonly = params.readonly === '1';
-  const generatedPlan = state.session?.stages.generatedPlan;
-  const ingredientTags = generatedPlan?.ingredientTags;
-  const bowlAssignments = generatedPlan?.bowlAssignments;
+  const menuProposal = state.session?.stages.menu?.menuProposal;
+  const ingredientTags = menuProposal?.ingredientTags;
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
   const [checkStates, setCheckStates] = useState<Record<string, boolean>>({});
   const [showDoneAlert, setShowDoneAlert] = useState(false);
@@ -121,10 +120,8 @@ export default function Stage5CookingScreen() {
     const stages = state.session?.stages;
     const result: string[] = [];
     if (stages?.menu) result.push('menu');
-    if (stages?.weighing) result.push('weighing');
-    if (stages?.generatedPlan?.prepSteps) result.push('prep');
-    if (stages?.generatedPlan?.bowlAssignments) result.push('bowl');
-    if (stages?.generatedPlan?.cookingSteps) result.push('cooking');
+    if (stages?.menu?.menuProposal?.prepSteps) result.push('prep');
+    if (stages?.menu?.menuProposal?.cookingSteps) result.push('cooking');
     return result;
   }, [isReadonly, state.session]);
 
@@ -136,14 +133,14 @@ export default function Stage5CookingScreen() {
     }, [state.session, isReadonly]),
   );
 
-  const cookingSteps = generatedPlan?.cookingSteps;
+  const cookingSteps = menuProposal?.cookingSteps;
 
-  if (!generatedPlan || !cookingSteps || cookingSteps.length === 0) {
+  if (!menuProposal || !cookingSteps || cookingSteps.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>暂无炒制数据</Text>
-          {generatedPlan && !cookingSteps && (
+          {menuProposal && !cookingSteps && (
             <Text style={styles.emptyHint}>AI 返回的生成方案中缺少炒制步骤，请返回重新生成</Text>
           )}
         </View>
@@ -218,7 +215,6 @@ export default function Stage5CookingScreen() {
                             <InstructionText
                               text={step.instruction}
                               ingredientTags={ingredientTags}
-                              bowlAssignments={bowlAssignments}
                             />
                           }
                         />
@@ -273,18 +269,18 @@ interface Stage5CookingContentProps {
 
 export function Stage5CookingContent({ mode, onComplete }: Stage5CookingContentProps) {
   const { state } = useCooking();
-  const generatedPlan = state.session?.stages.generatedPlan;
-  const ingredientTags = generatedPlan?.ingredientTags;
+  const menuProposal = state.session?.stages.menu?.menuProposal;
+  const ingredientTags = menuProposal?.ingredientTags;
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
 
-  const cookingSteps = generatedPlan?.cookingSteps;
+  const cookingSteps = menuProposal?.cookingSteps;
 
-  if (!generatedPlan || !cookingSteps || cookingSteps.length === 0) {
+  if (!menuProposal || !cookingSteps || cookingSteps.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>暂无炒制数据</Text>
-          {generatedPlan && !cookingSteps && (
+          {menuProposal && !cookingSteps && (
             <Text style={styles.emptyHint}>AI 返回的生成方案中缺少炒制步骤，请返回重新生成</Text>
           )}
         </View>

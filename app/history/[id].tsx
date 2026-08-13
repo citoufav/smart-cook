@@ -51,8 +51,8 @@ export default function HistoryDetailScreen() {
 
   const menu = item.menuProposal;
   const dishes = menu?.dishes || [];
-  const prepSteps: any[] = menu?.prepSteps || menu?.generatedPlan?.prepSteps || [];
-  const cookingSteps: any[] = menu?.cookingSteps || menu?.generatedPlan?.cookingSteps || [];
+  const prepSteps: any[] = menu?.prepSteps || [];
+  const cookingSteps: any[] = menu?.cookingSteps || [];
 
   // 构建菜谱上下文给聊天窗
   const recipeContext: RecipeContext = useMemo(() => ({

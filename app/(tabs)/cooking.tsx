@@ -221,9 +221,6 @@ export default function CookingEntryScreen() {
       { calories: 0, protein: 0, fat: 0, carbs: 0 },
     );
 
-    // 构建 ingredientTags（每道菜的食材名+预估用量，用于标签颜色）
-    const ingredientTags: any[] = [];
-
     setStage1Result({
       menuProposal: {
         dishes: result.dishes || [],
@@ -242,6 +239,7 @@ export default function CookingEntryScreen() {
         prepSteps: result.prepSteps || [],
         cookingSteps: result.cookingSteps || [],
         preciseNutrition: result.preciseNutrition || [],
+        ingredientTags: result.ingredientTags || [],
       },
       requirementInput: {
         personCount: effectivePeople,
@@ -293,6 +291,7 @@ export default function CookingEntryScreen() {
         prepSteps: result.prepSteps || [],
         cookingSteps: result.cookingSteps || [],
         preciseNutrition: result.preciseNutrition || [],
+        ingredientTags: result.ingredientTags || [],
       },
       reasoningContent: result.reasoningContent || '',
       requirement: {
@@ -328,14 +327,10 @@ export default function CookingEntryScreen() {
             prepSteps: result.prepSteps || [],
             cookingSteps: result.cookingSteps || [],
             preciseNutrition: result.preciseNutrition || [],
+            ingredientTags: result.ingredientTags || [],
           },
           requirementInput: { personCount: effectivePeople, mealType: mealType as any, caloriePreference: effectiveCalorie, customRequirement: customRequest },
           reasoningContent: result.reasoningContent || '',
-        },
-        generatedPlan: {
-          prepSteps: result.prepSteps || [],
-          cookingSteps: result.cookingSteps || [],
-          preciseNutrition: result.preciseNutrition || [],
         },
       },
       createdAt: new Date().toISOString(),

@@ -41,7 +41,6 @@ export default function InventoryUpdateScreen() {
     setAlertState({ visible: true, title, message, buttons: buttons || [] });
   };
 
-  const generatedPlan = cookingState.session?.stages.generatedPlan;
   const weighingData = cookingState.session?.stages.weighing;
 
   const ingredientSuggestions = useMemo(() => {

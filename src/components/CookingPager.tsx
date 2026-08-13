@@ -54,6 +54,18 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
   }, []);
 
   const session = state.session;
+
+  // 构建菜谱上下文给聊天窗（单一真相源：menu.menuProposal）
+  const recipeContext: RecipeContext = useMemo(() => {
+    const mp = session?.stages?.menu?.menuProposal;
+    return {
+      dishes: mp?.dishes || [],
+      prepSteps: mp?.prepSteps || [],
+      cookingSteps: mp?.cookingSteps || [],
+      sessionId: session?.id || '',
+    };
+  }, [session?.stages, session?.id]);
+
   useEffect(() => {
     if (!session) return;
     log.info('RENDER', { historyMode, status: session.status, completedStageIndex: session.completedStageIndex });
@@ -110,18 +122,6 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
   const currentLabel = STAGE_LABELS[currentPage] || '菜谱概览';
 
   const commonProps = { mode: 'readonly' as const };
-
-  // 构建菜谱上下文给聊天窗
-  const recipeContext: RecipeContext = useMemo(() => {
-    const mp = session.stages?.menu?.menuProposal;
-    const genPlan = session.stages?.generatedPlan;
-    return {
-      dishes: mp?.dishes || [],
-      prepSteps: genPlan?.prepSteps || mp?.prepSteps || [],
-      cookingSteps: genPlan?.cookingSteps || mp?.cookingSteps || [],
-      sessionId: session.id,
-    };
-  }, [session.stages, session.id]);
 
   return (
     <View style={styles.container}>

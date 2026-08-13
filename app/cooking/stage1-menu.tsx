@@ -31,10 +31,8 @@ export default function Stage1MenuScreen() {
     const stages = state.session?.stages;
     const result: string[] = [];
     if (stages?.menu) result.push('menu');
-    if (stages?.weighing) result.push('weighing');
-    if (stages?.generatedPlan?.prepSteps) result.push('prep');
-    if (stages?.generatedPlan?.bowlAssignments) result.push('bowl');
-    if (stages?.generatedPlan?.cookingSteps) result.push('cooking');
+    if (stages?.menu?.menuProposal?.prepSteps) result.push('prep');
+    if (stages?.menu?.menuProposal?.cookingSteps) result.push('cooking');
     return result;
   }, [isReadonly, state.session]);
 

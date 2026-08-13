@@ -116,6 +116,7 @@ export interface MenuProposal {
   prepSteps?: PrepStep[];
   cookingSteps?: CookingStep[];
   preciseNutrition?: NutritionInfo[];
+  ingredientTags?: IngredientTag[];
 }
 
 // ============ 阶段2称量 ============
@@ -168,14 +169,6 @@ export interface CookingStep {
   instruction: string;
   bowlReferences: number[];
   isCompleted: boolean;
-}
-
-export interface GeneratedPlan {
-  prepSteps: PrepStep[];
-  bowlAssignments?: BowlAssignment[];
-  cookingSteps: CookingStep[];
-  preciseNutrition: NutritionInfo[];
-  ingredientTags?: IngredientTag[];
 }
 
 // ============ 营养信息 ============
@@ -238,14 +231,12 @@ export interface Stage1Data {
 
 export interface Stage2Data {
   weighingData: WeighingData;
-  generatedPlan: GeneratedPlan;
 }
 
 export interface CookingSessionStages {
   requirement?: RequirementInput;
   menu?: Stage1Data;
   weighing?: WeighingData;
-  generatedPlan?: GeneratedPlan;
 }
 
 export interface CookingSession {

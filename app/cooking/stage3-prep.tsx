@@ -113,8 +113,8 @@ export default function Stage3PrepScreen() {
   const personCount = state.session?.stages.requirement?.personCount ?? 1;
   const params = useLocalSearchParams<{ readonly?: string }>();
   const isReadonly = params.readonly === '1';
-  const generatedPlan = state.session?.stages.generatedPlan;
-  const ingredientTags = generatedPlan?.ingredientTags;
+  const menuProposal = state.session?.stages.menu?.menuProposal;
+  const ingredientTags = menuProposal?.ingredientTags;
   const [checkStates, setCheckStates] = useState<Record<string, boolean>>({});
 
   const nutritionShownRef = useRef(false);
@@ -124,25 +124,22 @@ export default function Stage3PrepScreen() {
     const stages = state.session?.stages;
     const result: string[] = [];
     if (stages?.menu) result.push('menu');
-    if (stages?.weighing) result.push('weighing');
-    if (stages?.generatedPlan?.prepSteps) result.push('prep');
-    if (stages?.generatedPlan?.bowlAssignments) result.push('bowl');
-    if (stages?.generatedPlan?.cookingSteps) result.push('cooking');
+    if (stages?.menu?.menuProposal?.prepSteps) result.push('prep');
+    if (stages?.menu?.menuProposal?.cookingSteps) result.push('cooking');
     return result;
   }, [isReadonly, state.session]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!isReadonly && !nutritionShownRef.current && generatedPlan?.preciseNutrition) {
+      if (!isReadonly && !nutritionShownRef.current && menuProposal?.preciseNutrition) {
         nutritionShownRef.current = true;
-        const menuProposal = state.session?.stages.menu?.menuProposal;
         if (menuProposal) {
           const nutritionByDish: Record<string, NutritionalData> = {};
           for (let i = 0; i < menuProposal.dishes.length; i++) {
             const dish = menuProposal.dishes[i];
-            if (generatedPlan.preciseNutrition[i]) {
+            if (menuProposal.preciseNutrition[i]) {
               nutritionByDish[dish.name] = {
-                ...generatedPlan.preciseNutrition[i],
+                ...menuProposal.preciseNutrition[i],
                 source: 'precise',
               };
             }
@@ -155,10 +152,10 @@ export default function Stage3PrepScreen() {
       if (state.session && !isReadonly) {
         cookingProgressService.save(state.session).catch(() => {});
       }
-    }, [state.session, isReadonly, generatedPlan]),
+    }, [state.session, isReadonly, menuProposal]),
   );
 
-  const prepSteps = generatedPlan?.prepSteps;
+  const prepSteps = menuProposal?.prepSteps;
 
   // 按菜品分组备菜步骤
   const groupedPrepSteps = useMemo(() => {
@@ -179,12 +176,12 @@ export default function Stage3PrepScreen() {
     return result;
   }, [prepSteps]);
 
-  if (!generatedPlan || !prepSteps || prepSteps.length === 0) {
+  if (!menuProposal || !prepSteps || prepSteps.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>暂无备菜数据</Text>
-          {generatedPlan && !prepSteps && (
+          {menuProposal && !prepSteps && (
             <Text style={styles.emptyHint}>AI 返回的生成方案中缺少备菜步骤，请返回重新生成</Text>
           )}
         </View>
@@ -267,24 +264,23 @@ export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) 
   const { state } = useCooking();
   const { setPreciseNutrition } = useNutrition();
   const personCount = state.session?.stages.requirement?.personCount ?? 1;
-  const generatedPlan = state.session?.stages.generatedPlan;
-  const ingredientTags = generatedPlan?.ingredientTags;
+  const menuProposal = state.session?.stages.menu?.menuProposal;
+  const ingredientTags = menuProposal?.ingredientTags;
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
 
   const nutritionShownRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
-      if (!nutritionShownRef.current && generatedPlan?.preciseNutrition) {
+      if (!nutritionShownRef.current && menuProposal?.preciseNutrition) {
         nutritionShownRef.current = true;
-        const menuProposal = state.session?.stages.menu?.menuProposal;
         if (menuProposal) {
           const nutritionByDish: Record<string, NutritionalData> = {};
           for (let i = 0; i < menuProposal.dishes.length; i++) {
             const dish = menuProposal.dishes[i];
-            if (generatedPlan.preciseNutrition[i]) {
+            if (menuProposal.preciseNutrition[i]) {
               nutritionByDish[dish.name] = {
-                ...generatedPlan.preciseNutrition[i],
+                ...menuProposal.preciseNutrition[i],
                 source: 'precise',
               };
             }
@@ -294,10 +290,10 @@ export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) 
           }
         }
       }
-    }, [state.session, generatedPlan]),
+    }, [state.session, menuProposal]),
   );
 
-  const prepSteps = generatedPlan?.prepSteps;
+  const prepSteps = menuProposal?.prepSteps;
 
   // 按菜品分组备菜步骤
   const groupedPrepSteps = useMemo(() => {
@@ -318,12 +314,12 @@ export function Stage3PrepContent({ mode, onComplete }: Stage3PrepContentProps) 
     return result;
   }, [prepSteps]);
 
-  if (!generatedPlan || !prepSteps || prepSteps.length === 0) {
+  if (!menuProposal || !prepSteps || prepSteps.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>暂无备菜数据</Text>
-          {generatedPlan && !prepSteps && (
+          {menuProposal && !prepSteps && (
             <Text style={styles.emptyHint}>AI 返回的生成方案中缺少备菜步骤，请返回重新生成</Text>
           )}
         </View>

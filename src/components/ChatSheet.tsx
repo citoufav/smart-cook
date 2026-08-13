@@ -190,11 +190,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
         // 使用 UPDATE_PLAN 一次性更新，不重置进度
         cookingDispatch({
           type: 'UPDATE_PLAN',
-          payload: {
-            menuProposal: proposal,
-            prepSteps: proposal.prepSteps || [],
-            cookingSteps: proposal.cookingSteps || [],
-          },
+          payload: { menuProposal: proposal },
         });
 
         // 持久化到 cookingProgressService
@@ -205,9 +201,6 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
             menu: session.stages.menu
               ? { ...session.stages.menu, menuProposal: proposal }
               : session.stages.menu,
-            generatedPlan: session.stages.generatedPlan
-              ? { ...session.stages.generatedPlan, prepSteps: proposal.prepSteps || [], cookingSteps: proposal.cookingSteps || [] }
-              : session.stages.generatedPlan,
           },
         };
         cookingProgressService.save(updatedSession).catch(() => {});
