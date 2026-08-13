@@ -14,23 +14,19 @@ import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { EmptyState } from '../../src/components/EmptyState';
 import { Button } from '../../src/components/Button';
 import { useCustomAlert } from '../../src/components/CustomAlert';
-import { menuHistoryService, MenuHistoryItem } from '../../src/services/menuHistoryService';
+import { useMenuHistory } from '../../src/contexts/MenuHistoryContext';
+import { MenuHistoryItem } from '../../src/services/menuHistoryService';
 
 export default function HistoryListScreen() {
-  const [sessions, setSessions] = useState<MenuHistoryItem[]>([]);
+  const { items: sessions, refresh, remove, rename } = useMenuHistory();
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
   const { showAlert } = useCustomAlert();
 
-  const loadHistory = useCallback(async () => {
-    const items = await menuHistoryService.getAllItems();
-    setSessions(items);
-  }, []);
-
   useFocusEffect(
     useCallback(() => {
-      loadHistory();
-    }, [loadHistory]),
+      refresh();
+    }, [refresh]),
   );
 
   const handleDelete = useCallback((id: string, name: string) => {
@@ -40,12 +36,11 @@ export default function HistoryListScreen() {
         text: '删除',
         style: 'destructive',
         onPress: async () => {
-          await menuHistoryService.remove(id);
-          loadHistory();
+          await remove(id);
         },
       },
     ] });
-  }, [loadHistory, showAlert]);
+  }, [remove, showAlert]);
 
   const handleRenameStart = useCallback((item: MenuHistoryItem) => {
     setRenameId(item.id);
@@ -54,11 +49,10 @@ export default function HistoryListScreen() {
 
   const handleRenameConfirm = useCallback(async () => {
     if (!renameId || !renameText.trim()) return;
-    await menuHistoryService.rename(renameId, renameText.trim());
+    await rename(renameId, renameText.trim());
     setRenameId(null);
     setRenameText('');
-    loadHistory();
-  }, [renameId, renameText, loadHistory]);
+  }, [renameId, renameText, rename]);
 
   if (sessions.length === 0) {
     return (

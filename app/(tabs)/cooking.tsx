@@ -191,12 +191,14 @@ export default function CookingEntryScreen() {
 
     const sessionId = generateId();
 
-    startSession({
+    // 统一构造一次需求与菜单方案，复用到 3 处（Stage1 状态 / 菜单历史 / 做菜进度）
+    const requirementInput = {
       personCount: effectivePeople,
       mealType: mealType as any,
       caloriePreference: effectiveCalorie,
       customRequirement: customRequest,
-    }, sessionId);
+    };
+
     // 程序端从per-dish营养求和（不依赖AI输出的根级estimatedNutrition）
     const computedTotalNutrition = (result.dishes || []).reduce(
       (sum: any, d: any) => {
@@ -211,34 +213,29 @@ export default function CookingEntryScreen() {
       { calories: 0, protein: 0, fat: 0, carbs: 0 },
     );
 
-    setStage1Result({
-      menuProposal: {
-        dishes: result.dishes || [],
-        estimatedNutrition: computedTotalNutrition,
-        missingItems: (result.missingItems || []).map((item: any, idx: number) => ({
-          id: `${item.type}-${item.name}-${item.forDish}-${idx}`,
-          type: item.type,
-          name: item.name,
-          suggestedAmount: item.suggestedAmount,
-          forDish: item.forDish,
-          isPurchased: false,
-        })),
-        cookingOrderDescription: result.cookingOrderDescription || '',
-        flavorDescription: result.flavorDescription || '',
-        summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
-        prepSteps: result.prepSteps || [],
-        cookingSteps: result.cookingSteps || [],
-        preciseNutrition: result.preciseNutrition || [],
-        ingredientTags: result.ingredientTags || [],
-      },
-      requirementInput: {
-        personCount: effectivePeople,
-        mealType: mealType as any,
-        caloriePreference: effectiveCalorie,
-        customRequirement: customRequest,
-      },
-      reasoningContent: result.reasoningContent || '',
-    });
+    const menuProposal = {
+      dishes: result.dishes || [],
+      estimatedNutrition: computedTotalNutrition,
+      missingItems: (result.missingItems || []).map((item: any, idx: number) => ({
+        id: `${item.type}-${item.name}-${item.forDish}-${idx}`,
+        type: item.type,
+        name: item.name,
+        suggestedAmount: item.suggestedAmount,
+        forDish: item.forDish,
+        isPurchased: false,
+      })),
+      cookingOrderDescription: result.cookingOrderDescription || '',
+      flavorDescription: result.flavorDescription || '',
+      summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
+      prepSteps: result.prepSteps || [],
+      cookingSteps: result.cookingSteps || [],
+      preciseNutrition: result.preciseNutrition || [],
+      ingredientTags: result.ingredientTags || [],
+    };
+    const reasoningContent = result.reasoningContent || '';
+
+    startSession(requirementInput, sessionId);
+    setStage1Result({ menuProposal, requirementInput, reasoningContent });
 
     if (result.dishes) {
       const nutritionByDish: Record<string, NutritionalData> = {};
@@ -266,68 +263,31 @@ export default function CookingEntryScreen() {
       customCalorie,
     });
 
-    // 保存菜单历史
+    // 保存菜单历史（menuHistoryService：只存菜单方案，供历史列表/详情展示）
     const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
+    const sessionName = `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`;
     console.log('[MENU_SAVE] prepSteps:', result.prepSteps?.length, 'cookingSteps:', result.cookingSteps?.length, 'preciseNutrition:', result.preciseNutrition?.length);
     menuHistoryService.add({
-      name: `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`,
-      menuProposal: {
-        dishes: result.dishes || [],
-        estimatedNutrition: computedTotalNutrition,
-        missingItems: result.missingItems || [],
-        cookingOrderDescription: result.cookingOrderDescription || '',
-        flavorDescription: result.flavorDescription || '',
-        summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
-        prepSteps: result.prepSteps || [],
-        cookingSteps: result.cookingSteps || [],
-        preciseNutrition: result.preciseNutrition || [],
-        ingredientTags: result.ingredientTags || [],
-      },
-      reasoningContent: result.reasoningContent || '',
-      requirement: {
-        personCount: effectivePeople,
-        mealType,
-        caloriePreference: effectiveCalorie,
-        customRequirement: customRequest,
-      },
+      name: sessionName,
+      menuProposal,
+      reasoningContent,
+      requirement: requirementInput,
       sessionId,
     }).catch((e: any) => console.log('[MENU_HIST] save error:', e?.message || e));
 
-    // 自动保存做菜进度
+    // 自动保存做菜进度（cookingProgressService：只存会话进度，供断点续做）
     cookingProgressService.save({
       id: sessionId,
       status: 'menu',
       stages: {
-        requirement: { personCount: effectivePeople, mealType: mealType as any, caloriePreference: effectiveCalorie, customRequirement: customRequest },
-        menu: {
-          menuProposal: {
-            dishes: result.dishes || [],
-            estimatedNutrition: computedTotalNutrition,
-            missingItems: (result.missingItems || []).map((item: any, idx: number) => ({
-              id: `${item.type}-${item.name}-${item.forDish}-${idx}`,
-              type: item.type,
-              name: item.name,
-              suggestedAmount: item.suggestedAmount,
-              forDish: item.forDish,
-              isPurchased: false,
-            })),
-            cookingOrderDescription: result.cookingOrderDescription || '',
-            flavorDescription: result.flavorDescription || '',
-            summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
-            prepSteps: result.prepSteps || [],
-            cookingSteps: result.cookingSteps || [],
-            preciseNutrition: result.preciseNutrition || [],
-            ingredientTags: result.ingredientTags || [],
-          },
-          requirementInput: { personCount: effectivePeople, mealType: mealType as any, caloriePreference: effectiveCalorie, customRequirement: customRequest },
-          reasoningContent: result.reasoningContent || '',
-        },
+        requirement: requirementInput,
+        menu: { menuProposal, requirementInput, reasoningContent },
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 1,
       completedStageIndex: -1,
-    }, `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`).catch(() => {});
+    }, sessionName).catch(() => {});
 
     // 保存到饮食记忆
     const mealNames = (result.dishes || []).map((d: any) => d.name).filter(Boolean);

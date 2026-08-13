@@ -14,32 +14,35 @@ import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Card } from '../../src/components/Card';
 import { useChatSheet } from '../../src/contexts/ChatSheetContext';
+import { useMenuHistory } from '../../src/contexts/MenuHistoryContext';
 import { RecipeContext } from '../../src/services/chatService';
-import { menuHistoryService, MenuHistoryItem } from '../../src/services/menuHistoryService';
 
 export default function HistoryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [item, setItem] = useState<MenuHistoryItem | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { items, loading, refresh } = useMenuHistory();
+  const [loaded, setLoaded] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
   const { showChatSheet } = useChatSheet();
 
   useEffect(() => {
     (async () => {
-      if (!id) return;
-      const data = await menuHistoryService.getById(id);
-      setItem(data);
-      setLoading(false);
+      // 列表未加载时先刷新一次（兼容从详情直接进入）
+      if (items.length === 0 && !loading) {
+        await refresh();
+      }
+      setLoaded(true);
     })();
-  }, [id]);
+  }, [items.length, loading, refresh]);
 
-  if (loading) {
+  if (!loaded || loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
+
+  const item = items.find((i) => i.id === id) || null;
 
   if (!item) {
     return (
