@@ -17,7 +17,7 @@ import ChatSheet from '../src/components/ChatSheet';
 import { NutritionBottomSheet } from '../src/components/NutritionBottomSheet';
 import { CustomAlertProvider } from '../src/components/CustomAlert';
 
-// 禁用字体缩放
+// Disable font scaling
 (Text as any).defaultProps = (Text as any).defaultProps || {};
 (Text as any).defaultProps.allowFontScaling = false;
 (TextInput as any).defaultProps = (TextInput as any).defaultProps || {};

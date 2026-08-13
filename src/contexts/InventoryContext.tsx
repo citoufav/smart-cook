@@ -188,7 +188,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     if (!data || !Array.isArray(data.ingredients) || !Array.isArray(data.seasonings)) {
       throw new Error('无效的库存数据格式');
     }
-    // 追加模式：只添加库存中不存在的食材，同名则跳过
+    // Append mode: only add ingredients not already in inventory; skip same-name ones
     const existingIngredients = await ingredientService.getAll();
     const existingNames = new Set(existingIngredients.map((i) => i.name));
     let addedCount = 0;
@@ -199,7 +199,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       existingNames.add(name);
       addedCount++;
     }
-    // 追加调料
+    // Append seasonings
     const existingSeasonings = await seasoningService.getAll();
     const existingSeasoningNames = new Set(existingSeasonings.map((s) => s.name));
     let addedSeasoningCount = 0;
@@ -211,7 +211,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       addedSeasoningCount++;
     }
     await loadData();
-    // 用 console.log 报告导入结果
+    // Report import results via console.log
     console.log(`[IMPORT] 已添加食材 ${addedCount} 个，调料 ${addedSeasoningCount} 个（跳过已存在的同名项）`);
   }, [loadData]);
 

@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 
 const log = logger('SVC:INV_CALC');
 
-/** 库存更新页的食材消耗输入（从 menuProposal.dishes 推导） */
+/** Ingredient consumption input for the inventory update page (derived from menuProposal.dishes) */
 export interface IngredientSuggestionInput {
   dishes: {
     name: string;
@@ -23,11 +23,11 @@ function normalizeIngredientName(name: string): string {
 }
 
 function findMatchingInventory(normalizedName: string, inventory: Ingredient[]): Ingredient | undefined {
-  // 精确匹配
+  // exact match
   const exact = inventory.find((i) => normalizeIngredientName(i.name) === normalizedName);
   if (exact) return exact;
 
-  // 包含匹配
+  // partial match
   const partial = inventory.find((i) => {
     const invNormal = normalizeIngredientName(i.name);
     return invNormal.includes(normalizedName) || normalizedName.includes(invNormal);

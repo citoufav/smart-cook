@@ -55,7 +55,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
     case 'RESTORE_SESSION': {
       log.info('RESTORE_SESSION', { status: action.payload?.status });
       const sess = action.payload;
-      // 数据迁移：旧数据把步骤存在 stages.generatedPlan，将其回填到 menu.menuProposal
+      // Data migration: legacy data stored steps in stages.generatedPlan; backfill them into menu.menuProposal
       const legacyGp = (sess as any)?.stages?.generatedPlan;
       if (sess && legacyGp && sess.stages.menu?.menuProposal) {
         const mp = sess.stages.menu.menuProposal;
@@ -69,7 +69,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         sess.stages.menu = { ...sess.stages.menu, menuProposal: merged };
         console.log('[CTX_RESTORE] 迁移旧 generatedPlan → menuProposal: prepSteps=', merged.prepSteps.length, 'cookingSteps=', merged.cookingSteps.length);
       }
-      // 打印恢复的 missingItems 勾选状态
+      // Log the restored missingItems purchased state
       const mi = sess?.stages?.menu?.menuProposal?.missingItems || [];
       console.log('[CTX_RESTORE] missingItems purchased:', mi.map((m: any) => ({ type: m.type, name: m.name, purchased: m.isPurchased })));
       return {
@@ -167,7 +167,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
     case 'SET_CURRENT_STAGE': {
       if (!state.session) return state;
       log.info('SET_CURRENT_STAGE', { from: state.session.status, to: action.payload });
-      // 特殊处理 'completed'：标记为最终完成阶段
+      // Special-case 'completed': mark it as the final stage
       if (action.payload === 'completed') {
         return {
           ...state,
@@ -179,7 +179,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         };
       }
       const targetIndex = getStageIndex(action.payload);
-      // 拒绝非进度阶段
+      // Reject non-progress stages
       if (targetIndex < 0 || targetIndex >= STAGE_KEYS.length) {
         console.log('[CTX] → 拒绝：非进度阶段');
         return state;

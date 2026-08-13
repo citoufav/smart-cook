@@ -10,6 +10,7 @@ import {
   Animated,
   useWindowDimensions,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -35,7 +36,7 @@ const REASONING_OPTIONS: { label: string; value: 'high' | 'max' }[] = [
   { label: '最大', value: 'max' },
 ];
 
-// ---- 下拉选择器 ----
+// ---- Dropdown selector ----
 function DropdownSelector({
   label,
   options,
@@ -98,7 +99,7 @@ function DropdownSelector({
   );
 }
 
-// ---- 忌口标签组件 ----
+// ---- Dietary tag input ----
 function DietaryTagInput({
   tags,
   onTagsChange,
@@ -181,7 +182,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['diet', 'ai', 'data']));
 
-  // 同步外部 state 变化
+  // Sync external state changes
   useEffect(() => {
     if (visible) {
       setModelName(preferences.modelName);
@@ -262,7 +263,13 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       const result = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
       if (result.canceled || !result.assets?.length) return;
       const file = result.assets[0];
-      const content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' as any });
+      let content: string;
+      if (Platform.OS === 'web') {
+        // On web, expo-file-system native I/O is unavailable; read the file via browser fetch instead
+        content = await fetch(file.uri).then((r) => r.text());
+      } else {
+        content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' as any });
+      }
       await importInventoryJson(content);
       showAlert({ title: '导入成功', message: '库存数据已更新' });
     } catch (e: any) {
@@ -290,7 +297,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           },
         ]}
       >
-        {/* 头部 */}
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>设置</Text>
           <TouchableOpacity onPress={onClose} hitSlop={12}>
@@ -303,7 +310,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* ---- 忌口设置 ---- */}
+          {/* ---- Dietary restrictions ---- */}
           <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('diet')} activeOpacity={0.6}>
             <Text style={styles.sectionHeaderText}>忌口设置</Text>
             <Text style={styles.chevron}>{expandedSections.has('diet') ? '▾' : '▸'}</Text>
@@ -315,7 +322,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
             </>
           )}
 
-          {/* ---- 模型与 API ---- */}
+          {/* ---- Model & API ---- */}
           <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('ai')} activeOpacity={0.6}>
             <Text style={styles.sectionHeaderText}>模型与 API</Text>
             <Text style={styles.chevron}>{expandedSections.has('ai') ? '▾' : '▸'}</Text>
@@ -415,7 +422,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
             </>
           )}
 
-          {/* ---- 数据管理 ---- */}
+          {/* ---- Data management ---- */}
           <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('data')} activeOpacity={0.6}>
             <Text style={styles.sectionHeaderText}>数据管理</Text>
             <Text style={styles.chevron}>{expandedSections.has('data') ? '▾' : '▸'}</Text>
@@ -516,7 +523,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   linkText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary },
 
-  // 下拉选择器
+  // Dropdown selector
   dropdownWrapper: { marginBottom: SPACING.md },
   dropdownButton: {
     flexDirection: 'row',
@@ -562,7 +569,7 @@ const styles = StyleSheet.create({
   modalOptionTextActive: { color: COLORS.primary, fontWeight: '600' },
   checkmark: { fontSize: 18, color: COLORS.primary, fontWeight: '700' },
 
-  // 思考模式
+  // Thinking mode
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -587,15 +594,15 @@ const styles = StyleSheet.create({
   reasoningChipText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary },
   reasoningChipTextActive: { color: COLORS.primary, fontWeight: '600' },
 
-  // 分隔线
+  // Divider
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.lg },
 
-  // 可折叠分组
+  // Collapsible section header
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   sectionHeaderText: { fontSize: TYPOGRAPHY.body, fontWeight: '600', color: COLORS.textPrimary },
   chevron: { fontSize: 16, color: COLORS.textTertiary },
 
-  // 提示
+  // Hint
   hint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginBottom: SPACING.sm },
   itemCount: {
     fontSize: TYPOGRAPHY.caption,
@@ -604,7 +611,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
 
-  // 忌口标签
+  // Dietary tags
   tagInputRow: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start' },
   tagInput: {
     flex: 1,
@@ -629,7 +636,7 @@ const styles = StyleSheet.create({
   },
   tagText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary, fontWeight: '500' },
   tagRemove: { fontSize: 18, color: COLORS.primary, fontWeight: '700', lineHeight: 20 },
-  // 数据管理
+  // Data management
   dataRow: { flexDirection: 'row', gap: SPACING.md },
   dataBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xs, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: BORDER_RADIUS.md, paddingVertical: SPACING.sm },
   dataBtnText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary, fontWeight: '500' },

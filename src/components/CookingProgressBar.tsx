@@ -16,11 +16,11 @@ interface CookingProgressBarProps {
   currentStage: string;
   completedStages: string[];
   readonly?: boolean;
-  /** Pager 模式下通过回调通知跳转，而非 router.push */
+  /** In Pager mode, notify navigation via callback instead of router.push */
   onStagePress?: (stageKey: string) => void;
-  /** 进度条可访问的最大阶段索引（0-based）。超出此索引的阶段不可点击 */
+  /** Max accessible stage index (0-based). Stages beyond it are not tappable */
   maxAccessibleIndex?: number;
-  /** 所有阶段统一样式，无 future/accessible 区分 */
+  /** All stages share the same style, with no future/accessible distinction */
   allAccessible?: boolean;
 }
 
@@ -38,7 +38,7 @@ export default function CookingProgressBar({
 
   const getStatus = (stageKey: string, index: number) => {
     if (stageKey === currentStage) return 'current';
-    // allAccessible 模式下统一返回 accessible（无未来/已完成区分）
+    // In allAccessible mode always return accessible (no future/done distinction)
     if (allAccessible) return 'accessible';
     if (completedStages.includes(stageKey)) return 'done';
     if (index < currentIndex) return 'done';
@@ -48,7 +48,7 @@ export default function CookingProgressBar({
 
   const handleStagePress = (stageKey: string, index: number) => {
     const status = getStatus(stageKey, index);
-    // allAccessible 或非 future 均可点击
+    // Tappable when allAccessible or not future
     if (!allAccessible && status === 'future') return;
 
     if (onStagePress) {

@@ -6,7 +6,7 @@ export function validateIngredientName(name: string): string | null {
 }
 
 export function validateIngredientWeight(weight: string): string | null {
-  if (!weight.trim()) return null; // 可选
+  if (!weight.trim()) return null; // optional
   const num = parseFloat(weight);
   if (isNaN(num)) return '请输入有效的数字';
   if (num <= 0) return '请输入有效的重量 (大于0的数字)';

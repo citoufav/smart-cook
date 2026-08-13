@@ -16,7 +16,7 @@ interface FABProps {
   onPress: () => void;
   accessibilityLabel?: string;
   style?: ViewStyle;
-  /** 外部提供的持久化位置 ref，FAB 通过它记住拖拽位置（跨 mount/unmount） */
+  /** External persistent position ref; FAB remembers its drag position across mount/unmount */
   positionRef?: React.MutableRefObject<{ x: number; y: number }>;
 }
 
@@ -43,7 +43,7 @@ export function FAB({ icon, onPress, accessibilityLabel, style, positionRef }: F
 
   const defaultPos = { x: snapX, y: constraints.maxY };
 
-  // 初始化：优先用外部持久位置，否则用默认位置
+  // Init: prefer the external persisted position, otherwise use the default
   if (localPos.current.x === 0 && localPos.current.y === 0) {
     const saved = positionRef?.current;
     if (saved && saved.x !== 0 && saved.y !== 0) {
@@ -73,7 +73,7 @@ export function FAB({ icon, onPress, accessibilityLabel, style, positionRef }: F
         const snapTargetX = newX > SCREEN_WIDTH / 2 ? constraints.maxX : constraints.minX;
         const final = { x: snapTargetX, y: newY };
         localPos.current = final;
-        // 同步到外部持久 ref
+        // Sync to the external persistent ref
         if (positionRef) {
           positionRef.current = final;
         }

@@ -31,11 +31,11 @@ import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../
 import { SSEStreamController } from '../../src/utils/sseStream';
 import { generateId } from '../../src/utils/uuid';
 
-// 思考链死循环检测：同一段内容（5-80字）连续重复5次则判定死循环
+// Reasoning-loop detection: a chunk (5-80 chars) repeated 5 times in a row means an infinite loop
 const LOOP_REPEAT_COUNT = 5;
 const LOOP_MIN_LEN = 5;
 const LOOP_MAX_LEN = 80;
-const LOOP_WINDOW = 600; // 检测窗口：最近600字
+const LOOP_WINDOW = 600; // Detection window: last 600 chars
 
 export default function CookingEntryScreen() {
   const [people, setPeople] = useState(1);
@@ -67,22 +67,22 @@ export default function CookingEntryScreen() {
   const { setEstimatedNutrition } = useNutrition();
   const { hideBall } = useNutrition();
 
-  // 每次进入做菜 tab 时隐藏悬浮球（用户可能刚从菜谱流程返回）
+  // Hide the floating ball each time the cooking tab is focused (user may have just returned from the recipe flow)
   useFocusEffect(
     useCallback(() => {
       hideBall();
-      // 加载进行中的做菜记录（排除已完成的）
+      // Load in-progress cooking records (excluding completed)
       cookingProgressService.getActiveRecords().then(setActiveRecords).catch(() => {});
-      // 加载已完成的记录
+      // Load completed records
       cookingProgressService.getAllRecords().then((all) => {
         setCompletedRecords(all.filter((r) => r.isCompleted));
       }).catch(() => {});
-      // 加载饮食记忆
+      // Load diet memory
       getRecentMeals(3).then(setRecentMeals).catch(() => {});
     }, [hideBall]),
   );
 
-  // 继续做菜（恢复进行中的会话）
+  // Continue cooking (resume the in-progress session)
   const handleContinueRecord = useCallback((record: CookingProgressRecord) => {
     restoreSession(record.session);
     setTimeout(() => {
@@ -90,7 +90,7 @@ export default function CookingEntryScreen() {
     }, 50);
   }, [restoreSession]);
 
-  // 查看已完成的记录（只读模式）
+  // View a completed record (read-only mode)
   const handleViewRecord = useCallback((record: CookingProgressRecord) => {
     restoreSession(record.session);
     setTimeout(() => {
@@ -98,7 +98,7 @@ export default function CookingEntryScreen() {
     }, 50);
   }, [restoreSession]);
 
-  // 删除进度记录
+  // Delete a progress record
   const handleDeleteRecord = useCallback((record: CookingProgressRecord) => {
     showAlert({ title: '删除记录', message: `确定删除「${record.name}」吗？`, buttons: [
       { text: '取消', style: 'cancel' },
@@ -120,10 +120,10 @@ export default function CookingEntryScreen() {
       const defaults = await loadLastCookingDefaults();
       if (defaults) {
         console.log('[COOKING_RESTORE]', { people: defaults.people, personCount: defaults.personCount, calorieTarget: defaults.calorieTarget, hasCustom: defaults.customPeople !== undefined && defaults.customPeople !== null });
-        // 人员：优先用选择器值（支持 -1=自定义）
+        // People: prefer the selector value (supports -1=custom)
         setPeople(defaults.people ?? defaults.personCount ?? 2);
         setMealType(defaults.mealType);
-        // 热量：优先用选择器值（支持 -1=自定义）
+        // Calories: prefer the selector value (supports -1=custom)
         if (defaults.calorieTarget !== undefined) {
           setCalorieTarget(defaults.calorieTarget);
         } else if (defaults.caloriePreference !== undefined) {
@@ -136,14 +136,14 @@ export default function CookingEntryScreen() {
     })();
   }, []);
 
-  // 动态保存：人员/餐类/热量变更时自动持久化
+  // Auto-save: persist whenever people/meal type/calories change
   useEffect(() => {
     console.log('[CUSTOM_SAVE] people:', people, 'customPeople:', customPeople, 'mealType:', mealType, 'customMealType:', customMealType, 'calorieTarget:', calorieTarget, 'customCalorie:', customCalorie);
     saveLastCookingDefaults({
-      people,           // 预设选择器值（-1=自定义，1-9=预设人数）
+      people,           // Preset selector value (-1=custom, 1-9=preset people)
       personCount: effectivePeople,
       mealType,
-      calorieTarget,    // 热量选择器值（-1=自定义）
+      calorieTarget,    // Calorie selector value (-1=custom)
       caloriePreference: effectiveCalorie,
       customPeople,
       customMealType,
@@ -161,22 +161,22 @@ export default function CookingEntryScreen() {
   }, [invState.ingredients]);
 
   const clearStallTimer = useCallback(() => {
-    // 不再使用定时器，保留空函数兼容现有调用
+    // Timer no longer used; keep empty functions for compatibility
   }, []);
 
   const resetStallTimer = useCallback(() => {
-    // 不再使用定时器，改为循环检测
+    // Timer no longer used; loop detection instead
   }, []);
 
   /**
-   * 检测思考链是否陷入死循环
-   * 在最近 LOOP_WINDOW 字中，查找连续重复 LOOP_REPEAT_COUNT 次的片段
-   * @returns 检测到的重复片段，null 表示无循环
+   * Detect whether the reasoning chain is stuck in an infinite loop
+   * Within the latest LOOP_WINDOW chars, find a fragment repeated LOOP_REPEAT_COUNT times consecutively
+   * @returns the detected repeated fragment, or null if no loop
    */
   const detectLoop = useCallback((reasoningText: string): string | null => {
     const buf = reasoningText.slice(-LOOP_WINDOW);
     if (buf.length < LOOP_MIN_LEN * LOOP_REPEAT_COUNT) return null;
-    // 用正则：捕获任意 LOOP_MIN_LEN-LOOP_MAX_LEN 字符，检查是否连续重复 LOOP_REPEAT_COUNT 次
+    // Regex: capture any LOOP_MIN_LEN-LOOP_MAX_LEN chars and check for LOOP_REPEAT_COUNT consecutive repeats
     const re = new RegExp(`(.{${LOOP_MIN_LEN},${LOOP_MAX_LEN}}?)\\1{${LOOP_REPEAT_COUNT - 1},}`, 's');
     const m = buf.match(re);
     return m ? m[1] : null;
@@ -191,7 +191,7 @@ export default function CookingEntryScreen() {
 
     const sessionId = generateId();
 
-    // 统一构造一次需求与菜单方案，复用到 3 处（Stage1 状态 / 菜单历史 / 做菜进度）
+    // Build the requirement and menu proposal once, reused in 3 places (Stage1 state / menu history / cooking progress)
     const requirementInput = {
       personCount: effectivePeople,
       mealType: mealType as any,
@@ -199,7 +199,7 @@ export default function CookingEntryScreen() {
       customRequirement: customRequest,
     };
 
-    // 程序端从per-dish营养求和（不依赖AI输出的根级estimatedNutrition）
+    // Sum nutrition per dish on the client side (do not rely on the root-level estimatedNutrition from AI)
     const computedTotalNutrition = (result.dishes || []).reduce(
       (sum: any, d: any) => {
         if (d.estimatedNutrition) {
@@ -263,7 +263,7 @@ export default function CookingEntryScreen() {
       customCalorie,
     });
 
-    // 保存菜单历史（menuHistoryService：只存菜单方案，供历史列表/详情展示）
+    // Save menu history (menuHistoryService: only stores menu proposals for the history list/detail views)
     const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
     const sessionName = `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`;
     console.log('[MENU_SAVE] prepSteps:', result.prepSteps?.length, 'cookingSteps:', result.cookingSteps?.length, 'preciseNutrition:', result.preciseNutrition?.length);
@@ -275,7 +275,7 @@ export default function CookingEntryScreen() {
       sessionId,
     }).catch((e: any) => console.log('[MENU_HIST] save error:', e?.message || e));
 
-    // 自动保存做菜进度（cookingProgressService：只存会话进度，供断点续做）
+    // Auto-save cooking progress (cookingProgressService: only stores session progress for resuming later)
     cookingProgressService.save({
       id: sessionId,
       status: 'menu',
@@ -288,7 +288,7 @@ export default function CookingEntryScreen() {
       version: 1,
     }, sessionName).catch(() => {});
 
-    // 保存到饮食记忆
+    // Save to diet memory
     const mealNames = (result.dishes || []).map((d: any) => d.name).filter(Boolean);
     if (mealNames.length > 0) {
       addMeals(mealNames).then(() => getRecentMeals(3).then(setRecentMeals)).catch(() => {});
@@ -338,15 +338,15 @@ export default function CookingEntryScreen() {
           }
         },
         onContent: (_text: string) => {
-          // content 到了说明 AI 在正常输出 JSON，不需要特殊处理
+          // content arriving means AI is streaming JSON normally, no special handling needed
         },
         onData: () => {
-          // 低层接收原始数据，维持兼容
+          // Lower layer receives raw data, kept for compatibility
         },
         onDone: (result: any) => {
           if (loopAbortedRef.current) {
             clearStallTimer();
-            return; // 已由 onReasoning 触发 abort，不重复处理
+            return; // Abort already triggered by onReasoning, do not handle again
           }
           pendingResultRef.current = result;
           clearStallTimer();
@@ -354,7 +354,7 @@ export default function CookingEntryScreen() {
         },
         onError: (error: Error) => {
           if (loopAbortedRef.current) {
-            // 死循环导致的中止，用专用提示
+            // Abort caused by an infinite loop; show a dedicated message
             setScreenState('error');
             showAlert({ title: '思考过程异常', message: 'AI 陷入重复思考，请重试或关闭思考模式。', buttons: [
               { text: '取消', onPress: () => setScreenState('idle') },
@@ -373,18 +373,18 @@ export default function CookingEntryScreen() {
     );
 
     streamRef.current = stream;
-    // 启动首个卡顿检测
+    // Start the first stall detection
     resetStallTimer();
   }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, resetStallTimer, clearStallTimer, handleStreamDone, showAlert]);
 
   const handleRetry = useCallback(() => {
-    // 取消当前请求
+    // Cancel the current request
     if (streamRef.current) {
       streamRef.current.abort();
       streamRef.current = null;
     }
     clearStallTimer();
-    // 重新发起
+    // Re-submit
     submitToAI();
   }, [submitToAI, clearStallTimer]);
 
@@ -414,7 +414,7 @@ export default function CookingEntryScreen() {
     submitToAI();
   }, [checkInventory, submitToAI]);
 
-  // 自定义输入弹窗确认
+  // Custom input modal confirm
   const handleCustomConfirm = useCallback(() => {
     if (!customModal) return;
     const val = customInputText.trim();
@@ -456,7 +456,7 @@ export default function CookingEntryScreen() {
     setCustomInputText('');
   }, [customModal, customInputText, showAlert]);
 
-  // 自定义按钮点击
+  // Custom button press
   const handleCustomPress = useCallback((type: 'people' | 'meal' | 'calorie') => {
     console.log('[CUSTOM_OPEN] type:', type);
     let currentValue = '';
@@ -556,7 +556,7 @@ export default function CookingEntryScreen() {
           accessibilityLabel="个性需求输入框"
         />
 
-        {/* 历史记录 — 进行中 */}
+        {/* History — in progress */}
         <Text style={styles.sectionTitle}>进行中的菜单</Text>
         {activeRecords.length === 0 ? (
           <Text style={styles.emptyRecords}>暂无进行中的菜单</Text>
@@ -592,7 +592,7 @@ export default function CookingEntryScreen() {
           ))
         )}
 
-        {/* 历史记录 — 已完成 */}
+        {/* History — completed */}
         {completedRecords.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { marginTop: SPACING.lg }]}>已完成的菜单</Text>
@@ -648,7 +648,7 @@ export default function CookingEntryScreen() {
         showThinking={settingsState.preferences.thinkingEnabled}
       />
 
-      {/* 自定义输入弹窗 */}
+      {/* Custom input modal */}
       <Modal
         visible={customModal?.visible ?? false}
         transparent
@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   customInput: { backgroundColor: COLORS.surface, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: BORDER_RADIUS.md, padding: SPACING.md, fontSize: TYPOGRAPHY.body, color: COLORS.textPrimary, minHeight: 100, ...SHADOWS.sm },
   bottomBar: { padding: SPACING.lg, paddingBottom: SPACING.xl, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
-  // 进度记录
+  // Progress records
   emptyRecords: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textTertiary, textAlign: 'center', paddingVertical: SPACING.xl },
   recordCard: {
     flexDirection: 'row',
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.sm,
   },
   deleteRecordBtnText: { fontSize: 13, color: COLORS.textTertiary },
-  // 自定义弹窗
+  // Custom modal
   modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'center', padding: SPACING.xxl },
   modalCard: { backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.xl, padding: SPACING.xxl },
   modalTitle: { fontSize: TYPOGRAPHY.h3, fontWeight: '600', color: COLORS.textPrimary, marginBottom: SPACING.lg },

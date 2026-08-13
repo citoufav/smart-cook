@@ -1,4 +1,4 @@
-import { UserPreferences } from '../types';
+import { UserPreferences, MenuProposal } from '../types';
 import { DEFAULT_TIMEOUT_MS, MAX_RETRIES, BASE_RETRY_DELAY_MS } from '../constants/cooking';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
@@ -73,25 +73,22 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
     ✅ 正确：小葱共10g，切葱花。description: "取[小葱(10g)]洗净，切成葱花"（多道菜品共用时只写一条，说明总量）
     ❌ 错误：小葱切葱花（紫菜蛋花汤）+ 小葱切葱花（凉拌西兰花）写成两个步骤
 12. prepSteps 格式：每条包含 id("prep-N")、ingredientName(食材名)、quantity(用量如"200g")、dishName(所属菜品名)、description(操作描述)、isCompleted(false)、order(从1递增)。
-    description 中用 [食材名(克重)] 引用食材，严禁提碗编号。
+    description 中用 [食材名(克重)] 引用食材。
     ✅ 正确："淘洗[大米(200g)]，换水浸泡20分钟后沥干"
-    ❌ 错误：提及碗编号、写入碗1/碗2，或写比例"水米1:1.2"
 
 【炒制步骤 — 重要】
 13. 新手友好：每一步操作写明确切的克数、温度和时间。
     ✅ 正确："锅中加入[食用油(10g)]，烧至六成热（约160°C），放入[蒜末(5g)]爆香..."
     ❌ 错误："水米比例1:1.2"、"油温适中"、"适量加水"、"焖至熟"
     煮米饭等需要加水的操作：必须写确切水量，如"加入清水300g，大火煮沸后转小火焖15分钟"
-14. cookingSteps.instruction 中用 [食材名(克重)] 引用食材，严禁使用 [碗N] 等碗编号写法。
+14. cookingSteps.instruction 中用 [食材名(克重)] 引用食材。
     ✅ 正确："将[猪肉丝(150g)]倒入锅中，加入[清水(300g)]，大火煮沸"
-    ❌ 错误：使用 [碗1]、[碗2] 等碗编号引用
-15. cookingSteps 格式：每条包含 stepNumber(从1递增)、dishName(对应菜品名)、instruction(炒制说明)、bowlReferences([] 固定空数组)、isCompleted(false)。
+15. cookingSteps 格式：每条包含 stepNumber(从1递增)、dishName(对应菜品名)、instruction(炒制说明)、isCompleted(false)。
 
 【其他规则】
 16. 调料必须给出克重数字：油类、酱油、醋、料酒、盐、糖、淀粉等一律用 [调料名(Xg)] 格式，禁止"适量/少许/X勺"。只有粉状调料（花椒粉、胡椒粉、十三香等）可用1-5g范围。
 17. 食材不足时 dishes 数组不能为空，至少给出 1 道利用现有食材的简易菜（蛋炒饭、拌面、炒时蔬等）。
-18. 所有输出使用中文。
-19. **标签格式严格要求**：[食材名(克重)] 标签的方括号必须完整闭合，不允许出现 清水(120g 等断括号。油类（食用油、香油等）必须给出克重数字。`;
+18. 所有输出使用中文。`;
 
 function buildStage1UserPrompt(
   ingredients: { name: string; weight: number | null; createDate: string }[],
@@ -145,14 +142,13 @@ ${seasoningLines}
 
 【prepSteps 生成规则】
 - 覆盖所有需要切/洗/腌制的食材，相同切配方式必须合并为一个步骤
-- description 中用 [食材名(克重)] 引用食材，严禁提碗编号
+- description 中用 [食材名(克重)] 引用食材
 - 示例：多道菜都用到葱花 → 合并为 "取[小葱(10g)]洗净，切成葱花"
 
 【cookingSteps 生成规则】
 - 按 cookingOrder 建议的顺序排列步骤，stepNumber 从 1 递增
-- instruction 中用 [食材名(克重)] 引用食材，严禁用 [碗N] 引用
+- instruction 中用 [食材名(克重)] 引用食材
 - 油、水、调料必须写确切克数，如 [食用油(10g)]、[清水(300g)]
-- 每条 cookingStep 的 bowlReferences 固定为空数组 []
 
 JSON Schema：
 
@@ -190,7 +186,6 @@ JSON Schema：
       "stepNumber": 1,
       "dishName": "对应菜品名",
       "instruction": "炒制步骤，用 [食材名(克重)] 引用食材，水量写确切克数，油温写确切温度",
-      "bowlReferences": [],
       "isCompleted": false
     }
   ],
@@ -304,8 +299,8 @@ export async function callAIStage1(
 }
 
 /**
- * Stage1 流式调用
- * 使用 SSE 流式传输，实时接收 AI 思考过程和结果
+ * Streaming call for Stage1
+ * Uses SSE streaming to receive AI reasoning and results in real time
  */
 export function callAIStage1Stream(
   ingredients: { name: string; weight: number | null; createDate: string }[],
@@ -403,6 +398,99 @@ export function callAIStage1Stream(
         callbacks.onError(error);
       },
     },
-    300_000, // 5 分钟超时
+    300_000, // 5-minute timeout
+  );
+}
+
+function buildRegeneratePrompt(
+  currentMenu: MenuProposal,
+  modifyRequest: string,
+  requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
+): string {
+  const calorieText = requirement.caloriePreference
+    ? `热量目标：每人约${requirement.caloriePreference}大卡`
+    : '';
+  const customText = requirement.customRequirement ? `特殊需求：${requirement.customRequirement}` : '';
+
+  return `【修改要求】
+${modifyRequest}
+
+【原需求】
+用餐人数：${requirement.personCount}人
+餐类：${requirement.mealType}
+${calorieText}
+${customText}
+
+【当前完整菜谱 JSON】
+${JSON.stringify(currentMenu)}
+
+请根据上述修改要求，输出一份**完整的新菜谱 JSON**，要求：
+1. 结构与「当前完整菜谱 JSON」完全一致，所有字段都要包含（dishes、estimatedNutrition、missingItems、prepSteps、cookingSteps、preciseNutrition、summary、cookingOrderDescription、flavorDescription 等）
+2. 按修改要求调整 dishes、prepSteps、cookingSteps 等内容
+3. 重新计算 estimatedNutrition（总营养）、preciseNutrition（每菜营养）、missingItems（缺料清单）
+4. 更新 summary、cookingOrderDescription、flavorDescription 以反映修改
+5. 严格 JSON，只返回纯 JSON，禁止任何非 JSON 文本`;
+}
+
+/**
+ * Regenerate the full menu (used when the user modifies a recipe via AI chat)
+ * Takes the current full menu + modification request and outputs a brand-new complete MenuProposal,
+ * avoiding partial patches that would desync derived fields such as nutrition/missing items/summary.
+ * This call disables thinking mode for faster responses.
+ */
+export function regenerateMenuStream(
+  currentMenu: MenuProposal,
+  modifyRequest: string,
+  requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
+  prefs: UserPreferences,
+  callbacks: {
+    onDone: (result: Stage1AIResult) => void;
+    onError: (error: Error) => void;
+  },
+): SSEStreamController {
+  const userPrompt = buildRegeneratePrompt(currentMenu, modifyRequest, requirement);
+  const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
+  const url = `${baseUrl}/chat/completions`;
+
+  const body = {
+    model: prefs.modelName || 'deepseek-v4-pro',
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_CN },
+      { role: 'user', content: userPrompt },
+    ],
+    thinking: { type: 'disabled' },
+    stream: true,
+    response_format: { type: 'json_object' },
+  };
+
+  log.info('重新生成菜单开始', { modifyRequest: modifyRequest.slice(0, 50) });
+
+  return sseStreamFetch(
+    url,
+    body as unknown as Record<string, unknown>,
+    buildHeaders(prefs),
+    {
+      onReasoning: () => {},
+      onContent: () => {},
+      onDone: (fullContent: string) => {
+        if (!fullContent || fullContent.trim().length === 0) {
+          callbacks.onError(new Error('AI 未输出有效内容，请重试'));
+          return;
+        }
+        try {
+          const result = JSON.parse(fullContent);
+          log.info('重新生成菜单完成', { dishCount: result.dishes?.length || 0 });
+          callbacks.onDone({ ...result, reasoningContent: '' });
+        } catch {
+          log.error('重新生成的 JSON 解析失败');
+          callbacks.onError(new Error('AI 返回格式异常，请重试'));
+        }
+      },
+      onError: (error: Error) => {
+        log.error('重新生成菜单失败', error.message);
+        callbacks.onError(error);
+      },
+    },
+    120_000, // 2-minute timeout
   );
 }

@@ -11,10 +11,10 @@ export interface CookingProgressRecord {
   updatedAt: string;
   currentStage: CookingStage;
   session: CookingSession;
-  isCompleted?: boolean; // true = 已完成，显示"查看"；false/undefined = 进行中，显示"继续"
+  isCompleted?: boolean; // true = completed, shows "View"; false/undefined = in progress, shows "Continue"
 }
 
-/** Stage → 可读中文 */
+/** Stage → readable Chinese label */
 export const STAGE_LABELS: Record<CookingStage, string> = {
   requirement: '需求确认',
   menu: '查看菜谱',
@@ -45,7 +45,7 @@ class CookingProgressService {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }
 
-  /** 保存或更新做菜进度 */
+  /** Save or update cooking progress */
   async save(session: CookingSession, name?: string): Promise<CookingProgressRecord> {
     const all = await this.getAll();
     const existing = all.find((r) => r.session.id === session.id);
@@ -76,7 +76,7 @@ class CookingProgressService {
     return record;
   }
 
-  /** 标记为已完成 */
+  /** Mark as completed */
   async markCompleted(sessionId: string): Promise<boolean> {
     const all = await this.getAll();
     const record = all.find((r) => r.session.id === sessionId);
@@ -89,20 +89,20 @@ class CookingProgressService {
     return true;
   }
 
-  /** 获取进行中的记录（未完成） */
+  /** Get in-progress records (not completed) */
   async getActiveRecords(): Promise<CookingProgressRecord[]> {
     const all = await this.getAll();
     return all.filter((r) => !r.isCompleted);
   }
 
-  /** 获取所有进度记录（含已完成） */
+  /** Get all progress records (including completed) */
   async getAllRecords(): Promise<CookingProgressRecord[]> {
     const records = await this.getAll();
     this.log.debug('getAllRecords', { count: records.length });
     return records;
   }
 
-  /** 删除一条记录 */
+  /** Remove a record */
   async remove(recordId: string): Promise<boolean> {
     const all = await this.getAll();
     const filtered = all.filter((r) => r.id !== recordId);
@@ -112,7 +112,7 @@ class CookingProgressService {
     return true;
   }
 
-  /** 重命名 */
+  /** Rename */
   async rename(recordId: string, newName: string): Promise<boolean> {
     const all = await this.getAll();
     const item = all.find((r) => r.id === recordId);

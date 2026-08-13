@@ -14,20 +14,7 @@ import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { IngredientTag, NutritionalData } from '../../src/types';
 
-/** 修补 AI 输出中不完整的方括号 */
-function normalizeBrackets(text: string): string {
-  const result = text
-    // 碗1] → [碗1]（仅当前面没有 [ 时才修复）
-    .replace(/(?<!\[)(碗\d+)\]/g, '[$1]')
-    // [清水(120g → [清水(120g)]（仅当 g 后面不是 )] 时才补 ]）
-    .replace(/\[([^\]]+\(\d+)g(?!\)\])/g, '[$1g]');
-  if (result !== text) {
-    console.log('[TAG:PREP] normalizeBrackets 修复 | 输入:', JSON.stringify(text), '| 输出:', JSON.stringify(result));
-  }
-  return result;
-}
-
-/** 解析 description 中的 [食材名(克重)] 标签并渲染为实色标签 */
+/** Parse [ingredient(grams)] tags in the description and render them as solid-colored tags */
 function IngredientTagText({
   text,
   ingredientTags,
@@ -35,22 +22,20 @@ function IngredientTagText({
   text: string;
   ingredientTags?: IngredientTag[];
 }) {
-  const normalized = normalizeBrackets(text);
-  console.log('[TAG:PREP] IngredientTagText 原始:', JSON.stringify(text), '| 修正后:', JSON.stringify(normalized));
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
-  // 两个分支: 食材(克重) | 食材(非克重描述)
+  // Two branches: ingredient(grams) | ingredient(non-gram description)
   const regex = /\[(.+?)\((\d+)g\)\]|\[(.+?)\((\S+?)\)\]/g;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(normalized)) !== null) {
+  while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(
-        <Text key={`t${lastIndex}`} style={tagStyles.plainText}>{normalized.slice(lastIndex, match.index)}</Text>,
+        <Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex, match.index)}</Text>,
       );
     }
     if (match[3]) {
-      // 非克重标签: [食材名(少许/适量/X勺)]
+      // Non-gram tag: [ingredient(a pinch / to taste / X spoonfuls)]
       const tagName = match[3];
       const tagDesc = match[4];
       const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
@@ -63,7 +48,7 @@ function IngredientTagText({
         </Text>,
       );
     } else {
-      // 克重标签: [食材名(数字g)]
+      // Gram tag: [ingredient(numeric grams)]
       const tagName = match[1];
       const tagWeight = match[2];
       const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
@@ -79,8 +64,8 @@ function IngredientTagText({
     lastIndex = match.index + match[0].length;
   }
 
-  if (lastIndex < normalized.length) {
-    parts.push(<Text key={`t${lastIndex}`} style={tagStyles.plainText}>{normalized.slice(lastIndex)}</Text>);
+  if (lastIndex < text.length) {
+    parts.push(<Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex)}</Text>);
   }
 
   return <Text>{parts}</Text>;
@@ -138,7 +123,7 @@ export function Stage3PrepContent() {
 
   const prepSteps = menuProposal?.prepSteps;
 
-  // 按菜品分组备菜步骤
+  // Group prep steps by dish
   const groupedPrepSteps = useMemo(() => {
     if (!prepSteps) return [];
     const map = new Map<string, typeof prepSteps>();
@@ -236,3 +221,5 @@ const styles = StyleSheet.create({
   quantityText: { fontSize: TYPOGRAPHY.body, color: COLORS.textSecondary },
   bottomBar: { padding: SPACING.md, paddingBottom: SPACING.sm, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
 });
+
+export default Stage3PrepContent;

@@ -1,4 +1,4 @@
-// ============ 食材与调料 ============
+// ============ Ingredients & Seasonings ============
 export interface Ingredient {
   id: string;
   name: string;
@@ -28,7 +28,7 @@ export interface SeasoningCreateInput {
   status: SeasoningStatus;
 }
 
-// ============ 库存状态 ============
+// ============ Inventory State ============
 export interface InventoryState {
   ingredients: Ingredient[];
   seasonings: Seasoning[];
@@ -38,7 +38,7 @@ export interface InventoryState {
   seasoningsError: string | null;
 }
 
-// ============ 用户设置 ============
+// ============ User Settings ============
 export type ApiType = 'deepseek' | 'openai';
 
 export interface UserPreferences {
@@ -54,7 +54,7 @@ export interface UserPreferences {
   reasoningEffort: 'high' | 'max';
 }
 
-// ============ 做菜需求 ============
+// ============ Cooking Requirement ============
 export interface RequirementInput {
   personCount: number;
   mealType: MealType;
@@ -64,7 +64,7 @@ export interface RequirementInput {
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'any';
 
-// ============ 菜单方案 ============
+// ============ Menu Proposal ============
 export interface DishIngredient {
   name: string;
   estimatedWeight: number;
@@ -119,7 +119,7 @@ export interface MenuProposal {
   ingredientTags?: IngredientTag[];
 }
 
-// ============ AI生成方案 ============
+// ============ AI-Generated Plan ============
 export interface IngredientTag {
   name: string;
   weight: number;
@@ -144,7 +144,7 @@ export interface CookingStep {
   isCompleted: boolean;
 }
 
-// ============ 营养信息 ============
+// ============ Nutrition Info ============
 export interface NutritionInfo {
   calories: number;
   protein: number;
@@ -160,7 +160,7 @@ export interface NutritionalData {
   source: 'estimated' | 'precise';
 }
 
-// ============ 库存更新 ============
+// ============ Inventory Update ============
 export interface IngredientSuggestion {
   ingredientId: string;
   ingredientName: string;
@@ -184,7 +184,7 @@ export interface InventoryUpdateData {
   seasoningUpdates: SeasoningSuggestion[];
 }
 
-// ============ 做菜会话 ============
+// ============ Cooking Session ============
 export type CookingStage =
   | 'requirement'
   | 'menu'
@@ -219,7 +219,7 @@ export interface CookingState {
   error: string | null;
 }
 
-// ============ 营养Context状态 ============
+// ============ Nutrition Context State ============
 export interface NutritionState {
   nutritionByDish: Record<string, NutritionalData>;
   dishNames: string[];
@@ -231,14 +231,14 @@ export interface NutritionState {
   dataSource: string | null;
 }
 
-// ============ 设置Context状态 ============
+// ============ Settings Context State ============
 export interface SettingsState {
   preferences: UserPreferences;
   isLoading: boolean;
   error: string | null;
 }
 
-// ============ API相关 ============
+// ============ API Related ============
 export interface APIError {
   type: APIErrorType;
   statusCode: number;
@@ -256,7 +256,7 @@ export type APIErrorType =
   | 'SERVER_ERROR'
   | 'TIMEOUT_ERROR';
 
-// ============ 导出/导入 ============
+// ============ Export/Import ============
 export interface ExportData {
   exportVersion: number;
   exportedAt: string;
@@ -281,15 +281,15 @@ export interface BackupSnapshot {
   data: ExportData;
 }
 
-// ============ 库存检查 ============
+// ============ Inventory Check ============
 export interface InventoryCheckResult {
   isEmpty: boolean;
   isLowInventory: boolean;
   ingredientCount: number;
 }
 
-// ============ 阶段模型 ============
-/** 做菜阶段索引（0-2），对应菜谱→备菜→炒制 */
+// ============ Stage Model ============
+/** Cooking stage index (0-2), mapping recipe → prep → cooking */
 export const STAGE_INDEX_MAP: Record<string, number> = {
   menu: 0,
   prep: 1,
@@ -298,12 +298,12 @@ export const STAGE_INDEX_MAP: Record<string, number> = {
 
 export const STAGE_KEYS: CookingStage[] = ['menu', 'prep', 'cooking'];
 
-/** 根据 CookingStage 获取 0-based 索引 */
+/** Get the 0-based index from CookingStage */
 export function getStageIndex(stage: CookingStage): number {
   return STAGE_INDEX_MAP[stage] ?? -1;
 }
 
-/** 根据索引获取 CookingStage */
+/** Get the CookingStage from an index */
 export function getStageKeyByIndex(index: number): CookingStage {
   return STAGE_KEYS[index] || 'menu';
 }

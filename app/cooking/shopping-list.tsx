@@ -60,7 +60,7 @@ export default function ShoppingListScreen() {
     dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: id });
   };
 
-  // 监听 session 变化自动持久化勾选状态（防抖 300ms）
+  // Watch session changes and auto-persist the checked state (debounced 300ms)
   const saveTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -85,7 +85,7 @@ export default function ShoppingListScreen() {
       }
       return next;
     });
-    // 全选后持久化
+    // Persist after selecting all
     for (const item of items) {
       dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: item.id });
     }
@@ -100,7 +100,7 @@ export default function ShoppingListScreen() {
       }
       return next;
     });
-    // 全不选后持久化
+    // Persist after deselecting all
     for (const item of items) {
       dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: item.id });
     }
@@ -109,7 +109,7 @@ export default function ShoppingListScreen() {
   const handleBatchAdd = async () => {
     setIsProcessing(true);
     try {
-      // 食材处理
+      // Handle ingredients
       const checkedIngredients = shoppingItems.filter(
         (item) => item.type === 'ingredient' && checkedItems[item.id],
       );
@@ -121,12 +121,12 @@ export default function ShoppingListScreen() {
         }
       }
 
-      // 调料处理
+      // Handle seasonings
       const checkedSeasonings = shoppingItems.filter(
         (item) => item.type === 'seasoning' && checkedItems[item.id],
       );
 
-      // 实际项目中这里会调用 inventory service 进行入库
+      // In a real project, the inventory service would be called here to stock in
       showAlert({ title: '库存已更新', message: '采购的食材和调料已添加到库存。接下来？', buttons: [
         { text: '返回菜谱', onPress: () => router.back() },
         { text: '重新生成菜单', onPress: () => router.replace('/(tabs)/cooking') },

@@ -1,6 +1,6 @@
 /**
- * SSE 流式请求工具
- * 使用 XMLHttpRequest.onprogress 实现 React Native 兼容的 SSE 流解析
+ * SSE streaming request utility
+ * Uses XMLHttpRequest.onprogress for React Native-compatible SSE stream parsing
  */
 
 import { logger } from './logger';
@@ -8,17 +8,17 @@ import { logger } from './logger';
 const log = logger('UTIL:SSE');
 
 export interface SSECallbacks {
-  /** 收到推理内容片段时回调 */
+  /** Callback when a reasoning content chunk is received */
   onReasoning: (text: string) => void;
-  /** 收到最终内容片段时回调 */
+  /** Callback when a final content chunk is received */
   onContent: (text: string) => void;
-  /** 收到任意原始数据时回调（用于心跳/卡顿检测） */
+  /** Callback when any raw data is received (for heartbeat/stall detection) */
   onData?: () => void;
-  /** 收到 tool_call delta 时回调（仅当模型调用工具时触发） */
+  /** Callback when a tool_call delta is received (fires only when the model calls tools) */
   onToolCallDelta?: (toolCalls: Array<{ index: number; id?: string; name?: string; arguments: string }>) => void;
-  /** 流结束，返回完整拼接结果和 tool_calls */
+  /** Stream ended; returns the fully concatenated result and tool_calls */
   onDone: (fullContent: string, fullReasoning: string, toolCalls?: Array<{ id: string; name: string; arguments: string }>) => void;
-  /** 出错时回调 */
+  /** Callback on error */
   onError: (error: Error) => void;
 }
 
@@ -29,17 +29,17 @@ interface AccumulatedToolCall {
 }
 
 export interface SSEStreamController {
-  /** 取消请求 */
+  /** Cancel the request */
   abort: () => void;
 }
 
 /**
- * 发起 SSE 流式请求
- * @param url API 端点
- * @param body 请求体
- * @param headers 请求头
- * @param callbacks 回调
- * @param timeoutMs 超时时间（毫秒），默认 5 分钟
+ * Start an SSE streaming request
+ * @param url API endpoint
+ * @param body Request body
+ * @param headers Request headers
+ * @param callbacks Callbacks
+ * @param timeoutMs Timeout in milliseconds, defaults to 5 minutes
  */
 export function sseStreamFetch(
   url: string,
@@ -51,7 +51,7 @@ export function sseStreamFetch(
   const xhr = new XMLHttpRequest();
   xhr.open('POST', url, true);
 
-  // 设置请求头
+  // Set request headers
   xhr.setRequestHeader('Content-Type', 'application/json');
   Object.entries(headers).forEach(([key, value]) => {
     xhr.setRequestHeader(key, value);
@@ -65,10 +65,10 @@ export function sseStreamFetch(
   let lastProcessedIndex = 0;
   let buffer = '';
 
-  // 工具调用累积（按 index 分组）
+  // Accumulate tool calls (grouped by index)
   const toolCallMap = new Map<number, AccumulatedToolCall>();
 
-  // 超时处理
+  // Timeout handling
   const timeoutId = setTimeout(() => {
     abort();
     callbacks.onError(new Error('请求超时，请重试'));
@@ -81,29 +81,29 @@ export function sseStreamFetch(
   };
 
   xhr.onprogress = () => {
-    // 读取新增的响应文本
+    // Read the newly appended response text
     const newText = xhr.responseText.substring(lastProcessedIndex);
     lastProcessedIndex = xhr.responseText.length;
     if (!newText) return;
 
-    // 任意数据到达即触发心跳（用于重置卡顿检测）
+    // Any data arrival triggers a heartbeat (resets stall detection)
     callbacks.onData?.();
 
     buffer += newText;
 
-    // 按 \n\n 分割 SSE 事件
+    // Split SSE events by \n\n
     const events = buffer.split('\n\n');
-    // 最后一个可能是不完整的事件，保留在 buffer 中
+    // The last one may be an incomplete event; keep it in the buffer
     buffer = events.pop() || '';
 
     for (const event of events) {
       const trimmed = event.trim();
       if (!trimmed || trimmed === 'data: [DONE]') {
-        // 流结束标记
+        // Stream end marker
         continue;
       }
 
-      // 解析 data: {...} 行
+      // Parse data: {...} lines
       const lines = trimmed.split('\n');
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -127,7 +127,7 @@ export function sseStreamFetch(
             sseChunkCount++;
             log.trace('SSE 事件', { type: 'content' });
           }
-          // 处理 tool_calls delta（流式工具调用）
+          // Handle tool_calls delta (streaming tool calls)
           if (delta.tool_calls && callbacks.onToolCallDelta) {
             for (const tc of delta.tool_calls) {
               const idx: number = tc.index ?? 0;
@@ -156,7 +156,7 @@ export function sseStreamFetch(
 
     if (xhr.status >= 200 && xhr.status < 300) {
       log.info(`SSE 流结束`, { totalChunks: sseChunkCount });
-      // 处理 buffer 中可能残留的最后事件
+      // Process the last event possibly remaining in the buffer
       if (buffer.trim() && buffer.trim() !== 'data: [DONE]') {
         const lines = buffer.trim().split('\n');
         for (const line of lines) {
@@ -192,7 +192,7 @@ export function sseStreamFetch(
       toolCallMap.forEach((v) => toolCalls.push({ id: v.id, name: v.name, arguments: v.arguments }));
       callbacks.onDone(fullContent, fullReasoning, toolCalls.length > 0 ? toolCalls : undefined);
     } else {
-      // 错误处理
+      // Error handling
       if (xhr.status === 401) {
         callbacks.onError(new Error('API Key 无效，请在设置中更新'));
       } else if (xhr.status === 403) {
@@ -206,7 +206,7 @@ export function sseStreamFetch(
       } else if (xhr.status !== 0) {
         callbacks.onError(new Error(`请求失败（${xhr.status}）`));
       }
-      // status === 0 表示被 abort 或网络错误，由 abort 方处理
+      // status === 0 means aborted or network error; handled by the aborting side
     }
   };
 

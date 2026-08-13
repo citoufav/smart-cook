@@ -57,7 +57,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
     if (!session) return [];
     const dishes = session.stages.menu?.menuProposal?.dishes || [];
 
-    // 汇总食材用量
+    // Aggregate ingredient usage
     const usageMap = new Map<string, { name: string; totalWeight: number }>();
     for (const dish of dishes) {
       for (const ing of dish.ingredients || []) {
@@ -71,7 +71,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
     }
 
     const result: IngredientConsumption[] = [];
-    // 食材
+    // Ingredients
     for (const [, usage] of usageMap) {
       const inventoryItem = inventoryState.ingredients.find((i) => i.name === usage.name);
       const originalWeight = inventoryItem?.weight ?? null;
@@ -93,7 +93,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
         deleted: false,
       });
     }
-    // 调料
+    // Seasonings
     const seasoningNames = new Set<string>();
     for (const dish of dishes) {
       for (const s of dish.seasonings || []) {
@@ -115,7 +115,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
       });
     }
 
-    // 排序：红色项靠前
+    // Sort: red (negative) items first
     result.sort((a, b) => {
       if (a.isNegative && !b.isNegative) return -1;
       if (!a.isNegative && b.isNegative) return 1;
@@ -163,7 +163,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
           await updateIngredient(item.inventoryId, { weight: null });
         }
       } else {
-        // 调料
+        // Seasonings
         if (item.deleted && item.inventoryId) {
           await deleteSeasoning(item.inventoryId);
         } else if (item.seasoningStatus && item.inventoryId) {
@@ -171,7 +171,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
         }
       }
     }
-    // 标记进度记录为已完成
+    // Mark the progress record as completed
     const sessionId = cookingState.session?.id;
     if (sessionId) {
       await cookingProgressService.markCompleted(sessionId);
@@ -197,7 +197,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
           </View>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {/* 食材 */}
+            {/* Ingredients */}
             {ingredients.length > 0 && (
               <Text style={styles.sectionTitle}>食材消耗</Text>
             )}
@@ -248,7 +248,7 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
               <Text style={styles.emptyText}>本次未使用库存食材</Text>
             )}
 
-            {/* 调料 */}
+            {/* Seasonings */}
             {seasonings.length > 0 && (
               <Text style={[styles.sectionTitle, { marginTop: SPACING.md }]}>调料使用</Text>
             )}

@@ -14,7 +14,7 @@ export default function CookingPagerScreen() {
   const params = useLocalSearchParams<{ historyMode?: string; initialStage?: string }>();
   const historyMode = params.historyMode === '1';
 
-  // 确保悬浮球在菜谱页面可见
+  // Ensure the floating ball is visible on the recipe page
   React.useEffect(() => {
     if (nutrition.state.totalNutrition && nutrition.state.totalNutrition.calories > 0 && !nutrition.state.isVisible) {
       nutrition.dispatch({ type: 'SHOW_BALL' as any });

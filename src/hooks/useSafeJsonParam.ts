@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 
 export function useSafeJsonParam<T>(key: string): T | null {
   const params = useLocalSearchParams<Record<string, string>>();
-  // raw 使用去掉 Json 后缀的参数 key
+  // raw uses the param key with the Json suffix removed
   const rawKey = key.endsWith('Json') ? key : `${key}Json`;
   const raw = params[rawKey];
 

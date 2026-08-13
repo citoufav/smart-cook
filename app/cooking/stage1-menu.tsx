@@ -40,7 +40,7 @@ export function Stage1MenuContent() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* AI 摘要 */}
+        {/* AI summary */}
         {menuProposal.summary && (
           <Card title="AI 推荐">
             <Text style={styles.summaryText}>{menuProposal.summary.description}</Text>
@@ -57,7 +57,7 @@ export function Stage1MenuContent() {
           </Card>
         )}
 
-        {/* AI 思考过程（可折叠） */}
+        {/* AI reasoning (collapsible) */}
         {reasoningContent ? (
           <View style={styles.reasoningSection}>
             <TouchableOpacity
@@ -78,7 +78,7 @@ export function Stage1MenuContent() {
           </View>
         ) : null}
 
-        {/* 采购清单提醒 — 放在 AI 摘要和菜品清单之间 */}
+        {/* Missing-items reminder — placed between the AI summary and the dish list */}
         {menuProposal.missingItems.length > 0 && (
           <View style={styles.missingAlert}>
             <Text style={styles.missingTitle}>⚠ 以下食材/调料库存不足：</Text>
@@ -96,7 +96,7 @@ export function Stage1MenuContent() {
           </View>
         )}
 
-        {/* 菜品清单 */}
+        {/* Dish list */}
         {menuProposal.dishes.length === 0 ? (
           <View style={styles.emptyDishesAlert}>
             <Text style={styles.emptyDishesTitle}>暂无可搭配的完整菜品</Text>
@@ -155,7 +155,7 @@ export function Stage1MenuContent() {
         </Card>
         )}
 
-        {/* 营养初估 */}
+        {/* Estimated nutrition */}
         <Card title="营养成分（初估）">
           <Text style={styles.nutritionNote}>基于 AI 估算用量，称量后将更新为精确值</Text>
           <View style={styles.nutritionGrid}>
@@ -218,15 +218,17 @@ const styles = StyleSheet.create({
   nutritionItem: { width: '48%', alignItems: 'center', padding: SPACING.md, backgroundColor: COLORS.neutralLight, borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.sm, marginRight: '2%' },
   nutritionValue: { fontSize: TYPOGRAPHY.h3, fontWeight: '700', color: COLORS.primary },
   nutritionUnit: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary },
-  // AI 思考过程
+  // AI reasoning
   reasoningSection: { backgroundColor: '#F0F4FF', borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.md, overflow: 'hidden' },
   reasoningHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.md },
   reasoningTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.primary },
   reasoningHint: { fontSize: 11, color: COLORS.textTertiary },
   reasoningContent: { maxHeight: 250, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md },
   reasoningText: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18 },
-  // 空菜品警告
+  // Empty dish warning
   emptyDishesAlert: { backgroundColor: '#FFF3E0', borderRadius: BORDER_RADIUS.md, padding: SPACING.lg, marginBottom: SPACING.md, borderLeftWidth: 3, borderLeftColor: COLORS.warning },
   emptyDishesTitle: { fontSize: TYPOGRAPHY.body, fontWeight: '700', color: COLORS.warningText, marginBottom: SPACING.sm },
   emptyDishesText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, lineHeight: 20, marginBottom: SPACING.md },
 });
+
+export default Stage1MenuContent;

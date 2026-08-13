@@ -22,10 +22,10 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface ChatBallProps {
   visible: boolean;
-  /** 另一个球的当前屏幕坐标，用于碰撞检测 */
+  /** Screen coords of the other ball, used for collision detection */
   otherBallRect: React.MutableRefObject<{ x: number; y: number; size: number } | null>;
   onPress: () => void;
-  /** 位置更新回调，用于碰撞检测 */
+  /** Position update callback, used for collision detection */
   onPositionUpdate?: (x: number, y: number) => void;
 }
 
@@ -38,11 +38,11 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const lastPos = useRef({ x: 0, y: 0 });
 
-  // 用 ref 保持最新的 onPress，避免 PanResponder 闭包过期
+  // Keep the latest onPress in a ref to avoid stale closures in PanResponder
   const onPressRef = useRef(onPress);
   onPressRef.current = onPress;
 
-  // 进行中的进度阶段（prep/cooking）才需要为底部操作栏留出空间
+  // Reserve space for the bottom action bar only during active stages (prep/cooking)
   const isInteractive = useMemo(() => {
     return cookingState.session?.status === 'prep' || cookingState.session?.status === 'cooking';
   }, [cookingState.session?.status]);
@@ -62,11 +62,11 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
     };
   }, [insets, bottomOffset]);
 
-  // 默认位置：左下角
+  // Default position: bottom-left
   const defaultX = constraints.minX;
   const defaultY = constraints.maxY;
 
-  // 碰撞检测：两个球圆心距离小于直径 + 间距则碰撞
+  // Collision: two balls collide when center distance < diameter + margin
   const checkCollision = (myX: number, myY: number): { x: number; y: number } => {
     const other = otherBallRect.current;
     if (!other) return { x: myX, y: myY };
@@ -79,10 +79,10 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
     const dx = myCenterX - otherCenterX;
     const dy = myCenterY - otherCenterY;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const minDist = BALL_SIZE / 2 + other.size / 2 + 12; // 12px 间距
+    const minDist = BALL_SIZE / 2 + other.size / 2 + 12; // 12px margin
 
     if (dist < minDist && dist > 0) {
-      // 推开
+      // Push apart
       const pushX = (dx / dist) * (minDist - dist);
       const pushY = (dy / dist) * (minDist - dist);
       return {
@@ -110,7 +110,7 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
         const newX = Math.min(constraints.maxX, Math.max(constraints.minX, lastPos.current.x + gesture.dx));
         const newY = Math.min(constraints.maxY, Math.max(constraints.minY, lastPos.current.y + gesture.dy));
 
-        // 吸附最近边缘
+        // Snap to the nearest edge
         const snapX = newX > SCREEN_WIDTH / 2 ? constraints.maxX : constraints.minX;
         const adjusted = checkCollision(snapX, newY);
 
@@ -123,7 +123,7 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
           useNativeDriver: true,
         }).start();
 
-        // 极小移动 = 点击
+        // Tiny movement = tap
         if (Math.abs(gesture.dx) < TAP_THRESHOLD && Math.abs(gesture.dy) < TAP_THRESHOLD) {
           onPressRef.current();
         }
@@ -131,14 +131,14 @@ export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: 
     }),
   ).current;
 
-  // 阶段/模式变化时重置位置
+  // Reset position when stage/mode changes
   useEffect(() => {
     lastPos.current = { x: defaultX, y: defaultY };
     positionAnim.setValue({ x: defaultX, y: defaultY });
     onPositionUpdate?.(defaultX, defaultY);
   }, [bottomOffset]);
 
-  // 显示/隐藏
+  // Show/hide
   useEffect(() => {
     if (visible) {
       lastPos.current = { x: defaultX, y: defaultY };

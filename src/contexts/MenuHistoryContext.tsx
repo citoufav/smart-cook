@@ -12,7 +12,7 @@ interface MenuHistoryContextValue {
 
 const MenuHistoryContext = createContext<MenuHistoryContextValue | null>(null);
 
-/** 菜单方案历史：统一从 context 读取，页面不再直接调 service */
+/** Menu proposal history: read uniformly from context; pages no longer call the service directly */
 export function MenuHistoryProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<MenuHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);

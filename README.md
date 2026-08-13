@@ -89,8 +89,8 @@ SmartCook_demo/
 
 ## Development Records
 
-The `docs/` directory contains the project's design decisions and refactoring records (in Chinese), documenting the evolution from an initial 5-stage flow to the current 3-stage flow, the introduction of the recipe chat assistant, and various UI/state-management fixes. These serve as an architectural decision record (ADR) log.
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the update history, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deep dive into the architecture and data flow.
 
 ## License
 
-Private (not yet licensed). Open-sourcing is planned.
+[MIT](LICENSE) © citoufav

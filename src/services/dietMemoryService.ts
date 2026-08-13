@@ -22,13 +22,13 @@ async function saveAll(entries: DietEntry[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEYS.DIET_MEMORY, JSON.stringify(entries));
 }
 
-/** 获取最近 N 顿菜名列表（最新的在前） */
+/** Get the dish names of the most recent N meals (newest first) */
 export async function getRecentMeals(limit: number = 3): Promise<string[]> {
   const all = await getAll();
   return all.slice(0, limit).map((e) => e.name);
 }
 
-/** 记录一顿饭的菜名（支持传入多个菜名） */
+/** Record the dish names of one meal (supports multiple names) */
 export async function addMeals(mealNames: string[]): Promise<void> {
   const now = new Date().toISOString();
   const all = await getAll();
@@ -36,7 +36,7 @@ export async function addMeals(mealNames: string[]): Promise<void> {
     name,
     timestamp: now,
   }));
-  // 新记录插入到最前面（最新的在前），超出 MAX_ENTRIES 的截掉
+  // Insert new entries at the front (newest first), truncate beyond MAX_ENTRIES
   const updated = [...newEntries, ...all].slice(0, MAX_ENTRIES);
   await saveAll(updated);
 }

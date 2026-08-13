@@ -1,14 +1,14 @@
 /**
- * 全局日志工具
+ * Global logging utility
  *
- * 使用方式：
+ * Usage:
  *   import { logger } from '../../src/utils/logger';
  *   const log = logger('MODULE_NAME');
- *   log.info('消息', { data });
- *   log.warn('警告');
- *   log.error('错误', error);
+ *   log.info('message', { data });
+ *   log.warn('warning');
+ *   log.error('error', error);
  *
- * 日志格式：[HH:MM:SS.mmm] [LEVEL] [MODULE] 消息
+ * Log format: [HH:MM:SS.mmm] [LEVEL] [MODULE] message
  */
 
 type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
@@ -21,7 +21,7 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 3,
 };
 
-// 可在此调整全局最低日志级别
+// Adjust the global minimum log level here
 const MIN_LEVEL: LogLevel = __DEV__ ? 'debug' : 'info';
 
 function timestamp(): string {
@@ -52,7 +52,7 @@ export interface Logger {
   info: (message: string, extra?: any) => void;
   warn: (message: string, extra?: any) => void;
   error: (message: string, extra?: any) => void;
-  /** 带耗时统计：log.time(label) 开始，log.timeEnd(label) 结束 */
+  /** With timing: call log.time(label) to start, log.timeEnd(label) to end */
   time: (label: string) => void;
   timeEnd: (label: string) => void;
 }

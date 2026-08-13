@@ -26,7 +26,7 @@ export default function HistoryDetailScreen() {
 
   useEffect(() => {
     (async () => {
-      // 列表未加载时先刷新一次（兼容从详情直接进入）
+      // Refresh once if the list has not loaded yet (supports entering directly from detail)
       if (items.length === 0 && !loading) {
         await refresh();
       }
@@ -57,7 +57,7 @@ export default function HistoryDetailScreen() {
   const prepSteps: any[] = menu?.prepSteps || [];
   const cookingSteps: any[] = menu?.cookingSteps || [];
 
-  // 构建菜谱上下文给聊天窗
+  // Build recipe context for the chat sheet
   const recipeContext: RecipeContext = useMemo(() => ({
     dishes: dishes || [],
     prepSteps,
@@ -70,7 +70,7 @@ export default function HistoryDetailScreen() {
   return (
     <View style={styles.rootContainer}>
       <ScrollView contentContainerStyle={styles.container}>
-        {/* 基本信息 */}
+        {/* Basic info */}
         <Card title={item.name}>
         <Text style={styles.meta}>
           生成时间：{new Date(item.createdAt).toLocaleString('zh-CN')}
@@ -84,7 +84,7 @@ export default function HistoryDetailScreen() {
         )}
       </Card>
 
-      {/* 菜品列表 */}
+      {/* Dish list */}
       {dishes.length > 0 && (
         <Card title={`菜品（${dishes.length} 道）`}>
           {dishes.map((dish: any, idx: number) => (
@@ -107,7 +107,7 @@ export default function HistoryDetailScreen() {
         </Card>
       )}
 
-      {/* 备菜步骤 */}
+      {/* Prep steps */}
       {prepSteps.length > 0 && (
         <Card title="备菜步骤">
           {prepSteps.map((step: any, idx: number) => (
@@ -124,7 +124,7 @@ export default function HistoryDetailScreen() {
         </Card>
       )}
 
-      {/* 炒制步骤 */}
+      {/* Cooking steps */}
       {cookingSteps.length > 0 && (
         <Card title="炒制步骤">
           {cookingSteps.map((step: any, idx: number) => (
@@ -141,14 +141,14 @@ export default function HistoryDetailScreen() {
         </Card>
       )}
 
-      {/* AI 摘要 */}
+      {/* AI summary */}
       {menu?.summary?.description && (
         <Card title="AI 摘要">
           <Text style={styles.summaryText}>{menu.summary.description}</Text>
         </Card>
       )}
 
-      {/* 思维链 */}
+      {/* Reasoning chain */}
       {item.reasoningContent ? (
         <TouchableOpacity
           style={styles.reasoningHeader}
@@ -166,7 +166,7 @@ export default function HistoryDetailScreen() {
         </View>
       )}
 
-      {/* 聊天悬浮按钮 */}
+      {/* Chat floating button */}
       <TouchableOpacity
         style={styles.chatFab}
         onPress={() => showChatSheet(recipeContext)}

@@ -4,12 +4,12 @@ import { logger } from '../utils/logger';
 
 export interface MenuHistoryItem {
   id: string;
-  name: string;           // 用户自定义名称
-  createdAt: string;       // ISO 日期
-  menuProposal: any;       // MenuProposal 完整数据
-  reasoningContent: string; // AI 思维链
+  name: string;           // user-defined name
+  createdAt: string;       // ISO date
+  menuProposal: any;       // full MenuProposal data
+  reasoningContent: string; // AI reasoning chain
   requirement: any;        // RequirementInput
-  sessionId?: string;      // 关联的做菜 session id，用于加载聊天记录
+  sessionId?: string;      // linked cooking session id, used to load chat history
 }
 
 class MenuHistoryService {
@@ -39,8 +39,8 @@ class MenuHistoryService {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       createdAt: new Date().toISOString(),
     };
-    all.unshift(newItem); // 最新在前
-    // 最多保存 50 条
+    all.unshift(newItem); // newest first
+    // keep at most 50 entries
     if (all.length > 50) all.length = 50;
     await this.saveAll(all);
     const dishCount = item.menuProposal?.dishes?.length ?? 0;

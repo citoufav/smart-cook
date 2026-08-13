@@ -1,12 +1,12 @@
 export const INGREDIENT_TAG_COLORS = [
-  '#FF6B35', // 橙色（主色）
-  '#2196F3', // 蓝色
-  '#2D9F4E', // 绿色
-  '#9C27B0', // 紫色
-  '#FF9800', // 琥珀
-  '#E91E63', // 粉色
-  '#00BCD4', // 青色
-  '#795548', // 棕色
+  '#FF6B35', // orange (primary)
+  '#2196F3', // blue
+  '#2D9F4E', // green
+  '#9C27B0', // purple
+  '#FF9800', // amber
+  '#E91E63', // pink
+  '#00BCD4', // cyan
+  '#795548', // brown
 ];
 
 export function getTagColor(index: number): string {

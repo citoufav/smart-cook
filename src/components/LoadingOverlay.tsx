@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: SPACING.md,
   },
-  // 底部思考细节窗口
+  // Bottom thinking-detail window
   thinkingWindow: {
     width: '100%',
     height: 150,
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontStyle: 'italic',
   },
-  // 卡顿提示
+  // Stall hint
   stallBanner: {
     flexDirection: 'row',
     alignItems: 'center',

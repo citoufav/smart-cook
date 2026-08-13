@@ -12,20 +12,7 @@ import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { CookingStep, IngredientTag } from '../../src/types';
 
-/** 修补 AI 输出中不完整的方括号 */
-function normalizeBrackets(text: string): string {
-  const result = text
-    // 碗1] → [碗1]（仅当前面没有 [ 时才修复）
-    .replace(/(?<!\[)(碗\d+)\]/g, '[$1]')
-    // [清水(120g → [清水(120g)]（仅当 g 后面不是 )] 时才补 ]）
-    .replace(/\[([^\]]+\(\d+)g(?!\)\])/g, '[$1g]');
-  if (result !== text) {
-    console.log('[TAG:COOKING] normalizeBrackets 修复 | 输入:', JSON.stringify(text), '| 输出:', JSON.stringify(result));
-  }
-  return result;
-}
-
-/** 解析 instruction 中的 [食材名(克重)] 和 [食材名(非克重)] 并渲染为统一标签 */
+/** Parse [ingredient(grams)] and [ingredient(non-gram)] tags in the instruction and render them as unified tags */
 function InstructionText({
   text,
   ingredientTags,
@@ -33,21 +20,20 @@ function InstructionText({
   text: string;
   ingredientTags?: IngredientTag[];
 }) {
-  const normalized = normalizeBrackets(text);
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
-  // 两个分支: 食材(克重) | 食材(非克重描述)
+  // Two branches: ingredient(grams) | ingredient(non-gram description)
   const regex = /\[(.+?)\((\d+)g\)\]|\[(.+?)\((\S+?)\)\]/g;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(normalized)) !== null) {
+  while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(
-        <Text key={`t${lastIndex}`} style={tagStyles.plainText}>{normalized.slice(lastIndex, match.index)}</Text>,
+        <Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex, match.index)}</Text>,
       );
     }
     if (match[3]) {
-      // [食材名(非克重)] — 少许、适量、X勺等
+      // [ingredient(non-gram)] — a pinch, to taste, X spoonfuls, etc.
       const tagName = match[3];
       const tagDesc = match[4];
       const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
@@ -60,7 +46,7 @@ function InstructionText({
         </Text>,
       );
     } else {
-      // [食材名(数字g)]
+      // [ingredient(numeric grams)]
       const tagName = match[1];
       const tagWeight = match[2];
       const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
@@ -76,8 +62,8 @@ function InstructionText({
     lastIndex = match.index + match[0].length;
   }
 
-  if (lastIndex < normalized.length) {
-    parts.push(<Text key={`t${lastIndex}`} style={tagStyles.plainText}>{normalized.slice(lastIndex)}</Text>);
+  if (lastIndex < text.length) {
+    parts.push(<Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex)}</Text>);
   }
 
   return <Text>{parts}</Text>;
@@ -192,3 +178,5 @@ const styles = StyleSheet.create({
   bottomBar: { padding: SPACING.md, paddingBottom: SPACING.sm, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
   doneButton: { backgroundColor: '#2D9F4E' },
 });
+
+export default Stage5CookingContent;

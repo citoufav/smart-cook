@@ -46,7 +46,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   useEffect(() => {
     log.info('MOUNT', { historyMode, initialPage });
-    // 同步初始页面：ScrollView 定位 + currentPage state
+    // Sync the initial page: ScrollView position + currentPage state
     setTimeout(() => {
       scrollRef.current?.scrollTo({ x: initialPage * screenWidth, y: 0, animated: false });
       setCurrentPage(initialPage);
@@ -55,7 +55,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   const session = state.session;
 
-  // 构建菜谱上下文给聊天窗（单一真相源：menu.menuProposal）
+  // Build recipe context for the chat sheet (single source of truth: menu.menuProposal)
   const recipeContext: RecipeContext = useMemo(() => {
     const mp = session?.stages?.menu?.menuProposal;
     return {
@@ -71,7 +71,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
     log.info('RENDER', { historyMode, status: session.status });
   }, []);
 
-  // 控制聊天悬浮球的显示和点击行为（ref 方式，不触发父组件 re-render）
+  // Control chat ball visibility and press behavior via ref (avoids parent re-render)
   useEffect(() => {
     if (historyMode) {
       hideChatBall();
@@ -88,14 +88,14 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   const statusIndex = getStageIndex(session.status);
 
-  // 初始页面定位：历史查看时定位到最后一个有数据的阶段
+  // Initial page: jump to the last stage with data when viewing history
   const initialPage = historyMode
     ? (session.stages.menu?.menuProposal?.cookingSteps?.length ? 2
         : session.stages.menu?.menuProposal?.prepSteps?.length ? 1
         : 0)
     : statusIndex < 0 ? 0 : statusIndex;
 
-  // 进度条点击跳转 + 滚动联动
+  // Progress bar tap-to-jump + scroll sync
   const handleProgressBarPress = useCallback(
     (stageKey: string) => {
       const idx = getStageIndex(stageKey as any);
@@ -105,7 +105,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
     [screenWidth],
   );
 
-  // 滚动事件：同步当前页面
+  // Scroll event: sync current page
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetX = e.nativeEvent.contentOffset.x;
@@ -125,13 +125,13 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   return (
     <View style={styles.container}>
-      {/* 顶部步骤状态栏 */}
+      {/* Top stage status bar */}
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.headerStep}>{currentLabel}</Text>
         {historyMode && <Text style={styles.headerBadge}>查看记录</Text>}
       </View>
 
-      {/* 横向滑动三页 */}
+      {/* Three horizontally swipeable pages */}
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -151,7 +151,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
         </View>
       </ScrollView>
 
-      {/* 完成按钮 */}
+      {/* Done button */}
       {!historyMode && (
         <TouchableOpacity
           style={styles.completeBtn}

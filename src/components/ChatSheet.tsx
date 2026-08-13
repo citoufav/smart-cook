@@ -18,10 +18,12 @@ import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { useSettings } from '../contexts/SettingsContext';
 import { useCooking } from '../contexts/CookingContext';
-import { callAIChatStream, RecipeContext, ToolCallResult, sendChatMessage } from '../services/chatService';
+import { useNutrition } from '../contexts/NutritionContext';
+import { callAIChatStream, RecipeContext, ToolCallResult } from '../services/chatService';
 import { saveChat, loadChat, estimateTokens } from '../services/chatHistoryService';
 import { cookingProgressService } from '../services/cookingProgressService';
-import { applyRecipeChanges, RecipeChange } from '../services/recipeEditService';
+import { regenerateMenuStream, Stage1AIResult } from '../services/aiService';
+import { NutritionalData } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { SSEStreamController } from '../utils/sseStream';
@@ -31,7 +33,7 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   reasoningContent?: string;
-  /** 等待确认的工具调用 ID，渲染确认/取消按钮 */
+  /** ID of the tool call awaiting confirmation, renders confirm/cancel buttons */
   pendingConfirmId?: string;
 }
 
@@ -44,6 +46,7 @@ interface ChatSheetProps {
 export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheetProps) {
   const { state: settingsState } = useSettings();
   const { state: cookingState, dispatch: cookingDispatch } = useCooking();
+  const { setPreciseNutrition } = useNutrition();
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
 
@@ -59,17 +62,16 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
   const streamRef = useRef<SSEStreamController | null>(null);
   const pendingAssistantRef = useRef<string>('');
   const pendingReasoningRef = useRef<string>('');
-  const prevTotalLinesRef = useRef(0); // 用于节流：仅在换行时触发滚动
+  const prevTotalLinesRef = useRef(0); // Throttle: only trigger scroll when lines change
   const toolCallingRef = useRef(false);
   const pendingToolCallsRef = useRef<ToolCallResult[] | null>(null);
-  const pendingFullTextRef = useRef<string>('');
   const pendingConfirmIdRef = useRef<string>('');
 
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
 
   const sessionId = recipeContext.sessionId || 'default';
 
-  // 键盘监听
+  // Keyboard listeners
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', (e) => {
       setKeyboardHeight(e.endCoordinates.height);
@@ -84,7 +86,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     };
   }, []);
 
-  // 加载"允许修改菜谱"的全局记忆
+  // Load the persisted "allow recipe modification" flag
   useEffect(() => {
     if (visible) {
       AsyncStorage.getItem(STORAGE_KEYS.CHAT_ALLOW_MODIFY).then((val) => {
@@ -92,7 +94,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
       }).catch(() => {});
     }
   }, [visible]);
-  // 加载历史记录
+  // Load chat history
   useEffect(() => {
     if (visible && sessionId !== 'default') {
       loadChat(sessionId).then((session) => {
@@ -114,10 +116,12 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     setExpandedReasonings(new Set());
   }, [visible, sessionId]);
 
-  // 保存历史记录
+  // Persist chat history
   const persistMessages = useCallback((msgs: ChatMessage[]) => {
     if (sessionId === 'default') return;
-    const plain = msgs.map((m) => ({ role: m.role, content: m.content, reasoningContent: m.reasoningContent }));
+    const plain = msgs
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content, reasoningContent: m.reasoningContent }));
     saveChat(sessionId, plain).catch(() => {});
   }, [sessionId]);
 
@@ -168,8 +172,8 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     });
   }, []);
 
-  // 执行工具调用：将 modify_recipe 的修改应用到菜谱
-  const executeToolCalls = useCallback((toolCalls: ToolCallResult[]): string => {
+  // Execute tool calls: regenerate the full menu from the modification summary
+  const executeToolCalls = useCallback(async (toolCalls: ToolCallResult[]): Promise<string> => {
     const session = cookingState.session;
     if (!session) return '无活跃做菜会话';
 
@@ -177,105 +181,108 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
       if (tc.name !== 'modify_recipe') continue;
       try {
         const args = JSON.parse(tc.arguments);
-        const reason: string = args.reason || '菜谱修改';
-        const changes: RecipeChange[] = args.changes || [];
-        if (changes.length === 0) continue;
+        const summary: string = args.summary || '';
+        if (!summary) continue;
 
-        // 纯函数：把修改应用到菜单方案（不修改原对象，返回新方案）
-        const { proposal, messages } = applyRecipeChanges(
-          session.stages.menu?.menuProposal || ({} as any),
-          changes,
-        );
+        const currentMenu = session.stages.menu?.menuProposal;
+        const requirement = session.stages.requirement;
+        if (!currentMenu || !requirement) return '缺少当前菜谱或需求信息';
 
-        // 使用 UPDATE_PLAN 一次性更新，不重置进度
-        cookingDispatch({
-          type: 'UPDATE_PLAN',
-          payload: { menuProposal: proposal },
+        // Regenerate the full menu (AI returns a complete new plan to avoid missing fields in partial patches)
+        const result = await new Promise<Stage1AIResult>((resolve, reject) => {
+          regenerateMenuStream(currentMenu, summary, requirement, settingsState.preferences, {
+            onDone: resolve,
+            onError: reject,
+          });
         });
 
-        // 持久化到 cookingProgressService
+        // Normalize: fill id/isPurchased for missingItems, recompute root nutrition (same as initial generation)
+        const computedTotalNutrition = (result.dishes || []).reduce(
+          (sum: any, d: any) => {
+            if (d.estimatedNutrition) {
+              sum.calories += d.estimatedNutrition.calories || 0;
+              sum.protein += d.estimatedNutrition.protein || 0;
+              sum.fat += d.estimatedNutrition.fat || 0;
+              sum.carbs += d.estimatedNutrition.carbs || 0;
+            }
+            return sum;
+          },
+          { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        );
+
+        const newProposal = {
+          ...currentMenu,
+          ...result,
+          estimatedNutrition: computedTotalNutrition,
+          missingItems: (result.missingItems || []).map((item: any, idx: number) => ({
+            ...item,
+            id: `${item.type}-${item.name}-${item.forDish}-${idx}`,
+            isPurchased: false,
+          })),
+        } as any;
+
+        cookingDispatch({
+          type: 'UPDATE_PLAN',
+          payload: { menuProposal: newProposal },
+        });
+
+        // Sync nutrition display data
+        if (newProposal.dishes?.length && newProposal.preciseNutrition?.length) {
+          const nutritionByDish: Record<string, NutritionalData> = {};
+          newProposal.dishes.forEach((dish: any, i: number) => {
+            if (newProposal.preciseNutrition[i]) {
+              nutritionByDish[dish.name] = { ...newProposal.preciseNutrition[i], source: 'precise' };
+            }
+          });
+          if (Object.keys(nutritionByDish).length > 0) {
+            setPreciseNutrition(nutritionByDish, requirement.personCount);
+          }
+        }
+
+        // Persist to cookingProgressService
         const updatedSession = {
           ...session,
           stages: {
             ...session.stages,
             menu: session.stages.menu
-              ? { ...session.stages.menu, menuProposal: proposal }
+              ? { ...session.stages.menu, menuProposal: newProposal }
               : session.stages.menu,
           },
         };
         cookingProgressService.save(updatedSession).catch(() => {});
 
-        return `🔧 ${reason}\n${messages.join('\n')}`;
+        return `🔧 ${summary}`;
       } catch (e: any) {
         return `❌ 修改失败: ${e.message}`;
       }
     }
     return '未执行任何修改';
-  }, [cookingState.session, cookingDispatch]);
+  }, [cookingState.session, cookingDispatch, settingsState.preferences]);
 
-  // 用户确认工具调用
+  // User confirms the tool call
   const handleConfirmToolCalls = useCallback(async () => {
     const toolCalls = pendingToolCallsRef.current;
-    const fullText = pendingFullTextRef.current;
     const confirmId = pendingConfirmIdRef.current;
     if (!toolCalls) return;
 
-    // 清除待确认状态
+    // Clear pending confirmation state
     pendingToolCallsRef.current = null;
     pendingConfirmIdRef.current = '';
 
-    // 移除确认消息，替换为执行结果
+    // Remove the confirmation message and replace it with the execution result
     setMessages((prev) => prev.filter((m) => m.id !== `system-${confirmId}`));
 
-    // 执行工具
-    const resultText = executeToolCalls(toolCalls);
+    // Execute the tool (regenerate full menu); show the result directly without extra AI confirmation
+    const resultText = await executeToolCalls(toolCalls);
     setMessages((prev) => [...prev, {
       id: `system-${Date.now()}`,
       role: 'system',
       content: resultText,
     }]);
     scrollToBottom(true);
+  }, [executeToolCalls, scrollToBottom]);
 
-    // 构建跟进消息
-    const followMessages: any[] = [];
-    for (const msg of messages) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        followMessages.push({ role: msg.role, content: msg.content });
-      }
-    }
-    if (fullText) {
-      followMessages.push({ role: 'assistant', content: fullText });
-    }
-    followMessages.push({
-      role: 'assistant',
-      content: fullText || null,
-      tool_calls: toolCalls.map((tc) => ({
-        id: tc.id, type: 'function',
-        function: { name: tc.name, arguments: tc.arguments },
-      })),
-    });
-    for (const tc of toolCalls) {
-      followMessages.push({ role: 'tool', tool_call_id: tc.id, content: resultText });
-    }
-
-    try {
-      const followText = await sendChatMessage(followMessages, settingsState.preferences);
-      setMessages((prev) => [...prev, {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: followText,
-      }]);
-    } catch (e: any) {
-      setMessages((prev) => [...prev, {
-        id: `system-${Date.now()}`,
-        role: 'system',
-        content: `❌ 获取 AI 回复失败: ${e.message}`,
-      }]);
-    }
-    scrollToBottom();
-  }, [executeToolCalls, messages, settingsState.preferences, scrollToBottom]);
-
-  // 用户取消工具调用
+  // User cancels the tool call
   const handleCancelToolCalls = useCallback(() => {
     const confirmId = pendingConfirmIdRef.current;
     pendingToolCallsRef.current = null;
@@ -345,7 +352,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
           }
         },
         onToolCallDelta: (tcDeltas) => {
-          // 首次收到工具调用时，在当前 assistant 消息上追加提示
+          // On the first tool call delta, append a hint to the current assistant message
           if (!toolCallingRef.current) {
             toolCallingRef.current = true;
             setMessages((prev) => {
@@ -396,35 +403,15 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
           if (toolCalls && toolCalls.length > 0) {
             toolCallingRef.current = false;
             pendingToolCallsRef.current = toolCalls;
-            pendingFullTextRef.current = fullText;
 
-            // 解析拟修改内容作为预览
+            // Parse the modification summary as a preview
             let previewLines: string[] = [];
             for (const tc of toolCalls) {
               if (tc.name !== 'modify_recipe') continue;
               try {
                 const args = JSON.parse(tc.arguments);
-                const changes: any[] = args.changes || [];
-                for (const c of changes) {
-                  switch (c.type) {
-                    case 'adjust_ingredient':
-                      previewLines.push(`  • ${c.dish || '?'}: ${c.ingredient} → ${c.new_weight}g`); break;
-                    case 'replace_ingredient':
-                      previewLines.push(`  • ${c.dish || '?'}: ${c.ingredient} → ${c.new_ingredient}`); break;
-                    case 'add_ingredient':
-                      previewLines.push(`  • ${c.dish || '?'}: +${c.ingredient}`); break;
-                    case 'remove_ingredient':
-                      previewLines.push(`  • ${c.dish || '?'}: -${c.ingredient}`); break;
-                    case 'update_step':
-                      previewLines.push(`  • 步骤${c.step_number}: 修改描述`); break;
-                    case 'add_step':
-                      previewLines.push(`  • 步骤${c.add_after_step}后: 新步骤`); break;
-                    case 'remove_step':
-                        previewLines.push(`  • 删除步骤${c.step_number}`); break;
-                      case 'rename_dish':
-                       previewLines.push(`  • ${c.dish || '?'} → 更名: ${c.new_dish}`); break;
-                  }
-                }
+                const summary: string = args.summary || '';
+                if (summary) previewLines.push(`  • ${summary}`);
               } catch {}
             }
 
@@ -465,7 +452,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     const hasContent = item.content.length > 0;
     const reasoningExpanded = expandedReasonings.has(item.id);
 
-    // 系统消息（工具执行结果 / 确认提示）
+    // System message (tool execution result / confirmation prompt)
     if (isSystem) {
       return (
         <View style={styles.systemRow}>
@@ -497,7 +484,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     return (
       <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAssistant]}>
         <View style={{ maxWidth: '80%' }}>
-          {/* 思考链 — 只有 AI 消息且有理内容时显示 */}
+          {/* Reasoning chain — shown only for AI messages with reasoning content */}
           {hasReasoning && (
             <TouchableOpacity
               style={styles.reasoningToggle}
@@ -522,7 +509,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
               <Text style={styles.reasoningText}>{item.reasoningContent}</Text>
             </View>
           )}
-          {/* 正文气泡 — 有内容时才显示 */}
+          {/* Content bubble — shown only when there is content */}
           {hasContent && (
             <View style={[styles.msgBubble, isUser ? styles.msgBubbleUser : styles.msgBubbleAssistant]}>
               <Text style={[styles.msgText, isUser ? styles.msgTextUser : styles.msgTextAssistant]}>
@@ -557,7 +544,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
           },
         ]}
       >
-        {/* 头部 */}
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerHandle} />
           <View style={styles.headerRow}>

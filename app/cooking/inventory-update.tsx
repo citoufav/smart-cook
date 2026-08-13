@@ -39,7 +39,7 @@ export default function InventoryUpdateScreen() {
         name: d.name,
         ingredients: d.ingredients.map((i: any) => ({
           name: i.name,
-          actualGrams: i.estimatedWeight, // 无称量数据，用 AI 预估用量
+          actualGrams: i.estimatedWeight, // No weighed data, use the AI-estimated amount
         })),
       })),
       availableSeasonings: [],
@@ -98,7 +98,7 @@ export default function InventoryUpdateScreen() {
             style: 'default',
             onPress: () => {
               dispatch({ type: 'SET_CURRENT_STAGE', payload: 'completed' });
-              // 持久化完成后状态到磁盘，历史记录才能识别为"已完成"
+              // Persist the completed state to disk so history can recognize it as "completed"
               if (cookingState.session) {
                 cookingProgressService.save(cookingState.session).catch(() => {});
               }
@@ -126,7 +126,7 @@ export default function InventoryUpdateScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>库存更新</Text>
 
-        {/* 模式切换 */}
+        {/* Mode switch */}
         <View style={styles.modeRow}>
           <Button
             title="批量模式"
@@ -142,7 +142,7 @@ export default function InventoryUpdateScreen() {
           />
         </View>
 
-        {/* 食材更新 */}
+        {/* Ingredient updates */}
         <Text style={styles.sectionTitle}>食材消耗</Text>
         {ingredientSuggestions.map((sugg) => (
           <View
@@ -180,7 +180,7 @@ export default function InventoryUpdateScreen() {
           </View>
         ))}
 
-        {/* 调料更新 */}
+        {/* Seasoning updates */}
         <Text style={styles.sectionTitle}>调料消耗</Text>
         {seasoningSuggestions.map((sugg) => (
           <View key={sugg.seasoningId} style={styles.suggRow}>

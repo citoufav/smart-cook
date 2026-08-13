@@ -34,7 +34,7 @@ export function NutritionBottomSheet() {
   useEffect(() => {
     if (state.isDetailOpen) {
       setMounted(true);
-      setActiveTabIndex(-1); // 每次打开默认选中总计
+      setActiveTabIndex(-1); // Select the total tab by default on each open
       log.info('OPEN', { isDetailOpen: true });
       Animated.parallel([
         Animated.spring(translateY, { toValue: 0, friction: 8, tension: 65, useNativeDriver: true }),
@@ -45,7 +45,7 @@ export function NutritionBottomSheet() {
         Animated.timing(translateY, { toValue: SHEET_MAX_HEIGHT, duration: 250, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
       ]).start(() => {
-        // 动画完成后卸载组件，释放触摸事件
+        // Unmount after the animation completes to release touch events
         setMounted(false);
       });
     }
@@ -57,7 +57,7 @@ export function NutritionBottomSheet() {
     ? getPerPersonNutrition(state.totalNutrition, state.personCount)
     : state.nutritionByDish[state.dishNames[activeTabIndex]];
 
-  // 总计tab同时显示总营养（用于对比各菜品）
+  // Total tab also shows total nutrition (for comparing dishes)
   const totalData = activeTabIndex === -1 ? state.totalNutrition : null;
 
   log.info('SHEET_RENDER', { activeTab: activeTabIndex, personCount: state.personCount });
@@ -74,7 +74,7 @@ export function NutritionBottomSheet() {
 
   return (
     <View style={styles.container}>
-      {/* 遮罩层 — 使用 Pressable 确保可点击 */}
+      {/* Backdrop — Pressable ensures it is tappable */}
       <Animated.View
         style={[styles.backdrop, { opacity: backdropOpacity }]}
         pointerEvents={state.isDetailOpen ? 'auto' : 'none'}
@@ -85,7 +85,7 @@ export function NutritionBottomSheet() {
         />
       </Animated.View>
 
-      {/* 面板 */}
+      {/* Panel */}
       <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
         <View style={styles.header}>
@@ -124,7 +124,7 @@ export function NutritionBottomSheet() {
         </ScrollView>
 
         <ScrollView style={styles.bodyScroll} showsVerticalScrollIndicator={false}>
-        {/* 总计tab：总营养 + 分隔线 + 人均 */}
+        {/* Total tab: total nutrition + divider + per-person */}
         {totalRows && (
           <>
             <Text style={styles.sectionTitle}>
@@ -162,14 +162,14 @@ export function NutritionBottomSheet() {
           </>
         )}
 
-        {/* 菜品tab：菜品总营养（仅显示在该菜标签下） */}
+        {/* Dish tab: dish total nutrition (shown only under that dish's tab) */}
         {activeTabIndex >= 0 && (
           <Text style={styles.sectionTitle}>
             菜品总营养
           </Text>
         )}
 
-        {/* 当前tab的营养行（总计=人均，菜品=菜品总营养） */}
+        {/* Nutrition rows of the current tab (total=per-person, dish=dish total) */}
         {nutritionRows.map((row) => {
           const displayValue = activeTabIndex === -1 ? row.value : row.value / state.personCount;
           const percent = getDailyPercent(displayValue, row.dailyValue);
@@ -197,7 +197,7 @@ export function NutritionBottomSheet() {
           );
         })}
 
-        {/* 菜品tab：在总营养后追加显示人均 */}
+        {/* Dish tab: append per-person rows after the total */}
         {activeTabIndex >= 0 && (
           <>
             <View style={styles.divider} />

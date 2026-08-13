@@ -33,7 +33,7 @@ export function getDailyPercent(value: number, dailyValue: number): number {
   return Math.round((value / dailyValue) * 100);
 }
 
-/** 按人数平摊总营养 */
+/** Split total nutrition evenly per person */
 export function getPerPersonNutrition(
   total: NutritionInfo,
   personCount: number,

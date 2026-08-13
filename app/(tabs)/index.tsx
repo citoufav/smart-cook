@@ -51,10 +51,10 @@ export default function InventoryScreen() {
   const [formStatus, setFormStatus] = useState<SeasoningStatus>('sufficient');
   const [formDate, setFormDate] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
-  const [editId, setEditId] = useState<string | null>(null); // 编辑模式：正在编辑的项 ID
+  const [editId, setEditId] = useState<string | null>(null); // Edit mode: ID of the item being edited
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // 日期选择器 ScrollView refs — 打开弹窗时滚动到选中项居中
+  // Date picker ScrollView refs — scroll the selected item to center when the modal opens
   const yearScrollRef = useRef<ScrollView>(null);
   const monthScrollRef = useRef<ScrollView>(null);
   const dayScrollRef = useRef<ScrollView>(null);
@@ -81,7 +81,7 @@ export default function InventoryScreen() {
   const { showAlert } = useCustomAlert();
   const { openSettings } = useSettingsDrawer();
 
-  // 日期选择器状态
+  // Date picker state
   const today = new Date();
   const [pickerYear, setPickerYear] = useState(today.getFullYear());
   const [pickerMonth, setPickerMonth] = useState(today.getMonth() + 1);
@@ -116,7 +116,7 @@ export default function InventoryScreen() {
       return;
     }
 
-    // 编辑模式：不检查重名（名称可能不变）
+    // Edit mode: skip the duplicate-name check (name may be unchanged)
     if (!editId) {
       const existingNames = activeTab === 'ingredients'
         ? state.ingredients.map((i) => i.name)
@@ -161,7 +161,7 @@ export default function InventoryScreen() {
     setShowForm(false);
   }, []);
 
-  // 点击列表项进入编辑模式
+  // Tap a list item to enter edit mode
   const handleEditIngredient = useCallback((item: Ingredient) => {
     setEditId(item.id);
     setFormName(item.name);
@@ -287,10 +287,14 @@ export default function InventoryScreen() {
           action={{ label: activeTab === 'ingredients' ? '添加第一个食材' : '添加第一个调料', onPress: () => setShowForm(true) }}
         />
       ) : (
-        <FlatList
+        <FlatList<Ingredient | Seasoning>
           data={currentList}
           keyExtractor={(item) => item.id}
-          renderItem={activeTab === 'ingredients' ? renderIngredientItem : renderSeasoningItem}
+          renderItem={({ item }) =>
+            activeTab === 'ingredients'
+              ? renderIngredientItem({ item: item as Ingredient })
+              : renderSeasoningItem({ item: item as Seasoning })
+          }
           contentContainerStyle={styles.list}
         />
       )}
@@ -355,13 +359,13 @@ export default function InventoryScreen() {
         </View>
       )}
 
-      {/* 日期选择器弹窗 */}
+      {/* Date picker modal */}
       <Modal visible={showDatePicker} transparent animationType="fade" onRequestClose={() => setShowDatePicker(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDatePicker(false)}>
           <View style={styles.datePickerCard}>
             <Text style={styles.datePickerTitle}>选择入库日期</Text>
             <View style={styles.pickerRow}>
-              {/* 年 */}
+              {/* Year */}
               <View style={styles.pickerCol}>
                 <Text style={styles.pickerLabel}>年</Text>
                 <ScrollView ref={yearScrollRef} style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
@@ -372,7 +376,7 @@ export default function InventoryScreen() {
                   ))}
                 </ScrollView>
               </View>
-              {/* 月 */}
+              {/* Month */}
               <View style={styles.pickerCol}>
                 <Text style={styles.pickerLabel}>月</Text>
                 <ScrollView ref={monthScrollRef} style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
@@ -383,7 +387,7 @@ export default function InventoryScreen() {
                   ))}
                 </ScrollView>
               </View>
-              {/* 日 */}
+              {/* Day */}
               <View style={styles.pickerCol}>
                 <Text style={styles.pickerLabel}>日</Text>
                 <ScrollView ref={dayScrollRef} style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
@@ -434,7 +438,7 @@ const styles = StyleSheet.create({
   statusChipActive: { borderWidth: 2 },
   statusChipText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary },
   formButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md },
-  // 日期选择器
+  // Date picker
   modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'center', padding: SPACING.xxl },
   datePickerCard: { backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.xl, padding: SPACING.xxl },
   datePickerTitle: { fontSize: TYPOGRAPHY.h3, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.lg, textAlign: 'center' },
@@ -447,7 +451,7 @@ const styles = StyleSheet.create({
   pickerItemText: { fontSize: TYPOGRAPHY.body, color: COLORS.textSecondary, textAlign: 'center' },
   pickerItemTextActive: { color: COLORS.primary, fontWeight: '700' },
   datePickerBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md },
-  // 日期显示
+  // Date display
   dateSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',

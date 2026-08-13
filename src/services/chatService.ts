@@ -15,8 +15,8 @@ const CHAT_SYSTEM_PROMPT_WITH_MODIFY = `你是一位专业家庭厨师和营养�
 
 用户已授权你修改菜谱。当用户要求修改菜谱时：
 1. 先用一句话说明你要做什么修改
-2. 然后调用 modify_recipe 工具来实际更新菜谱数据
-3. 工具执行完后，系统会自动告知结果，届时请确认修改完成
+2. 然后调用 modify_recipe 工具，把修改要求用自然语言写在 summary 字段里
+3. 系统会根据 summary 重新生成完整菜谱
 
 其他规则：
 1. 回答简洁实用，新手友好
@@ -27,39 +27,16 @@ const MODIFY_RECIPE_TOOLS = [
     type: 'function' as const,
     function: {
       name: 'modify_recipe',
-      description: '修改当前菜谱数据，包括调整食材用量、替换食材名称、增删菜谱步骤。用户要求修改菜谱时调用此工具。',
+      description: '当用户要求修改菜谱时调用此工具，用自然语言描述修改要求。',
       parameters: {
         type: 'object',
         properties: {
-          reason: {
+          summary: {
             type: 'string',
-            description: '修改原因或说明，用一句话概括',
-          },
-          changes: {
-            type: 'array',
-            description: '要执行的具体修改列表',
-            items: {
-              type: 'object',
-              properties: {
-                type: {
-                  type: 'string',
-                  enum: ['adjust_ingredient', 'replace_ingredient', 'add_ingredient', 'remove_ingredient', 'update_step', 'add_step', 'remove_step', 'rename_dish'],
-                  description: '修改类型',
-                },
-                dish: { type: 'string', description: '目标菜品名称' },
-                new_dish: { type: 'string', description: '新的菜品名称（仅 rename_dish 时使用）' },
-                ingredient: { type: 'string', description: '食材名称' },
-                new_weight: { type: 'number', description: '调整后的用量(克)' },
-                new_ingredient: { type: 'string', description: '替换为的新食材名称' },
-                step_number: { type: 'integer', description: '步骤编号' },
-                new_description: { type: 'string', description: '新的步骤描述' },
-                add_after_step: { type: 'integer', description: '在此步骤编号后插入新步骤' },
-              },
-              required: ['type'],
-            },
+            description: '修改要求的自然语言描述，例如"把盐从2g改成3g，将番茄炒蛋换成番茄炒虾仁"',
           },
         },
-        required: ['reason', 'changes'],
+        required: ['summary'],
       },
     },
   },
@@ -128,35 +105,8 @@ export interface ChatCallbacks {
 const MAX_CONTEXT_TOKENS = 200_000;
 
 /**
- * 非流式聊天补全（用于工具调用后的跟进）
- */
-export async function sendChatMessage(
-  messages: { role: string; content: string; tool_call_id?: string }[],
-  prefs: UserPreferences,
-): Promise<string> {
-  const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const resp = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${prefs.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: prefs.modelName || 'deepseek-v4-pro',
-      messages,
-      stream: false,
-      temperature: 1,
-      max_tokens: 4096,
-    }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data?.error?.message || `请求失败(${resp.status})`);
-  return data.choices?.[0]?.message?.content || '';
-}
-
-/**
- * 菜谱聊天流式调用
- * 复用 SSE 流式，但不强制 JSON 格式，返回纯文本
+ * Streaming chat call for recipe conversation
+ * Reuses the SSE stream but does not force JSON format; returns plain text
  */
 export function callAIChatStream(
   recipeContext: RecipeContext,
@@ -179,13 +129,14 @@ export function callAIChatStream(
     ...messages,
   ];
 
-  // 上下文长度控制：超过 200K token 则裁剪旧消息
+  // Context length control: trim old messages when exceeding 200K tokens
   apiMessages = trimContext(apiMessages, MAX_CONTEXT_TOKENS, 3);
 
   const body: Record<string, unknown> = {
     model: prefs.modelName || 'deepseek-v4-pro',
     messages: apiMessages,
     stream: true,
+    thinking: { type: 'disabled' },
   };
 
   if (allowModify) {
@@ -214,6 +165,6 @@ export function callAIChatStream(
       },
       onError: callbacks.onError,
     },
-    120_000, // 2 分钟超时
+    120_000, // 2-minute timeout
   );
 }

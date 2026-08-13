@@ -23,13 +23,13 @@ async function saveAll(sessions: ChatSession[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEYS.CHAT_HISTORY, JSON.stringify(sessions));
 }
 
-/** 根据 session id 加载聊天记录 */
+/** Load chat history by session id */
 export async function loadChat(sessionId: string): Promise<ChatSession | null> {
   const all = await getAll();
   return all.find((s) => s.id === sessionId) || null;
 }
 
-/** 保存聊天记录（覆盖） */
+/** Save chat history (overwrite) */
 export async function saveChat(sessionId: string, messages: { role: 'user' | 'assistant'; content: string }[]): Promise<void> {
   const all = await getAll();
   const idx = all.findIndex((s) => s.id === sessionId);
@@ -49,22 +49,22 @@ export async function saveChat(sessionId: string, messages: { role: 'user' | 'as
   await saveAll(all);
 }
 
-/** 删除聊天记录 */
+/** Remove chat history */
 export async function removeChat(sessionId: string): Promise<void> {
   const all = await getAll();
   await saveAll(all.filter((s) => s.id !== sessionId));
 }
 
-/** 估算 token 数（简单估算：中文 1 字 ≈ 2 token，英文 1 字 ≈ 0.3 token，取平均 1 字 ≈ 1.5 token） */
+/** Estimate token count (rough estimate: a Chinese char ≈ 2 tokens, an English char ≈ 0.3 token, averaged to ≈ 1.5 per char) */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length * 1.5);
 }
 
-/** 控制上下文在 maxTokens 以内，从旧消息开始裁剪 */
+/** Keep context within maxTokens by trimming oldest messages first */
 export function trimContext(
   messages: { role: string; content: string }[],
   maxTokens: number = 200_000,
-  systemMessages: number = 3, // 前 3 条是 system + recipe context
+  systemMessages: number = 3, // first 3 are system + recipe context
 ): { role: string; content: string }[] {
   const systemMsgs = messages.slice(0, systemMessages);
   let conversationMsgs = messages.slice(systemMessages);
@@ -74,9 +74,9 @@ export function trimContext(
     conversationMsgs.map((m) => m.content).join(''),
   );
 
-  // 从最早的非系统消息开始裁剪
+  // Trim from the oldest non-system messages
   while (totalTokens > maxTokens && conversationMsgs.length > 2) {
-    conversationMsgs = conversationMsgs.slice(2); // 一次移除一轮（user + assistant）
+    conversationMsgs = conversationMsgs.slice(2); // remove one turn (user + assistant) at a time
     totalTokens = estimateTokens(
       systemMsgs.map((m) => m.content).join('') +
       conversationMsgs.map((m) => m.content).join(''),

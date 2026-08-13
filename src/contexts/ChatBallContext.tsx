@@ -6,7 +6,7 @@ interface ChatBallContextValue {
   hideChatBall: () => void;
   onChatPress: (() => void) | null;
   setOnChatPress: (handler: (() => void) | null) => void;
-  /** 用 ref 设置 press handler，不触发 re-render */
+  /** Set the press handler via ref to avoid triggering re-renders */
   setOnChatPressRef: (handler: (() => void) | null) => void;
 }
 

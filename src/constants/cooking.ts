@@ -1,4 +1,4 @@
-// 做菜阶段合法转换（3阶段模型：menu → prep → cooking）
+// Valid cooking stage transitions (3-stage model: menu → prep → cooking)
 export const VALID_TRANSITIONS: Record<string, string[]> = {
   requirement: ['menu', 'cancelled'],
   menu: ['prep', 'requirement', 'cancelled'],
@@ -54,12 +54,12 @@ export const MAX_PATCH_ATTEMPTS = 3;
 export const STEP_WIDTH = 62;
 
 export const DAILY_RECOMMENDED = {
-  /** 中国居民膳食指南：成年男性2250/女性1800，取均值 */
+  /** Chinese Dietary Guidelines: 2250 kcal for adult males / 1800 for females; use the average */
   calories: 2000,
-  /** 蛋白质RNI：男性65g/女性55g，取均值 */
+  /** Protein RNI: 65g for males / 55g for females; use the average */
   protein: 60,
-  /** 脂肪AMDR 20-30%E */
+  /** Fat AMDR 20-30%E */
   fat: 60,
-  /** 碳水AMDR 50-65%E */
+  /** Carbs AMDR 50-65%E */
   carbs: 300,
 } as const;
