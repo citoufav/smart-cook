@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
-import { SettingsState, UserPreferences, ApiType } from '../types';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
+import { SettingsState, UserPreferences } from '../types';
 import { loadFullPreferences, saveApiKey, saveNonSensitiveSettings, DEFAULT_USER_PREFERENCES } from '../services/settingsService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
@@ -129,10 +129,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const value = useMemo(
+    () => ({ state, dispatch, updateApiKey, updatePreferences, saveLastCookingDefaults, loadLastCookingDefaults }),
+    [state, dispatch, updateApiKey, updatePreferences, saveLastCookingDefaults, loadLastCookingDefaults],
+  );
+
   return (
-    <SettingsContext.Provider
-      value={{ state, dispatch, updateApiKey, updatePreferences, saveLastCookingDefaults, loadLastCookingDefaults }}
-    >
+    <SettingsContext.Provider value={value}>
       {children}
     </SettingsContext.Provider>
   );

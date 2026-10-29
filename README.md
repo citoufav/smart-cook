@@ -24,7 +24,7 @@ SmartCook is a React Native (Expo) mobile app that takes the ingredients and sea
 | Framework | React Native (Expo SDK 54) |
 | Language | TypeScript |
 | Routing | Expo Router (file-based) |
-| Animation | react-native-reanimated 4 |
+| Animation | React Native built-in Animated |
 | Storage | AsyncStorage / SecureStore |
 | AI | DeepSeek / OpenAI-compatible API (streamed via SSE) |
 | Validation | Zod |

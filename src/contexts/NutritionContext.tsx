@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
-import { NutritionState, NutritionInfo, NutritionalData } from '../types';
+import { NutritionState, NutritionalData } from '../types';
 import { calculateTotalNutrition } from '../utils/nutrition';
 import { logger } from '../utils/logger';
 
@@ -31,8 +31,6 @@ function nutritionReducer(state: NutritionState, action: NutritionAction): Nutri
       const dishNames = Object.keys(action.payload.data);
       log.info('SET_NUTRITION', { source: action.payload.source, dishCount: dishNames.length, personCount: action.payload.personCount });
       const totalNutrition = calculateTotalNutrition(action.payload.data);
-      console.log('[NUTRITION:CTX] SET_NUTRITION | source:', action.payload.source, '| dishNames:', dishNames, '| personCount:', action.payload.personCount);
-      console.log('[NUTRITION:CTX]   totalNutrition:', JSON.stringify(totalNutrition));
       return {
         ...state,
         nutritionByDish: action.payload.data,
@@ -109,10 +107,13 @@ export function NutritionProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'RESET' });
   }, []);
 
+  const value = useMemo(
+    () => ({ state, dispatch, setEstimatedNutrition, setPreciseNutrition, hideBall, openSheet, closeSheet, reset }),
+    [state, dispatch, setEstimatedNutrition, setPreciseNutrition, hideBall, openSheet, closeSheet, reset],
+  );
+
   return (
-    <NutritionContext.Provider
-      value={{ state, dispatch, setEstimatedNutrition, setPreciseNutrition, hideBall, openSheet, closeSheet, reset }}
-    >
+    <NutritionContext.Provider value={value}>
       {children}
     </NutritionContext.Provider>
   );

@@ -25,6 +25,7 @@ import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { Button } from './Button';
 import { useCustomAlert } from './CustomAlert';
 import { ApiType, UserPreferences } from '../types';
+import { validateApiKey } from '../utils/validation';
 
 const DEEPSEEK_MODELS = [
   { label: 'deepseek-v4-pro（旗舰模型）', value: 'deepseek-v4-pro' },
@@ -236,7 +237,17 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   }, [updatePreferences]);
 
   const handleSaveApiKey = useCallback(async () => {
-    await updateApiKey(apiKeyInput);
+    const trimmed = apiKeyInput.trim();
+    if (!trimmed) {
+      showAlert({ title: '未输入', message: '请输入 API Key 后再保存' });
+      return;
+    }
+    const error = validateApiKey(trimmed);
+    if (error) {
+      showAlert({ title: 'API Key 格式有误', message: error });
+      return;
+    }
+    await updateApiKey(trimmed);
     setApiKeyInput('');
     showAlert({ title: '已保存', message: 'API Key 已更新' });
   }, [apiKeyInput, updateApiKey, showAlert]);
@@ -392,6 +403,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                     onChangeText={setApiUrl}
                     placeholderTextColor={COLORS.textTertiary}
                     onSubmitEditing={() => autoSave({ apiUrl })}
+                    onBlur={() => { if (apiUrl.trim()) autoSave({ apiUrl: apiUrl.trim() }); }}
                   />
                   <TextInput
                     style={styles.input}
@@ -400,6 +412,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                     onChangeText={setModelName}
                     placeholderTextColor={COLORS.textTertiary}
                     onSubmitEditing={() => autoSave({ modelName })}
+                    onBlur={() => { if (modelName.trim()) autoSave({ modelName: modelName.trim() }); }}
                   />
                 </>
               )}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -55,8 +55,10 @@ export function CustomAlertProvider({ children }: { children: React.ReactNode })
     ? config.buttons
     : [{ text: '确定', style: 'default' as const }];
 
+  const alertContextValue = useMemo(() => ({ showAlert }), [showAlert]);
+
   return (
-    <CustomAlertContext.Provider value={{ showAlert }}>
+    <CustomAlertContext.Provider value={alertContextValue}>
       {children}
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
         <View style={styles.overlay}>

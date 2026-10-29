@@ -67,9 +67,28 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
   const pendingToolCallsRef = useRef<ToolCallResult[] | null>(null);
   const pendingConfirmIdRef = useRef<string>('');
 
+  // 消息列表的同步镜像：供回调读取最新消息，避免在 setMessages updater 里执行副作用
+  //（updater 必须是纯函数，StrictMode 下会被重复调用）
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  const lastUiFlushRef = useRef(0); // 流式 UI 节流时间戳
+
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
 
   const sessionId = recipeContext.sessionId || 'default';
+
+  const scrollToBottom = useCallback((force: boolean = false) => {
+    if (!force && !isNearBottomRef.current) return;
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+  }, []);
+
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    isNearBottomRef.current = distanceFromBottom < 60;
+  }, []);
 
   // Keyboard listeners
   useEffect(() => {
@@ -143,17 +162,6 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
       }).start();
     }
   }, [visible, screenHeight, slideAnim]);
-
-  const scrollToBottom = useCallback((force: boolean = false) => {
-    if (!force && !isNearBottomRef.current) return;
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
-  }, []);
-
-  const handleScroll = useCallback((e: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
-    isNearBottomRef.current = distanceFromBottom < 60;
-  }, []);
 
   const contextTokens = (() => {
     const allText = messages.map((m) => m.content + (m.reasoningContent || '')).join('');
@@ -269,31 +277,35 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     pendingToolCallsRef.current = null;
     pendingConfirmIdRef.current = '';
 
-    // Remove the confirmation message and replace it with the execution result
-    setMessages((prev) => prev.filter((m) => m.id !== `system-${confirmId}`));
+    // Remove the confirmation message (直接用镜像值构造新列表，避免副作用进 updater)
+    const base = messagesRef.current.filter((m) => m.id !== `system-${confirmId}`);
+    setMessages(base);
 
     // Execute the tool (regenerate full menu); show the result directly without extra AI confirmation
     const resultText = await executeToolCalls(toolCalls);
-    setMessages((prev) => [...prev, {
-      id: `system-${Date.now()}`,
-      role: 'system',
-      content: resultText,
-    }]);
+    const next: ChatMessage[] = [
+      ...base,
+      { id: `system-${Date.now()}`, role: 'system', content: resultText },
+    ];
+    setMessages(next);
+    // 工具执行改变了菜谱，同步持久化对话（persistMessages 会过滤 system 消息）
+    persistMessages(next);
     scrollToBottom(true);
-  }, [executeToolCalls, scrollToBottom]);
+  }, [executeToolCalls, scrollToBottom, persistMessages]);
 
   // User cancels the tool call
   const handleCancelToolCalls = useCallback(() => {
     const confirmId = pendingConfirmIdRef.current;
     pendingToolCallsRef.current = null;
     pendingConfirmIdRef.current = '';
-    setMessages((prev) => prev.filter((m) => m.id !== `system-${confirmId}`));
-    setMessages((prev) => [...prev, {
-      id: `system-${Date.now()}`,
-      role: 'system',
-      content: '已取消修改',
-    }]);
-  }, []);
+    const base = messagesRef.current.filter((m) => m.id !== `system-${confirmId}`);
+    const next: ChatMessage[] = [
+      ...base,
+      { id: `system-${Date.now()}`, role: 'system', content: '已取消修改' },
+    ];
+    setMessages(next);
+    persistMessages(next);
+  }, [persistMessages]);
 
   const sendMessage = useCallback(() => {
     const text = inputText.trim();
@@ -312,15 +324,46 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     setIsLoading(true);
     scrollToBottom(true);
 
-    const chatMessages = nextMessages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+    // 发送给 API 前过滤本地系统消息（工具结果/确认提示），
+    // 原实现把 role: 'system' 强转 'user' | 'assistant' 发出去，会污染模型上下文
+    const chatMessages = nextMessages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
     const assistantId = `assistant-${Date.now()}`;
     pendingAssistantRef.current = '';
     pendingReasoningRef.current = '';
     prevTotalLinesRef.current = 0;
+    lastUiFlushRef.current = 0;
+
+    // 流式 UI 节流：80ms 刷新一次消息气泡，避免每个 SSE chunk 都触发整列表渲染；
+    // onDone 时会用最终文本做一次权威覆盖，无需额外收尾刷新
+    const flushAssistantToUi = () => {
+      const now = Date.now();
+      if (now - lastUiFlushRef.current < 80) return;
+      lastUiFlushRef.current = now;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.id === assistantId) {
+          return [...prev.slice(0, -1), {
+            ...last,
+            content: pendingAssistantRef.current,
+            reasoningContent: pendingReasoningRef.current || undefined,
+          }];
+        }
+        return [...prev, {
+          id: assistantId,
+          role: 'assistant',
+          content: pendingAssistantRef.current,
+          reasoningContent: pendingReasoningRef.current || undefined,
+        }];
+      });
+      const totalLines = (pendingReasoningRef.current + pendingAssistantRef.current).split('\n').length;
+      if (totalLines !== prevTotalLinesRef.current) {
+        prevTotalLinesRef.current = totalLines;
+        scrollToBottom();
+      }
+    };
 
     const stream = callAIChatStream(
       recipeContext,
@@ -329,27 +372,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
       {
         onReasoning: (token: string) => {
           pendingReasoningRef.current += token;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.id === assistantId) {
-              return [...prev.slice(0, -1), {
-                ...last,
-                content: pendingAssistantRef.current,
-                reasoningContent: pendingReasoningRef.current,
-              }];
-            }
-            return [...prev, {
-              id: assistantId,
-              role: 'assistant',
-              content: '',
-              reasoningContent: pendingReasoningRef.current,
-            }];
-          });
-          const totalLines = (pendingReasoningRef.current + pendingAssistantRef.current).split('\n').length;
-          if (totalLines !== prevTotalLinesRef.current) {
-            prevTotalLinesRef.current = totalLines;
-            scrollToBottom();
-          }
+          flushAssistantToUi();
         },
         onToolCallDelta: (tcDeltas) => {
           // On the first tool call delta, append a hint to the current assistant message
@@ -374,27 +397,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
         },
         onToken: (token: string) => {
           pendingAssistantRef.current += token;
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.id === assistantId) {
-              return [...prev.slice(0, -1), {
-                ...last,
-                content: pendingAssistantRef.current,
-                reasoningContent: pendingReasoningRef.current || undefined,
-              }];
-            }
-            return [...prev, {
-              id: assistantId,
-              role: 'assistant',
-              content: pendingAssistantRef.current,
-              reasoningContent: pendingReasoningRef.current || undefined,
-            }];
-          });
-          const totalLines = (pendingReasoningRef.current + pendingAssistantRef.current).split('\n').length;
-          if (totalLines !== prevTotalLinesRef.current) {
-            prevTotalLinesRef.current = totalLines;
-            scrollToBottom();
-          }
+          flushAssistantToUi();
         },
         onDone: (fullText: string, toolCalls?: ToolCallResult[]) => {
           setIsLoading(false);
@@ -427,10 +430,18 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
             scrollToBottom(true);
           } else {
             scrollToBottom();
-            setMessages((prev) => {
-              persistMessages(prev);
-              return prev;
-            });
+            // 用最终文本构造完整消息列表：在 updater 之外持久化（updater 必须是纯函数）
+            const finalList: ChatMessage[] = [
+              ...nextMessages,
+              {
+                id: assistantId,
+                role: 'assistant',
+                content: fullText,
+                reasoningContent: pendingReasoningRef.current || undefined,
+              },
+            ];
+            setMessages(finalList);
+            persistMessages(finalList);
           }
         },
         onError: (error: Error) => {

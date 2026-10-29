@@ -238,49 +238,6 @@ export interface SettingsState {
   error: string | null;
 }
 
-// ============ API Related ============
-export interface APIError {
-  type: APIErrorType;
-  statusCode: number;
-  message: string;
-  retryable: boolean;
-  autoRetry?: boolean;
-}
-
-export type APIErrorType =
-  | 'BAD_REQUEST_ERROR'
-  | 'AUTHENTICATION_ERROR'
-  | 'FORBIDDEN_ERROR'
-  | 'NOT_FOUND_ERROR'
-  | 'RATE_LIMIT_ERROR'
-  | 'SERVER_ERROR'
-  | 'TIMEOUT_ERROR';
-
-// ============ Export/Import ============
-export interface ExportData {
-  exportVersion: number;
-  exportedAt: string;
-  ingredients: Ingredient[];
-  seasonings: Seasoning[];
-  settings: Omit<UserPreferences, 'apiKey'>;
-}
-
-export interface ImportPreview {
-  newIngredients: number;
-  overwriteIngredients: number;
-  newSeasonings: number;
-  overwriteSeasonings: number;
-  willUpdateSettings: boolean;
-}
-
-export interface BackupSnapshot {
-  key: string;
-  importedAt: string;
-  ingredientCount: number;
-  seasoningCount: number;
-  data: ExportData;
-}
-
 // ============ Inventory Check ============
 export interface InventoryCheckResult {
   isEmpty: boolean;

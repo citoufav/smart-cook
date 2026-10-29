@@ -12,81 +12,8 @@ import { useNutrition } from '../../src/contexts/NutritionContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
-import { IngredientTag, NutritionalData } from '../../src/types';
-
-/** Parse [ingredient(grams)] tags in the description and render them as solid-colored tags */
-function IngredientTagText({
-  text,
-  ingredientTags,
-}: {
-  text: string;
-  ingredientTags?: IngredientTag[];
-}) {
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  // Two branches: ingredient(grams) | ingredient(non-gram description)
-  const regex = /\[(.+?)\((\d+)g\)\]|\[(.+?)\((\S+?)\)\]/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(
-        <Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex, match.index)}</Text>,
-      );
-    }
-    if (match[3]) {
-      // Non-gram tag: [ingredient(a pinch / to taste / X spoonfuls)]
-      const tagName = match[3];
-      const tagDesc = match[4];
-      const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
-      parts.push(
-        <Text
-          key={match.index}
-          style={[tagStyles.ingredientTag, { backgroundColor: tagColor }]}
-        >
-          {tagName}({tagDesc})
-        </Text>,
-      );
-    } else {
-      // Gram tag: [ingredient(numeric grams)]
-      const tagName = match[1];
-      const tagWeight = match[2];
-      const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
-      parts.push(
-        <Text
-          key={match.index}
-          style={[tagStyles.ingredientTag, { backgroundColor: tagColor }]}
-        >
-          {tagName}({tagWeight}g)
-        </Text>,
-      );
-    }
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(<Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex)}</Text>);
-  }
-
-  return <Text>{parts}</Text>;
-}
-
-const tagStyles = StyleSheet.create({
-  plainText: {
-    fontSize: TYPOGRAPHY.body,
-    color: COLORS.textPrimary,
-    lineHeight: 22,
-  },
-  ingredientTag: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    overflow: 'hidden',
-    fontSize: 13,
-  },
-});
+import { NutritionalData } from '../../src/types';
+import { IngredientTagText } from '../../src/components/IngredientTagText';
 
 export function Stage3PrepContent() {
   const { state } = useCooking();

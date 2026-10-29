@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 import {
   CookingState,
   CookingStage,
@@ -55,7 +55,9 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
     case 'RESTORE_SESSION': {
       log.info('RESTORE_SESSION', { status: action.payload?.status });
       const sess = action.payload;
-      // Data migration: legacy data stored steps in stages.generatedPlan; backfill them into menu.menuProposal
+      // Data migration: legacy data stored steps in stages.generatedPlan; backfill into menu.menuProposal
+      // reducer 必须是纯函数：通过创建新对象迁移，不得修改传入的 session
+      //（否则会同步污染列表页/进度页持有的同一对象）
       const legacyGp = (sess as any)?.stages?.generatedPlan;
       if (sess && legacyGp && sess.stages.menu?.menuProposal) {
         const mp = sess.stages.menu.menuProposal;
@@ -66,17 +68,13 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
           preciseNutrition: mp.preciseNutrition?.length ? mp.preciseNutrition : legacyGp.preciseNutrition || [],
           ingredientTags: mp.ingredientTags || legacyGp.ingredientTags,
         };
-        sess.stages.menu = { ...sess.stages.menu, menuProposal: merged };
-        console.log('[CTX_RESTORE] 迁移旧 generatedPlan → menuProposal: prepSteps=', merged.prepSteps.length, 'cookingSteps=', merged.cookingSteps.length);
+        const migrated: CookingState['session'] = {
+          ...sess,
+          stages: { ...sess.stages, menu: { ...sess.stages.menu, menuProposal: merged } },
+        };
+        return { ...state, error: null, session: migrated };
       }
-      // Log the restored missingItems purchased state
-      const mi = sess?.stages?.menu?.menuProposal?.missingItems || [];
-      console.log('[CTX_RESTORE] missingItems purchased:', mi.map((m: any) => ({ type: m.type, name: m.name, purchased: m.isPurchased })));
-      return {
-        ...state,
-        error: null,
-        session: sess,
-      };
+      return { ...state, error: null, session: sess };
     }
 
     case 'SET_REQUIREMENT': {
@@ -111,7 +109,6 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
       if (!state.session) return state;
       const mp = action.payload.menuProposal;
       log.info('SET_STAGE1_RESULT', { dishCount: mp.dishes?.length });
-      console.log('[CTX_STAGE1] prepSteps:', mp.prepSteps?.length, 'cookingSteps:', mp.cookingSteps?.length, 'preciseNutrition:', mp.preciseNutrition?.length);
       return {
         ...state,
         session: {
@@ -154,7 +151,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         : targets;
 
       if (!validTargets.includes(action.payload)) {
-        console.warn(`非法阶段转换: ${current} -> ${action.payload}，合法目标: ${validTargets.join(', ')}`);
+        log.warn('非法阶段转换', { from: current, to: action.payload, validTargets });
         return state;
       }
       log.info('ADVANCE_STAGE', { from: current, to: action.payload });
@@ -181,7 +178,7 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
       const targetIndex = getStageIndex(action.payload);
       // Reject non-progress stages
       if (targetIndex < 0 || targetIndex >= STAGE_KEYS.length) {
-        console.log('[CTX] → 拒绝：非进度阶段');
+        log.warn('拒绝非进度阶段', { stage: action.payload });
         return state;
       }
       return {
@@ -196,9 +193,6 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
 
     case 'TOGGLE_SHOPPING_ITEM': {
       if (!state.session?.stages.menu?.menuProposal) return state;
-      const allIds = state.session.stages.menu.menuProposal.missingItems.map((m) => ({ id: m.id, type: m.type, name: m.name }));
-      const found = allIds.find((m) => m.id === action.payload);
-      console.log('[TOGGLE_SHOP] payload:', action.payload, '| found:', found ? `${found.type} ${found.name}` : 'NOT FOUND', '| allIds:', JSON.stringify(allIds));
       const missingItems = state.session.stages.menu.menuProposal.missingItems.map((item) =>
         item.id === action.payload ? { ...item, isPurchased: !item.isPurchased } : item,
       );
@@ -275,10 +269,14 @@ export function CookingProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'RESET_SESSION' });
   }, []);
 
+  // 稳定的 context value：避免每次渲染都用新对象触发全部消费者重渲染
+  const value = useMemo(
+    () => ({ state, dispatch, startSession, restoreSession, setStage1Result, setCurrentStage, resetSession }),
+    [state, dispatch, startSession, restoreSession, setStage1Result, setCurrentStage, resetSession],
+  );
+
   return (
-    <CookingContext.Provider
-      value={{ state, dispatch, startSession, restoreSession, setStage1Result, setCurrentStage, resetSession }}
-    >
+    <CookingContext.Provider value={value}>
       {children}
     </CookingContext.Provider>
   );

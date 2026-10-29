@@ -99,7 +99,7 @@ export interface ChatCallbacks {
   onToken: (text: string) => void;
   onDone: (fullText: string, toolCalls?: ToolCallResult[]) => void;
   onError: (error: Error) => void;
-  onToolCallDelta?: (toolCalls: Array<{ index: number; id?: string; name?: string; arguments: string }>) => void;
+  onToolCallDelta?: (toolCalls: { index: number; id?: string; name?: string; arguments: string }[]) => void;
 }
 
 const MAX_CONTEXT_TOKENS = 200_000;
@@ -157,7 +157,7 @@ export function callAIChatStream(
       onReasoning: callbacks.onReasoning,
       onContent: callbacks.onToken,
       onToolCallDelta: callbacks.onToolCallDelta,
-      onDone: (fullContent: string, _fullReasoning: string, toolCalls?: Array<{ id: string; name: string; arguments: string }>) => {
+      onDone: (fullContent: string, _fullReasoning: string, toolCalls?: { id: string; name: string; arguments: string }[]) => {
         callbacks.onDone(
           fullContent,
           toolCalls?.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),

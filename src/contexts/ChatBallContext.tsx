@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 
 interface ChatBallContextValue {
   visible: boolean;
@@ -39,15 +39,20 @@ export function ChatBallProvider({ children }: { children: React.ReactNode }) {
     pressRef.current = handler;
   }, []);
 
-  return (
-    <ChatBallContext.Provider value={{
+  const value = useMemo(
+    () => ({
       visible,
       showChatBall,
       hideChatBall,
       onChatPress: onChatPress || pressRef.current,
       setOnChatPress,
       setOnChatPressRef,
-    }}>
+    }),
+    [visible, onChatPress, showChatBall, hideChatBall, setOnChatPress, setOnChatPressRef],
+  );
+
+  return (
+    <ChatBallContext.Provider value={value}>
       {children}
     </ChatBallContext.Provider>
   );

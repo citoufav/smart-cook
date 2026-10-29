@@ -22,7 +22,8 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 // Adjust the global minimum log level here
-const MIN_LEVEL: LogLevel = __DEV__ ? 'debug' : 'info';
+// 生产包只保留 warn/error，避免日志刷屏与性能开销；开发包输出 debug 及以上
+const MIN_LEVEL: LogLevel = __DEV__ ? 'debug' : 'warn';
 
 function timestamp(): string {
   const d = new Date();
@@ -97,12 +98,17 @@ export function logger(module: string): Logger {
 
     time(label: string) {
       const key = `${module}:${label}`;
+      if (!shouldLog('debug')) return;
       timers.set(key, { module, start: Date.now() });
       console.log(formatMessage('debug', module, `⏱ ${label} 开始`));
     },
 
     timeEnd(label: string) {
       const key = `${module}:${label}`;
+      if (!shouldLog('debug')) {
+        timers.delete(key);
+        return;
+      }
       const entry = timers.get(key);
       if (entry) {
         const elapsed = Date.now() - entry.start;

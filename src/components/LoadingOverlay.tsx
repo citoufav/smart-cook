@@ -25,7 +25,9 @@ export function LoadingOverlay({
 
   if (!visible) return null;
 
-  const cleanText = thinkingText ? cleanThinkingText(thinkingText) : '';
+  // 只清理末尾窗口的文本：随流式增长全量清理是 O(n²)，预览窗口只需末尾片段
+  const rawWindow = thinkingText ? thinkingText.slice(-2000) : '';
+  const cleanText = rawWindow ? cleanThinkingText(rawWindow) : '';
   const cardWidth = showThinking
     ? Math.min(screenWidth * 0.88, 400)
     : Math.min(screenWidth * 0.45, 200);

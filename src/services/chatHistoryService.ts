@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
+import { logger } from '../utils/logger';
+
+const log = logger('SVC:CHAT_HIST');
 
 const MAX_SESSIONS = 30;
 
@@ -13,14 +16,28 @@ async function getAll(): Promise<ChatSession[]> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.CHAT_HISTORY);
     if (!raw) return [];
-    return JSON.parse(raw) as ChatSession[];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ChatSession[]) : [];
   } catch {
+    // 数据损坏：先备份原始内容再返回空，避免修复写入后丢失排查线索
+    try {
+      const corrupted = await AsyncStorage.getItem(STORAGE_KEYS.CHAT_HISTORY);
+      if (corrupted) {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        await AsyncStorage.setItem(`${STORAGE_KEYS.CHAT_HISTORY}_corrupted_${ts}`, corrupted);
+      }
+    } catch {}
+    log.warn('聊天历史数据损坏，已备份原始内容并返回空');
     return [];
   }
 }
 
 async function saveAll(sessions: ChatSession[]): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEYS.CHAT_HISTORY, JSON.stringify(sessions));
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.CHAT_HISTORY, JSON.stringify(sessions));
+  } catch (e) {
+    log.error('saveAll 写入失败', String(e));
+  }
 }
 
 /** Load chat history by session id */

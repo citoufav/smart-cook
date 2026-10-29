@@ -60,26 +60,6 @@ export default function InventoryScreen() {
   const dayScrollRef = useRef<ScrollView>(null);
   const ITEM_HEIGHT = 34;
   const SCROLL_HEIGHT = 180;
-  useEffect(() => {
-    if (showDatePicker) {
-      const yearIdx = years.indexOf(pickerYear);
-      const monthIdx = pickerMonth - 1;
-      const dayIdx = pickerDay - 1;
-      const center = (SCROLL_HEIGHT - ITEM_HEIGHT) / 2;
-      const yearY = Math.max(0, yearIdx * ITEM_HEIGHT - center);
-      const monthY = Math.max(0, monthIdx * ITEM_HEIGHT - center);
-      const dayY = Math.max(0, dayIdx * ITEM_HEIGHT - center);
-      console.log('[DATE_PICKER] scroll to:', { yearY, monthY, dayY, yearIdx, monthIdx, dayIdx, ITEM_HEIGHT, center });
-      setTimeout(() => {
-        yearScrollRef.current?.scrollTo({ y: yearY, animated: false });
-        monthScrollRef.current?.scrollTo({ y: monthY, animated: false });
-        dayScrollRef.current?.scrollTo({ y: dayY, animated: false });
-      }, 50);
-    }
-  }, [showDatePicker]);
-
-  const { showAlert } = useCustomAlert();
-  const { openSettings } = useSettingsDrawer();
 
   // Date picker state
   const today = new Date();
@@ -91,6 +71,26 @@ export default function InventoryScreen() {
   const getDaysInMonth = (y: number, m: number) => new Date(y, m, 0).getDate();
   const days = Array.from({ length: getDaysInMonth(pickerYear, pickerMonth) }, (_, i) => i + 1);
 
+  useEffect(() => {
+    if (showDatePicker) {
+      const yearIdx = years.indexOf(pickerYear);
+      const monthIdx = pickerMonth - 1;
+      const dayIdx = pickerDay - 1;
+      const center = (SCROLL_HEIGHT - ITEM_HEIGHT) / 2;
+      const yearY = Math.max(0, yearIdx * ITEM_HEIGHT - center);
+      const monthY = Math.max(0, monthIdx * ITEM_HEIGHT - center);
+      const dayY = Math.max(0, dayIdx * ITEM_HEIGHT - center);
+      setTimeout(() => {
+        yearScrollRef.current?.scrollTo({ y: yearY, animated: false });
+        monthScrollRef.current?.scrollTo({ y: monthY, animated: false });
+        dayScrollRef.current?.scrollTo({ y: dayY, animated: false });
+      }, 50);
+    }
+  }, [showDatePicker]);
+
+  const { showAlert } = useCustomAlert();
+  const { openSettings } = useSettingsDrawer();
+
   const filteredIngredients = useMemo(() => {
     const search = searchText.toLowerCase();
     return state.ingredients.filter((i) => i.name.toLowerCase().includes(search));
@@ -100,6 +100,16 @@ export default function InventoryScreen() {
     const search = searchText.toLowerCase();
     return state.seasonings.filter((s) => s.name.toLowerCase().includes(search));
   }, [state.seasonings, searchText]);
+
+  const resetForm = useCallback(() => {
+    setFormName('');
+    setFormWeight('');
+    setFormStatus('sufficient');
+    setFormDate('');
+    setFormError(null);
+    setEditId(null);
+    setShowForm(false);
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     const name = formName.trim();
@@ -150,16 +160,6 @@ export default function InventoryScreen() {
 
     resetForm();
   }, [formName, formWeight, formStatus, activeTab, editId, addIngredient, updateIngredient, addSeasoning, updateSeasoning, state.ingredients, state.seasonings]);
-
-  const resetForm = useCallback(() => {
-    setFormName('');
-    setFormWeight('');
-    setFormStatus('sufficient');
-    setFormDate('');
-    setFormError(null);
-    setEditId(null);
-    setShowForm(false);
-  }, []);
 
   // Tap a list item to enter edit mode
   const handleEditIngredient = useCallback((item: Ingredient) => {

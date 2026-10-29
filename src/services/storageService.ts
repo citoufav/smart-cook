@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logger } from '../utils/logger';
+
+const log = logger('SVC:STORAGE');
 
 export interface StorageResult<T> {
   success: boolean;
@@ -46,15 +49,20 @@ export const storageService = {
   },
 
   async multiGet(keys: string[]): Promise<Record<string, unknown>> {
+    const result: Record<string, unknown> = {};
     try {
       const pairs = await AsyncStorage.multiGet(keys);
-      const result: Record<string, unknown> = {};
+      // 逐 key 容错：单个 key 数据损坏不应影响其余 key
       for (const [key, value] of pairs) {
-        result[key] = value ? JSON.parse(value) : null;
+        try {
+          result[key] = value ? JSON.parse(value) : null;
+        } catch {
+          result[key] = null;
+        }
       }
       return result;
     } catch {
-      return {};
+      return result;
     }
   },
 };
@@ -65,7 +73,7 @@ export async function safeGetJSON<T>(key: string, fallback: T): Promise<T> {
     if (raw === null) return fallback;
     return JSON.parse(raw) as T;
   } catch {
-    console.warn(`safeGetJSON: 数据损坏，使用默认值: ${key}`);
+    log.warn(`safeGetJSON: 数据损坏，使用默认值: ${key}`);
     try {
       const corruptedRaw = await AsyncStorage.getItem(key);
       if (corruptedRaw) {

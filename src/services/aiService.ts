@@ -1,13 +1,138 @@
+import { z } from 'zod';
 import { UserPreferences, MenuProposal } from '../types';
 import { DEFAULT_TIMEOUT_MS, MAX_RETRIES, BASE_RETRY_DELAY_MS } from '../constants/cooking';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
+import { maskApiKey } from '../utils/maskApiKey';
 
 const log = logger('SVC:AI');
 
-function maskApiKey(key: string): string {
-  if (key.length <= 8) return '****';
-  return key.slice(0, 4) + '****' + key.slice(-4);
+/** 不可重试的错误（鉴权失败、参数错误、限流到顶等），直接抛出终止重试循环 */
+export class AINonRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AINonRetryableError';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AI 输出校验（zod）：字段级异常回退默认值（尽力渲染），结构级异常才报错
+// ---------------------------------------------------------------------------
+
+/** 数值字段：无法解析/非有限数 → 0 */
+const numField = z.coerce.number().transform((v) => (Number.isFinite(v) ? v : 0));
+
+/** 可选字符串字段：非字符串/空串 → undefined */
+const optionalStr = z.any().transform((v) => (typeof v === 'string' && v.trim() ? v : undefined));
+
+const nutritionSchema = z.object({
+  calories: numField.catch(0),
+  protein: numField.catch(0),
+  fat: numField.catch(0),
+  carbs: numField.catch(0),
+});
+
+const dishSchema = z
+  .object({
+    name: z.string().catch('未命名菜品'),
+    ingredients: z
+      .array(
+        z.object({
+          name: z.string().catch(''),
+          estimatedWeight: numField.catch(0),
+          isInInventory: z.boolean().catch(false),
+        }),
+      )
+      .catch([]),
+    seasonings: z
+      .array(
+        z.object({
+          name: z.string().catch(''),
+          amount: z.string().catch(''),
+          isInInventory: z.boolean().catch(false),
+        }),
+      )
+      .catch([]),
+    estimatedNutrition: nutritionSchema.catch({ calories: 0, protein: 0, fat: 0, carbs: 0 }),
+  })
+  .passthrough();
+
+const prepStepSchema = z
+  .object({
+    id: optionalStr,
+    ingredientName: z.string().catch(''),
+    quantity: z.string().catch(''),
+    dishName: optionalStr,
+    description: z.string().catch(''),
+    isCompleted: z.boolean().catch(false),
+    order: numField.catch(0),
+  })
+  .passthrough();
+
+const cookingStepSchema = z
+  .object({
+    stepNumber: numField.catch(0),
+    dishName: z.string().catch(''),
+    instruction: z.string().catch(''),
+    isCompleted: z.boolean().catch(false),
+  })
+  .passthrough();
+
+const missingItemSchema = z
+  .object({
+    type: z.enum(['ingredient', 'seasoning']).catch('ingredient'),
+    name: z.string().catch(''),
+    suggestedAmount: z.string().catch(''),
+    forDish: z.string().catch(''),
+  })
+  .passthrough();
+
+const stage1ResultSchema = z
+  .object({
+    summary: z
+      .object({
+        description: z.string().catch(''),
+        cookingOrder: z.string().catch(''),
+        flavorNotes: z.string().catch(''),
+      })
+      .passthrough()
+      .catch({ description: '', cookingOrder: '', flavorNotes: '' }),
+    dishes: z.array(dishSchema).catch([]),
+    prepSteps: z.array(prepStepSchema).catch([]),
+    cookingSteps: z.array(cookingStepSchema).catch([]),
+    preciseNutrition: z.array(nutritionSchema).catch([]),
+    missingItems: z.array(missingItemSchema).catch([]),
+    cookingOrderDescription: z.string().catch(''),
+    flavorDescription: z.string().catch(''),
+  })
+  .passthrough();
+
+/**
+ * 校验并规范化 AI 返回的菜谱 JSON：
+ * - 字段级异常回退默认值（缺 prep id/stepNumber 自动补齐）
+ * - 结构级异常（根不是对象等）向上抛出，由调用方提示"返回格式异常"
+ */
+export function parseStage1Result(raw: unknown, reasoningContent: string): Stage1AIResult {
+  const parsed = stage1ResultSchema.parse(raw);
+  const prepSteps = parsed.prepSteps.map((s, i) => ({
+    ...s,
+    id: s.id ?? `prep-${i + 1}`,
+  }));
+  const cookingSteps = parsed.cookingSteps.map((s, i) => ({
+    ...s,
+    stepNumber: s.stepNumber > 0 ? s.stepNumber : i + 1,
+  }));
+  return {
+    summary: parsed.summary,
+    dishes: parsed.dishes,
+    prepSteps,
+    cookingSteps,
+    preciseNutrition: parsed.preciseNutrition,
+    missingItems: parsed.missingItems,
+    cookingOrderDescription: parsed.cookingOrderDescription,
+    flavorDescription: parsed.flavorDescription,
+    reasoningContent,
+  };
 }
 
 function buildThinkingConfig(prefs: UserPreferences): { thinking: { type: 'enabled' | 'disabled' }; reasoning_effort?: 'high' | 'max' } {
@@ -236,7 +361,7 @@ export async function callAIStage1(
   };
 
   const maskedKey = maskApiKey(prefs.apiKey);
-  console.log(`[AI Stage1] 调用 API: ${baseUrl}, Key: ${maskedKey}`);
+  log.info(`调用 API: ${baseUrl}, Key: ${maskedKey}`);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -248,46 +373,63 @@ export async function callAIStage1(
 
       if (!response.ok) {
         if (response.status === 429) {
+          if (attempt >= MAX_RETRIES) {
+            throw new AINonRetryableError('请求过于频繁（429 限流），请稍后重试');
+          }
           const retryAfter = response.headers.get('Retry-After');
-          const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : getRetryDelay(attempt);
-          console.warn(`[AI Stage1] 429 限流，等待 ${waitMs}ms`);
+          const retrySeconds = retryAfter ? parseInt(retryAfter, 10) : NaN;
+          const waitMs = Number.isFinite(retrySeconds) && retrySeconds > 0
+            ? retrySeconds * 1000
+            : getRetryDelay(attempt);
+          log.warn(`429 限流，等待 ${waitMs}ms`);
           await sleep(waitMs);
           continue;
         }
         if (response.status === 400) {
+          // 部分兼容端点不支持 response_format：降级重试一次。
+          // 构造新 body 而非 delete，避免污染外层后续重试；降级失败视为不可重试。
+          const fallbackBody = { ...body } as Record<string, unknown>;
+          delete fallbackBody.response_format;
           try {
-            delete (body as any).response_format;
             const retryResponse = await fetchWithTimeout(url, {
               method: 'POST',
               headers: buildHeaders(prefs),
-              body: JSON.stringify(body),
+              body: JSON.stringify(fallbackBody),
             });
+            if (!retryResponse.ok) {
+              throw new AINonRetryableError('请求参数错误（400），请检查 API 地址与模型配置');
+            }
             const retryData = await retryResponse.json();
             const retryContent = retryData.choices?.[0]?.message?.content;
             const retryReasoning = retryData.choices?.[0]?.message?.reasoning_content || '';
             if (!retryContent) throw new Error('重试后 AI 返回内容为空');
-            return { ...JSON.parse(retryContent), reasoningContent: retryReasoning };
-          } catch {}
-          throw new Error(`请求参数错误（400）`);
+            return parseStage1Result(JSON.parse(retryContent), retryReasoning);
+          } catch (e) {
+            if (e instanceof AINonRetryableError) throw e;
+            throw new AINonRetryableError('请求参数错误（400），降级重试后仍失败，请检查模型是否支持 JSON Output');
+          }
         }
-        if (response.status === 401) throw new Error('API Key 无效，请在设置中更新');
-        if (response.status === 403) throw new Error('访问被拒绝（403），请检查 API Key 权限');
-        if (response.status === 404) throw new Error('API 端点不存在（404），请检查 API 地址配置');
+        if (response.status === 401) throw new AINonRetryableError('API Key 无效，请在设置中更新');
+        if (response.status === 403) throw new AINonRetryableError('访问被拒绝（403），请检查 API Key 权限');
+        if (response.status === 404) throw new AINonRetryableError('API 端点不存在（404），请检查 API 地址配置');
         if (response.status >= 500) {
           if (attempt < MAX_RETRIES) {
             await sleep(getRetryDelay(attempt));
             continue;
           }
-          throw new Error(`AI 服务器错误（${response.status}）`);
+          throw new AINonRetryableError(`AI 服务器错误（${response.status}）`);
         }
+        // 其余未覆盖的状态码：不可重试，明确报出状态码，避免穿透到 response.json() 报假错
+        throw new AINonRetryableError(`请求失败（${response.status}），请检查 API 配置`);
       }
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
       const reasoningContent = data.choices?.[0]?.message?.reasoning_content || '';
       if (!content) throw new Error('AI 返回内容为空（JSON Output 模式下偶发，请重试）');
-      return { ...JSON.parse(content), reasoningContent };
+      return parseStage1Result(JSON.parse(content), reasoningContent);
     } catch (error: any) {
+      if (error instanceof AINonRetryableError) throw error;
       if (error.name === 'AbortError') {
         throw new Error('AI 请求超时（深度思考可能需要较长时间），是否重试？');
       }
@@ -333,7 +475,7 @@ export function callAIStage1Stream(
   };
 
   const maskedKey = maskApiKey(prefs.apiKey);
-  console.log(`[AI Stage1 Stream] 调用 API: ${baseUrl}, Key: ${maskedKey}`);
+  log.info(`流式调用 API: ${baseUrl}, Key: ${maskedKey}`);
 
   log.info(`Stage1 流式调用开始`, {
     personCount: requirement.personCount,
@@ -367,28 +509,21 @@ export function callAIStage1Stream(
       onDone: (fullContent: string, fullReasoning: string, _toolCalls?: any) => {
         log.timeEnd('ai_stage1');
         const reasonTail = fullReasoning?.slice(-100) || '(空)';
-        console.log('[AI_STREAM_END] 总chunk:', chunkCount, '| content长度:', fullContent?.length || 0, '| reasoning长度:', fullReasoning?.length || 0);
-        console.log('[AI_STREAM_END] reasoning尾100字:', JSON.stringify(reasonTail));
+        log.debug('流结束', { totalChunks: chunkCount, contentLength: fullContent?.length || 0, reasoningLength: fullReasoning?.length || 0, reasoningTail: reasonTail });
         if (!fullContent || fullContent.trim().length === 0) {
           log.error('AI 流式结束但未生成任何内容（只有思考链）');
           callbacks.onError(new Error('AI 未输出有效内容，请重试或关闭思考模式'));
           return;
         }
         try {
-          const result = JSON.parse(fullContent);
+          const result = parseStage1Result(JSON.parse(fullContent), fullReasoning);
           const dishCount = result.dishes?.length || 0;
           log.info(`流式调用完成`, { dishCount, totalChunks: chunkCount });
-          console.log('[AI_OUTPUT] dishes:', dishCount, 'prepSteps:', result.prepSteps?.length, 'cookingSteps:', result.cookingSteps?.length, 'preciseNutrition:', result.preciseNutrition?.length);
-          if (result.prepSteps?.length) console.log('[AI_OUTPUT] prepSteps sample:', JSON.stringify(result.prepSteps[0]).slice(0, 200));
-          if (result.cookingSteps?.length) console.log('[AI_OUTPUT] cookingSteps sample:', JSON.stringify(result.cookingSteps[0]).slice(0, 200));
-          callbacks.onDone({
-            ...result,
-            reasoningContent: fullReasoning,
-          });
+          log.debug('输出统计', { dishCount, prepSteps: result.prepSteps?.length, cookingSteps: result.cookingSteps?.length, preciseNutrition: result.preciseNutrition?.length });
+          callbacks.onDone(result);
         } catch {
           log.error('流式返回的 JSON 解析失败');
-          console.log('[AI_PARSE_ERROR] fullContent 前300字:', JSON.stringify(fullContent?.slice(0, 300)));
-          console.log('[AI_PARSE_ERROR] reasoning尾100字:', JSON.stringify(fullReasoning?.slice(-100)));
+          log.error('解析失败详情', { contentHead: fullContent?.slice(0, 300), reasoningTail: fullReasoning?.slice(-100) });
           callbacks.onError(new Error('AI 返回格式异常，请检查 API Key 或网络后重试'));
         }
       },
@@ -478,9 +613,9 @@ export function regenerateMenuStream(
           return;
         }
         try {
-          const result = JSON.parse(fullContent);
+          const result = parseStage1Result(JSON.parse(fullContent), '');
           log.info('重新生成菜单完成', { dishCount: result.dishes?.length || 0 });
-          callbacks.onDone({ ...result, reasoningContent: '' });
+          callbacks.onDone(result);
         } catch {
           log.error('重新生成的 JSON 解析失败');
           callbacks.onError(new Error('AI 返回格式异常，请重试'));

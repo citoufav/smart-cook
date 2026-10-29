@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import { Ingredient, Seasoning, SeasoningStatus, InventoryState } from '../types';
 import { ingredientService } from '../services/ingredientService';
 import { seasoningService } from '../services/seasoningService';
@@ -184,53 +184,78 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   }, [state.ingredients, state.seasonings]);
 
   const importInventoryJson = useCallback(async (json: string): Promise<void> => {
-    const data = JSON.parse(json);
+    let data: { ingredients?: unknown; seasonings?: unknown };
+    try {
+      data = JSON.parse(json);
+    } catch {
+      throw new Error('不是有效的 JSON 文件');
+    }
     if (!data || !Array.isArray(data.ingredients) || !Array.isArray(data.seasonings)) {
       throw new Error('无效的库存数据格式');
     }
-    // Append mode: only add ingredients not already in inventory; skip same-name ones
+    // Append mode: skip same-name items；整表合并后一次性写入（避免逐条 add 的 O(n²) 读写）
     const existingIngredients = await ingredientService.getAll();
     const existingNames = new Set(existingIngredients.map((i) => i.name));
-    let addedCount = 0;
-    for (const i of data.ingredients) {
+    const now = new Date().toISOString();
+    const newIngredients: Ingredient[] = [];
+    for (const i of data.ingredients as Record<string, unknown>[]) {
       const name = String(i.name || '').trim();
       if (!name || existingNames.has(name)) continue;
-      await ingredientService.add({ name, weight: typeof i.weight === 'number' ? i.weight : null, createDate: i.createDate });
+      newIngredients.push({
+        id: generateId(),
+        name,
+        weight: typeof i.weight === 'number' ? i.weight : null,
+        createDate: typeof i.createDate === 'string' && i.createDate ? i.createDate : now,
+        updateDate: now,
+      });
       existingNames.add(name);
-      addedCount++;
     }
-    // Append seasonings
+
     const existingSeasonings = await seasoningService.getAll();
     const existingSeasoningNames = new Set(existingSeasonings.map((s) => s.name));
-    let addedSeasoningCount = 0;
-    for (const s of data.seasonings) {
+    const newSeasonings: Seasoning[] = [];
+    for (const s of data.seasonings as Record<string, unknown>[]) {
       const name = String(s.name || '').trim();
       if (!name || existingSeasoningNames.has(name)) continue;
-      await seasoningService.add({ name, status: (['sufficient', 'low', 'out'].includes(s.status) ? s.status : 'sufficient') as SeasoningStatus });
+      newSeasonings.push({
+        id: generateId(),
+        name,
+        status: (['sufficient', 'low', 'out'].includes(s.status as string) ? s.status : 'sufficient') as SeasoningStatus,
+        createDate: now,
+        updateDate: now,
+      });
       existingSeasoningNames.add(name);
-      addedSeasoningCount++;
+    }
+
+    if (newIngredients.length > 0) {
+      await ingredientService.batchSet(sortByCreatedAt([...existingIngredients, ...newIngredients]));
+    }
+    if (newSeasonings.length > 0) {
+      await seasoningService.batchSet(sortByCreatedAt([...existingSeasonings, ...newSeasonings]));
     }
     await loadData();
-    // Report import results via console.log
-    console.log(`[IMPORT] 已添加食材 ${addedCount} 个，调料 ${addedSeasoningCount} 个（跳过已存在的同名项）`);
+    log.info('库存导入完成', { addedIngredients: newIngredients.length, addedSeasonings: newSeasonings.length });
   }, [loadData]);
 
+  const value = useMemo(
+    () => ({
+      state,
+      dispatch,
+      addIngredient,
+      updateIngredient,
+      deleteIngredient,
+      addSeasoning,
+      updateSeasoning,
+      deleteSeasoning,
+      exportInventoryJson,
+      importInventoryJson,
+      refreshFromStorage,
+    }),
+    [state, dispatch, addIngredient, updateIngredient, deleteIngredient, addSeasoning, updateSeasoning, deleteSeasoning, exportInventoryJson, importInventoryJson, refreshFromStorage],
+  );
+
   return (
-    <InventoryContext.Provider
-      value={{
-        state,
-        dispatch,
-        addIngredient,
-        updateIngredient,
-        deleteIngredient,
-        addSeasoning,
-        updateSeasoning,
-        deleteSeasoning,
-        exportInventoryJson,
-        importInventoryJson,
-        refreshFromStorage,
-      }}
-    >
+    <InventoryContext.Provider value={value}>
       {children}
     </InventoryContext.Provider>
   );

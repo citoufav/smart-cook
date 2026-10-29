@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { RecipeContext } from '../services/chatService';
 
 interface ChatSheetContextValue {
@@ -32,8 +32,13 @@ export function ChatSheetProvider({ children }: { children: React.ReactNode }) {
     setVisible(false);
   }, []);
 
+  const value = useMemo(
+    () => ({ visible, recipeContext, showChatSheet, hideChatSheet }),
+    [visible, recipeContext, showChatSheet, hideChatSheet],
+  );
+
   return (
-    <ChatSheetContext.Provider value={{ visible, recipeContext, showChatSheet, hideChatSheet }}>
+    <ChatSheetContext.Provider value={value}>
       {children}
     </ChatSheetContext.Provider>
   );

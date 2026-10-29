@@ -10,81 +10,8 @@ import { useCooking } from '../../src/contexts/CookingContext';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
-import { CookingStep, IngredientTag } from '../../src/types';
-
-/** Parse [ingredient(grams)] and [ingredient(non-gram)] tags in the instruction and render them as unified tags */
-function InstructionText({
-  text,
-  ingredientTags,
-}: {
-  text: string;
-  ingredientTags?: IngredientTag[];
-}) {
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  // Two branches: ingredient(grams) | ingredient(non-gram description)
-  const regex = /\[(.+?)\((\d+)g\)\]|\[(.+?)\((\S+?)\)\]/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(
-        <Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex, match.index)}</Text>,
-      );
-    }
-    if (match[3]) {
-      // [ingredient(non-gram)] — a pinch, to taste, X spoonfuls, etc.
-      const tagName = match[3];
-      const tagDesc = match[4];
-      const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
-      parts.push(
-        <Text
-          key={match.index}
-          style={[tagStyles.ingredientTag, { backgroundColor: tagColor }]}
-        >
-          {tagName}({tagDesc})
-        </Text>,
-      );
-    } else {
-      // [ingredient(numeric grams)]
-      const tagName = match[1];
-      const tagWeight = match[2];
-      const tagColor = ingredientTags?.find((t) => t.name === tagName)?.color || COLORS.primary;
-      parts.push(
-        <Text
-          key={match.index}
-          style={[tagStyles.ingredientTag, { backgroundColor: tagColor }]}
-        >
-          {tagName}({tagWeight}g)
-        </Text>,
-      );
-    }
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(<Text key={`t${lastIndex}`} style={tagStyles.plainText}>{text.slice(lastIndex)}</Text>);
-  }
-
-  return <Text>{parts}</Text>;
-}
-
-const tagStyles = StyleSheet.create({
-  plainText: {
-    fontSize: TYPOGRAPHY.body,
-    color: COLORS.textPrimary,
-    lineHeight: 22,
-  },
-  ingredientTag: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    overflow: 'hidden',
-    fontSize: 13,
-  },
-});
+import { CookingStep } from '../../src/types';
+import { IngredientTagText } from '../../src/components/IngredientTagText';
 
 export function Stage5CookingContent() {
   const { state } = useCooking();
@@ -93,6 +20,19 @@ export function Stage5CookingContent() {
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
 
   const cookingSteps = menuProposal?.cookingSteps;
+
+  // Rules of Hooks: useMemo 必须无条件执行，放在 early return 之前，
+  // 避免"无数据→有数据"的渲染序列导致 hook 数量变化 → 崩溃
+  const groupedDishes = useMemo(() => {
+    if (!cookingSteps) return [] as [string, CookingStep[]][];
+    const map = new Map<string, CookingStep[]>();
+    for (const step of cookingSteps) {
+      const list = map.get(step.dishName) || [];
+      list.push(step);
+      map.set(step.dishName, list);
+    }
+    return [...map.entries()];
+  }, [cookingSteps]);
 
   if (!menuProposal || !cookingSteps || cookingSteps.length === 0) {
     return (
@@ -106,16 +46,6 @@ export function Stage5CookingContent() {
       </View>
     );
   }
-
-  const groupedDishes = useMemo(() => {
-    const map = new Map<string, CookingStep[]>();
-    for (const step of cookingSteps) {
-      const list = map.get(step.dishName) || [];
-      list.push(step);
-      map.set(step.dishName, list);
-    }
-    return [...map.entries()];
-  }, [cookingSteps]);
 
   return (
     <View style={styles.container}>
@@ -142,7 +72,7 @@ export function Stage5CookingContent() {
                 <View style={styles.stepList}>
                   {steps.map((step) => (
                     <View key={step.stepNumber} style={styles.stepRow}>
-                      <InstructionText
+                      <IngredientTagText
                         text={step.instruction}
                         ingredientTags={ingredientTags}
                       />

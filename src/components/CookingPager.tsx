@@ -44,6 +44,16 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
   const { showChatBall, hideChatBall, setOnChatPressRef } = useChatBall();
   const { showChatSheet } = useChatSheet();
 
+  const session = state.session;
+  const statusIndex = getStageIndex(session?.status ?? 'requirement');
+
+  // Initial page: jump to the last stage with data when viewing history
+  const initialPage = historyMode
+    ? (session?.stages.menu?.menuProposal?.cookingSteps?.length ? 2
+        : session?.stages.menu?.menuProposal?.prepSteps?.length ? 1
+        : 0)
+    : statusIndex < 0 ? 0 : statusIndex;
+
   useEffect(() => {
     log.info('MOUNT', { historyMode, initialPage });
     // Sync the initial page: ScrollView position + currentPage state
@@ -51,9 +61,8 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
       scrollRef.current?.scrollTo({ x: initialPage * screenWidth, y: 0, animated: false });
       setCurrentPage(initialPage);
     }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const session = state.session;
 
   // Build recipe context for the chat sheet (single source of truth: menu.menuProposal)
   const recipeContext: RecipeContext = useMemo(() => {
@@ -69,6 +78,7 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
   useEffect(() => {
     if (!session) return;
     log.info('RENDER', { historyMode, status: session.status });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Control chat ball visibility and press behavior via ref (avoids parent re-render)
@@ -84,18 +94,8 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
     };
   }, [historyMode, showChatBall, hideChatBall, setOnChatPressRef, recipeContext, showChatSheet]);
 
-  if (!session) return null;
-
-  const statusIndex = getStageIndex(session.status);
-
-  // Initial page: jump to the last stage with data when viewing history
-  const initialPage = historyMode
-    ? (session.stages.menu?.menuProposal?.cookingSteps?.length ? 2
-        : session.stages.menu?.menuProposal?.prepSteps?.length ? 1
-        : 0)
-    : statusIndex < 0 ? 0 : statusIndex;
-
   // Progress bar tap-to-jump + scroll sync
+  // 注意：hooks 必须无条件调用，全部放在 early return 之前（rules-of-hooks）
   const handleProgressBarPress = useCallback(
     (stageKey: string) => {
       const idx = getStageIndex(stageKey as any);
@@ -120,6 +120,8 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
     },
     [currentPage, screenWidth, dispatch],
   );
+
+  if (!session) return null;
 
   const currentLabel = STAGE_LABELS[currentPage] || '菜谱概览';
 

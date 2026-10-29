@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useInventory } from '../../src/contexts/InventoryContext';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { useSettings } from '../../src/contexts/SettingsContext';
@@ -25,7 +26,7 @@ import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
 import { NutritionalData, InventoryCheckResult } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
-import { getRecentMeals, addMeals } from '../../src/services/dietMemoryService';
+import { getRecentMeals } from '../../src/services/dietMemoryService';
 import { menuHistoryService } from '../../src/services/menuHistoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
 import { SSEStreamController } from '../../src/utils/sseStream';
@@ -60,12 +61,32 @@ export default function CookingEntryScreen() {
   const pendingResultRef = useRef<any>(null);
   const reasoningBufRef = useRef('');
   const loopAbortedRef = useRef(false);
+  const lastThinkingUpdateRef = useRef(0); // 思考文本 UI 节流
+  const submitToAIRef = useRef<() => void>(() => {}); // 供 submitToAI 内部重试自引用
+  // 已从存储恢复上次默认值后才允许自动保存（避免挂载时用初始值覆盖已保存配置）
+  const defaultsLoadedRef = useRef(false);
+  // 用户是否停留在本页（流式完成时不把其他页面的用户强行拉回）
+  const isScreenFocusedRef = useRef(true);
+  const isFocused = useIsFocused();
+  isScreenFocusedRef.current = isFocused;
+
+  // 卸载时中止进行中的 AI 请求，避免资源泄漏与迟到回调
+  useEffect(() => {
+    return () => {
+      streamRef.current?.abort();
+      streamRef.current = null;
+    };
+  }, []);
 
   const { state: invState } = useInventory();
   const { startSession, setStage1Result, restoreSession } = useCooking();
   const { state: settingsState, saveLastCookingDefaults, loadLastCookingDefaults } = useSettings();
   const { setEstimatedNutrition } = useNutrition();
   const { hideBall } = useNutrition();
+
+  // 派生值：自定义选项的生效值（提前声明，供下方 effects 与回调使用）
+  const effectivePeople = people === -1 ? (customPeople || 2) : people;
+  const effectiveCalorie = calorieTarget === -1 ? (customCalorie ?? undefined) : calorieTarget;
 
   // Hide the floating ball each time the cooking tab is focused (user may have just returned from the recipe flow)
   useFocusEffect(
@@ -119,7 +140,6 @@ export default function CookingEntryScreen() {
     (async () => {
       const defaults = await loadLastCookingDefaults();
       if (defaults) {
-        console.log('[COOKING_RESTORE]', { people: defaults.people, personCount: defaults.personCount, calorieTarget: defaults.calorieTarget, hasCustom: defaults.customPeople !== undefined && defaults.customPeople !== null });
         // People: prefer the selector value (supports -1=custom)
         setPeople(defaults.people ?? defaults.personCount ?? 2);
         setMealType(defaults.mealType);
@@ -133,12 +153,14 @@ export default function CookingEntryScreen() {
         if (defaults.customMealType) setCustomMealType(defaults.customMealType);
         if (defaults.customCalorie) setCustomCalorie(defaults.customCalorie);
       }
+      // 无论是否读到默认值，恢复完成后再开启自动保存
+      defaultsLoadedRef.current = true;
     })();
   }, []);
 
   // Auto-save: persist whenever people/meal type/calories change
   useEffect(() => {
-    console.log('[CUSTOM_SAVE] people:', people, 'customPeople:', customPeople, 'mealType:', mealType, 'customMealType:', customMealType, 'calorieTarget:', calorieTarget, 'customCalorie:', customCalorie);
+    if (!defaultsLoadedRef.current) return; // 挂载初期不覆盖已保存的配置
     saveLastCookingDefaults({
       people,           // Preset selector value (-1=custom, 1-9=preset people)
       personCount: effectivePeople,
@@ -181,10 +203,6 @@ export default function CookingEntryScreen() {
     const m = buf.match(re);
     return m ? m[1] : null;
   }, []);
-
-  const effectivePeople = people === -1 ? (customPeople || 2) : people;
-  const effectiveMealType = mealType === 'custom' ? (customMealType || '自定义') : mealType;
-  const effectiveCalorie = calorieTarget === -1 ? (customCalorie ?? undefined) : calorieTarget;
 
   const handleStreamDone = useCallback((result: any) => {
     clearStallTimer();
@@ -266,14 +284,13 @@ export default function CookingEntryScreen() {
     // Save menu history (menuHistoryService: only stores menu proposals for the history list/detail views)
     const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
     const sessionName = `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`;
-    console.log('[MENU_SAVE] prepSteps:', result.prepSteps?.length, 'cookingSteps:', result.cookingSteps?.length, 'preciseNutrition:', result.preciseNutrition?.length);
     menuHistoryService.add({
       name: sessionName,
       menuProposal,
       reasoningContent,
       requirement: requirementInput,
       sessionId,
-    }).catch((e: any) => console.log('[MENU_HIST] save error:', e?.message || e));
+    }).catch(() => {}); // 失败已由 menuHistoryService 内部日志记录
 
     // Auto-save cooking progress (cookingProgressService: only stores session progress for resuming later)
     cookingProgressService.save({
@@ -288,14 +305,14 @@ export default function CookingEntryScreen() {
       version: 1,
     }, sessionName).catch(() => {});
 
-    // Save to diet memory
-    const mealNames = (result.dishes || []).map((d: any) => d.name).filter(Boolean);
-    if (mealNames.length > 0) {
-      addMeals(mealNames).then(() => getRecentMeals(3).then(setRecentMeals)).catch(() => {});
-    }
+    // 饮食记忆改为在「完成做菜」时记录（见 CompletionSheet / inventory-update），
+    // 避免仅生成菜单就污染最近吃过列表
 
     setScreenState('idle');
-    router.push('/cooking/pager');
+    // 用户已切到其他页面（如切 Tab）时不强行拉回，结果已保存，可稍后从"进行中的菜单"进入
+    if (isScreenFocusedRef.current) {
+      router.push('/cooking/pager');
+    }
   }, [effectivePeople, mealType, effectiveCalorie, customRequest, customPeople, customMealType, customCalorie, startSession, setStage1Result, setEstimatedNutrition, saveLastCookingDefaults, clearStallTimer]);
 
   const submitToAI = useCallback(() => {
@@ -304,6 +321,7 @@ export default function CookingEntryScreen() {
     setIsLooping(false);
     reasoningBufRef.current = '';
     loopAbortedRef.current = false;
+    lastThinkingUpdateRef.current = 0;
     pendingResultRef.current = null;
 
     const stream = callAIStage1Stream(
@@ -327,11 +345,15 @@ export default function CookingEntryScreen() {
       recentMeals,
       {
         onReasoning: (text: string) => {
-          setThinkingText((prev) => prev + text);
           reasoningBufRef.current += text;
+          // 节流：思考文本 120ms 刷新一次，避免每个 SSE chunk 都触发整页重渲染
+          const now = Date.now();
+          if (now - lastThinkingUpdateRef.current >= 120) {
+            lastThinkingUpdateRef.current = now;
+            setThinkingText(reasoningBufRef.current);
+          }
           const loopFragment = detectLoop(reasoningBufRef.current);
           if (loopFragment) {
-            console.log('[LOOP_DETECT] 思考链死循环，重复片段:', JSON.stringify(loopFragment));
             loopAbortedRef.current = true;
             setIsLooping(true);
             streamRef.current?.abort();
@@ -358,7 +380,7 @@ export default function CookingEntryScreen() {
             setScreenState('error');
             showAlert({ title: '思考过程异常', message: 'AI 陷入重复思考，请重试或关闭思考模式。', buttons: [
               { text: '取消', onPress: () => setScreenState('idle') },
-              { text: '重试', onPress: () => submitToAI() },
+              { text: '重试', onPress: () => submitToAIRef.current() },
             ] });
             return;
           }
@@ -366,7 +388,7 @@ export default function CookingEntryScreen() {
           setScreenState('error');
           showAlert({ title: 'AI 菜单生成失败', message: error.message || '请检查网络和 API 配置后重试。', buttons: [
             { text: '取消', onPress: () => setScreenState('idle') },
-            { text: '重试', onPress: () => submitToAI() },
+            { text: '重试', onPress: () => submitToAIRef.current() },
           ] });
         },
       },
@@ -376,6 +398,8 @@ export default function CookingEntryScreen() {
     // Start the first stall detection
     resetStallTimer();
   }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, resetStallTimer, clearStallTimer, handleStreamDone, showAlert]);
+  // 渲染期同步最新引用，供 submitToAI 内部"重试"按钮自引用
+  submitToAIRef.current = submitToAI;
 
   const handleRetry = useCallback(() => {
     // Cancel the current request
@@ -425,7 +449,6 @@ export default function CookingEntryScreen() {
           showAlert({ title: '输入错误', message: '请输入有效的正整数' });
           return;
         }
-        console.log('[CUSTOM_SET] people:', num, '→ setPeople(-1)');
         setCustomPeople(num);
         setPeople(-1);
         break;
@@ -435,7 +458,6 @@ export default function CookingEntryScreen() {
           showAlert({ title: '输入错误', message: '请输入餐类描述' });
           return;
         }
-        console.log('[CUSTOM_SET] meal:', JSON.stringify(val), '→ setMealType(custom)');
         setCustomMealType(val);
         setMealType('custom');
         break;
@@ -446,7 +468,6 @@ export default function CookingEntryScreen() {
           showAlert({ title: '输入错误', message: '请输入有效的卡路里数' });
           return;
         }
-        console.log('[CUSTOM_SET] calorie:', num, '→ setCalorieTarget(-1)');
         setCustomCalorie(num);
         setCalorieTarget(-1);
         break;
@@ -458,7 +479,6 @@ export default function CookingEntryScreen() {
 
   // Custom button press
   const handleCustomPress = useCallback((type: 'people' | 'meal' | 'calorie') => {
-    console.log('[CUSTOM_OPEN] type:', type);
     let currentValue = '';
     switch (type) {
       case 'people': currentValue = customPeople !== null ? String(customPeople) : ''; break;
@@ -496,7 +516,6 @@ export default function CookingEntryScreen() {
                 } else {
                   setPeople(opt.value as number);
                   setCustomPeople(null);
-                  console.log('[CUSTOM_CLEAR] people → preset:', opt.value);
                 }
               }}
             />
@@ -516,7 +535,6 @@ export default function CookingEntryScreen() {
                 } else {
                   setMealType(opt.value as string);
                   setCustomMealType('');
-                  console.log('[CUSTOM_CLEAR] meal → preset:', opt.value);
                 }
               }}
             />
@@ -536,7 +554,6 @@ export default function CookingEntryScreen() {
                 } else {
                   setCalorieTarget(opt.value);
                   setCustomCalorie(null);
-                  console.log('[CUSTOM_CLEAR] calorie → preset:', opt.value);
                 }
               }}
             />

@@ -34,6 +34,18 @@ export default function HistoryDetailScreen() {
     })();
   }, [items.length, loading, refresh]);
 
+  // Rules of Hooks: 必须在任何 early return 之前完成所有 hook 调用，
+  // 否则 loaded/loading 状态切换会导致 hook 数量变化 → 渲染崩溃
+  const item = useMemo(() => items.find((i) => i.id === id) || null, [items, id]);
+
+  // Build recipe context for the chat sheet
+  const recipeContext: RecipeContext = useMemo(() => ({
+    dishes: item?.menuProposal?.dishes || [],
+    prepSteps: item?.menuProposal?.prepSteps || [],
+    cookingSteps: item?.menuProposal?.cookingSteps || [],
+    sessionId: item?.sessionId || item?.id || '',
+  }), [item]);
+
   if (!loaded || loading) {
     return (
       <View style={styles.centered}>
@@ -41,8 +53,6 @@ export default function HistoryDetailScreen() {
       </View>
     );
   }
-
-  const item = items.find((i) => i.id === id) || null;
 
   if (!item) {
     return (
@@ -56,16 +66,6 @@ export default function HistoryDetailScreen() {
   const dishes = menu?.dishes || [];
   const prepSteps: any[] = menu?.prepSteps || [];
   const cookingSteps: any[] = menu?.cookingSteps || [];
-
-  // Build recipe context for the chat sheet
-  const recipeContext: RecipeContext = useMemo(() => ({
-    dishes: dishes || [],
-    prepSteps,
-    cookingSteps,
-    sessionId: item.sessionId || item.id,
-  }), [dishes, prepSteps, cookingSteps, item.sessionId, item.id]);
-
-  console.log('[HISTORY] prepSteps count:', prepSteps.length, 'cookingSteps count:', cookingSteps.length);
 
   return (
     <View style={styles.rootContainer}>

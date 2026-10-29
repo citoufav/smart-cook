@@ -17,6 +17,7 @@ import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Button } from '../../src/components/Button';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { calculateIngredientSuggestions, calculateSeasoningSuggestions } from '../../src/services/inventoryCalculator';
+import { addMeals } from '../../src/services/dietMemoryService';
 import { IngredientSuggestion, SeasoningSuggestion } from '../../src/types';
 
 export default function InventoryUpdateScreen() {
@@ -98,9 +99,17 @@ export default function InventoryUpdateScreen() {
             style: 'default',
             onPress: () => {
               dispatch({ type: 'SET_CURRENT_STAGE', payload: 'completed' });
-              // Persist the completed state to disk so history can recognize it as "completed"
               if (cookingState.session) {
+                // 与 CompletionSheet 完成路径保持一致：标记已完成，避免首页仍显示"进行中"
                 cookingProgressService.save(cookingState.session).catch(() => {});
+                cookingProgressService.markCompleted(cookingState.session.id).catch(() => {});
+                // 饮食记忆统一在实际完成后记录
+                const dishNames = (cookingState.session.stages.menu?.menuProposal?.dishes || [])
+                  .map((d: any) => d.name)
+                  .filter(Boolean);
+                if (dishNames.length > 0) {
+                  addMeals(dishNames).catch(() => {});
+                }
               }
               resetNutrition();
               router.dismissAll();

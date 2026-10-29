@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { menuHistoryService, MenuHistoryItem } from '../services/menuHistoryService';
 
 interface MenuHistoryContextValue {
@@ -45,8 +45,13 @@ export function MenuHistoryProvider({ children }: { children: React.ReactNode })
     return ok;
   }, []);
 
+  const value = useMemo(
+    () => ({ items, loading, refresh, add, remove, rename }),
+    [items, loading, refresh, add, remove, rename],
+  );
+
   return (
-    <MenuHistoryContext.Provider value={{ items, loading, refresh, add, remove, rename }}>
+    <MenuHistoryContext.Provider value={value}>
       {children}
     </MenuHistoryContext.Provider>
   );

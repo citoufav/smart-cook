@@ -1,6 +1,6 @@
 import { storageService } from './storageService';
 import { STORAGE_KEYS } from '../constants/storageKeys';
-import { Seasoning, SeasoningCreateInput, SeasoningStatus } from '../types';
+import { Seasoning, SeasoningCreateInput } from '../types';
 import { generateId } from '../utils/uuid';
 import { logger } from '../utils/logger';
 

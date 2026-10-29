@@ -16,26 +16,45 @@ class MenuHistoryService {
   private log = logger('SVC:MENU_HIST');
 
   private async getAll(): Promise<MenuHistoryItem[]> {
-    const raw = await AsyncStorage.getItem(STORAGE_KEYS.COOKING_SESSION_HISTORY);
-    if (!raw) return [];
     try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.COOKING_SESSION_HISTORY);
+      if (!raw) return [];
       const items: MenuHistoryItem[] = JSON.parse(raw);
       this.log.debug('Loaded menu history', { count: items.length });
-      return items;
+      return Array.isArray(items) ? items : [];
     } catch (e) {
       this.log.error('Failed to parse menu history', e);
+      // 数据损坏：备份原始内容，避免下次写入静默清空历史后无备份可查
+      try {
+        const corrupted = await AsyncStorage.getItem(STORAGE_KEYS.COOKING_SESSION_HISTORY);
+        if (corrupted) {
+          const ts = new Date().toISOString().replace(/[:.]/g, '-');
+          await AsyncStorage.setItem(`${STORAGE_KEYS.COOKING_SESSION_HISTORY}_corrupted_${ts}`, corrupted);
+        }
+      } catch {}
       return [];
     }
   }
 
   private async saveAll(items: MenuHistoryItem[]): Promise<void> {
-    await AsyncStorage.setItem(STORAGE_KEYS.COOKING_SESSION_HISTORY, JSON.stringify(items));
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.COOKING_SESSION_HISTORY, JSON.stringify(items));
+    } catch (e) {
+      this.log.error('saveAll failed', e);
+    }
   }
 
   async add(item: Omit<MenuHistoryItem, 'id' | 'createdAt'>): Promise<MenuHistoryItem> {
     const all = await this.getAll();
+    // 思考链体积大（几十 KB/条），落盘时截断，避免单 key 膨胀触发 Android AsyncStorage 写入限制
+    const MAX_SAVED_REASONING = 2000;
+    const reasoning = item.reasoningContent || '';
+    const truncatedReasoning = reasoning.length > MAX_SAVED_REASONING
+      ? `${reasoning.slice(0, MAX_SAVED_REASONING)}\n…（思考链已截断，完整内容仅保存在当次会话中）`
+      : reasoning;
     const newItem: MenuHistoryItem = {
       ...item,
+      reasoningContent: truncatedReasoning,
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
       createdAt: new Date().toISOString(),
     };
@@ -47,7 +66,6 @@ class MenuHistoryService {
     const prepCount = item.menuProposal?.prepSteps?.length ?? 0;
     const cookCount = item.menuProposal?.cookingSteps?.length ?? 0;
     this.log.info('Added menu history item', { name: newItem.name, dishCount, prepCount, cookCount });
-    console.log('[HIST_SAVE] id:', newItem.id, 'prepSteps:', prepCount, 'cookingSteps:', cookCount);
     return newItem;
   }
 
@@ -61,11 +79,6 @@ class MenuHistoryService {
     const all = await this.getAll();
     const item = all.find((i) => i.id === id) || null;
     this.log.debug('getById', { id, found: !!item });
-    if (item) {
-      const prepCount = item.menuProposal?.prepSteps?.length ?? 0;
-      const cookCount = item.menuProposal?.cookingSteps?.length ?? 0;
-      console.log('[HIST_READ] id:', id, 'prepSteps:', prepCount, 'cookingSteps:', cookCount);
-    }
     return item;
   }
 

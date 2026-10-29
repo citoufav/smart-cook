@@ -29,20 +29,32 @@ class CookingProgressService {
   private log = logger('SVC:PROGRESS');
 
   private async getAll(): Promise<CookingProgressRecord[]> {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
     try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
       const records: CookingProgressRecord[] = JSON.parse(raw);
       this.log.debug('Loaded progress records', { count: records.length });
-      return records;
+      return Array.isArray(records) ? records : [];
     } catch (e) {
       this.log.error('Failed to parse progress records', e);
+      // 数据损坏：备份原始内容，避免下次写入静默清空记录后无备份可查
+      try {
+        const corrupted = await AsyncStorage.getItem(STORAGE_KEY);
+        if (corrupted) {
+          const ts = new Date().toISOString().replace(/[:.]/g, '-');
+          await AsyncStorage.setItem(`${STORAGE_KEY}_corrupted_${ts}`, corrupted);
+        }
+      } catch {}
       return [];
     }
   }
 
   private async saveAll(items: CookingProgressRecord[]): Promise<void> {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch (e) {
+      this.log.error('saveAll failed', e);
+    }
   }
 
   /** Save or update cooking progress */

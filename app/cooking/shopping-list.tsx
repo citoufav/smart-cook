@@ -18,12 +18,14 @@ import { useCustomAlert } from '../../src/components/CustomAlert';
 import { ShoppingItem } from '../../src/types';
 import { parseWeight } from '../../src/utils/parseWeight';
 import { cookingProgressService } from '../../src/services/cookingProgressService';
+import { useInventory } from '../../src/contexts/InventoryContext';
 
 export default function ShoppingListScreen() {
   const { state, dispatch } = useCooking();
   const menuProposal = state.session?.stages.menu?.menuProposal;
   const [isProcessing, setIsProcessing] = useState(false);
   const { showAlert } = useCustomAlert();
+  const { state: invState, addIngredient, updateIngredient, addSeasoning } = useInventory();
 
   const shoppingItems: ShoppingItem[] = useMemo(() => {
     if (!menuProposal?.missingItems) return [];
@@ -68,7 +70,6 @@ export default function ShoppingListScreen() {
       const session = state.session;
       if (!session?.id) return;
       const mi = session.stages?.menu?.menuProposal?.missingItems || [];
-      console.log('[SHOP_SAVE] saving missingItems:', mi.map((m: any) => ({ type: m.type, name: m.name, purchased: m.isPurchased })));
       const dishes = session.stages?.menu?.menuProposal?.dishes || [];
       const name = dishes.map((d: any) => d.name).join('、') || '菜单';
       cookingProgressService.save(session as any, name).catch(() => {});
@@ -85,9 +86,11 @@ export default function ShoppingListScreen() {
       }
       return next;
     });
-    // Persist after selecting all
+    // 只切换未勾选项：TOGGLE 是切换语义，全部 toggle 会把已勾选项在 session 里反选
     for (const item of items) {
-      dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: item.id });
+      if (!checkedItems[item.id]) {
+        dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: item.id });
+      }
     }
   };
 
@@ -100,16 +103,18 @@ export default function ShoppingListScreen() {
       }
       return next;
     });
-    // Persist after deselecting all
+    // 只切换已勾选项，保持本地勾选与 session 状态一致
     for (const item of items) {
-      dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: item.id });
+      if (checkedItems[item.id]) {
+        dispatch({ type: 'TOGGLE_SHOPPING_ITEM', payload: item.id });
+      }
     }
   };
 
   const handleBatchAdd = async () => {
     setIsProcessing(true);
     try {
-      // Handle ingredients
+      // Ingredients: 同名合并后入库（已有 → 累加重量；没有 → 新建）
       const checkedIngredients = shoppingItems.filter(
         (item) => item.type === 'ingredient' && checkedItems[item.id],
       );
@@ -120,17 +125,36 @@ export default function ShoppingListScreen() {
           mergedIngredients[item.name] = (mergedIngredients[item.name] || 0) + weight;
         }
       }
+      for (const [name, weight] of Object.entries(mergedIngredients)) {
+        const existing = invState.ingredients.find((i) => i.name === name);
+        if (existing) {
+          await updateIngredient(existing.id, { weight: (existing.weight ?? 0) + weight });
+        } else {
+          await addIngredient(name, weight);
+        }
+      }
 
-      // Handle seasonings
+      // Seasonings: 勾选的调料入库为"充足"（库存已有的跳过）
       const checkedSeasonings = shoppingItems.filter(
         (item) => item.type === 'seasoning' && checkedItems[item.id],
       );
+      let addedSeasonings = 0;
+      for (const item of checkedSeasonings) {
+        const exists = invState.seasonings.some((s) => s.name === item.name);
+        if (!exists) {
+          await addSeasoning(item.name, 'sufficient');
+          addedSeasonings++;
+        }
+      }
 
-      // In a real project, the inventory service would be called here to stock in
-      showAlert({ title: '库存已更新', message: '采购的食材和调料已添加到库存。接下来？', buttons: [
-        { text: '返回菜谱', onPress: () => router.back() },
-        { text: '重新生成菜单', onPress: () => router.replace('/(tabs)/cooking') },
-      ] });
+      showAlert({
+        title: '库存已更新',
+        message: `已入库 ${Object.keys(mergedIngredients).length} 种食材、${addedSeasonings} 种调料。接下来？`,
+        buttons: [
+          { text: '返回菜谱', onPress: () => router.back() },
+          { text: '重新生成菜单', onPress: () => router.replace('/(tabs)/cooking') },
+        ],
+      });
     } catch (error: any) {
       showAlert({ title: '更新失败', message: `库存更新失败: ${error.message}` });
     } finally {

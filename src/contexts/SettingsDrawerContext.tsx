@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 import SettingsDrawer from '../components/SettingsDrawer';
 
 interface SettingsDrawerContextValue {
@@ -18,10 +18,16 @@ export function useSettingsDrawer() {
 export function SettingsDrawerProvider({ children }: { children: React.ReactNode }) {
   const [visible, setVisible] = useState(false);
 
+  const value = useMemo(
+    () => ({
+      openSettings: () => setVisible(true),
+      closeSettings: () => setVisible(false),
+    }),
+    [],
+  );
+
   return (
-    <SettingsDrawerContext.Provider
-      value={{ openSettings: () => setVisible(true), closeSettings: () => setVisible(false) }}
-    >
+    <SettingsDrawerContext.Provider value={value}>
       {children}
       <SettingsDrawer visible={visible} onClose={() => setVisible(false)} />
     </SettingsDrawerContext.Provider>

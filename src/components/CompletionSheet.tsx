@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCooking } from '../contexts/CookingContext';
 import { useInventory } from '../contexts/InventoryContext';
 import { cookingProgressService } from '../services/cookingProgressService';
+import { addMeals } from '../services/dietMemoryService';
 import { SeasoningStatus } from '../types';
 import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
@@ -170,6 +171,14 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
           await updateSeasoning(item.inventoryId, { status: item.seasoningStatus });
         }
       }
+    }
+    // 记录饮食记忆：在本餐实际完成时记录
+    //（此前误在菜单生成时记录，用户取消做菜也会污染"最近吃过"推荐）
+    const dishNames = (cookingState.session?.stages.menu?.menuProposal?.dishes || [])
+      .map((d) => d.name)
+      .filter(Boolean);
+    if (dishNames.length > 0) {
+      await addMeals(dishNames).catch(() => {});
     }
     // Mark the progress record as completed
     const sessionId = cookingState.session?.id;
