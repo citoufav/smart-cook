@@ -221,6 +221,7 @@ function buildStage1UserPrompt(
   requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
   dietaryRestrictions: string[],
   recentMeals?: string[],
+  tastePreferences: string[] = [],
 ): string {
   const statusLabel: Record<string, string> = { sufficient: '充足', low: '少量', out: '缺少' };
 
@@ -244,6 +245,7 @@ function buildStage1UserPrompt(
 
   const customText = requirement.customRequirement ? `特殊需求：${requirement.customRequirement}` : '';
   const restrictionText = dietaryRestrictions.length > 0 ? `忌口：${dietaryRestrictions.join(', ')}` : '';
+  const tasteText = tastePreferences.length > 0 ? `口味与菜系偏好：${tastePreferences.join(', ')}` : '';
 
   const dietMemoryText = recentMeals && recentMeals.length > 0
     ? `\n【饮食记忆】\n用户最近吃过的菜：${recentMeals.join('、')}\n请避免推荐与以上重复的菜品。`
@@ -255,6 +257,7 @@ function buildStage1UserPrompt(
 ${calorieText}
 ${customText}
 ${restrictionText}
+${tasteText}
 ${dietMemoryText}
 
 【库存食材】
@@ -346,7 +349,7 @@ export async function callAIStage1(
   prefs: UserPreferences,
   recentMeals?: string[],
 ): Promise<Stage1AIResult> {
-  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals);
+  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences);
   const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
   const url = `${baseUrl}/chat/completions`;
 
@@ -459,7 +462,7 @@ export function callAIStage1Stream(
     onError: (error: Error) => void;
   },
 ): SSEStreamController {
-  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals);
+  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences);
   const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
   const url = `${baseUrl}/chat/completions`;
 

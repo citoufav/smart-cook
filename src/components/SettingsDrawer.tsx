@@ -104,9 +104,11 @@ function DropdownSelector({
 function DietaryTagInput({
   tags,
   onTagsChange,
+  placeholder = '输入忌口项，如：不吃辣',
 }: {
   tags: string[];
   onTagsChange: (tags: string[]) => void;
+  placeholder?: string;
 }) {
   const [inputValue, setInputValue] = useState('');
 
@@ -130,7 +132,7 @@ function DietaryTagInput({
       <View style={styles.tagInputRow}>
         <TextInput
           style={styles.tagInput}
-          placeholder="输入忌口项，如：不吃辣"
+          placeholder={placeholder}
           placeholderTextColor={COLORS.textTertiary}
           value={inputValue}
           onChangeText={setInputValue}
@@ -181,6 +183,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       : 'high',
   );
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
+  const [tasteTags, setTasteTags] = useState<string[]>([...preferences.tastePreferences]);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['diet', 'ai', 'data']));
 
   // Sync external state changes
@@ -196,6 +199,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           : 'high',
       );
       setDietaryTags([...preferences.dietaryRestrictions]);
+      setTasteTags([...preferences.tastePreferences]);
       setExpandedSections(new Set(['diet', 'ai', 'data']));
     }
   }, [visible, preferences]);
@@ -234,6 +238,11 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const handleDietaryChange = useCallback(async (newTags: string[]) => {
     setDietaryTags(newTags);
     await updatePreferences({ dietaryRestrictions: newTags });
+  }, [updatePreferences]);
+
+  const handleTasteChange = useCallback(async (newTags: string[]) => {
+    setTasteTags(newTags);
+    await updatePreferences({ tastePreferences: newTags });
   }, [updatePreferences]);
 
   const handleSaveApiKey = useCallback(async () => {
@@ -330,6 +339,18 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
             <>
               <DietaryTagInput tags={dietaryTags} onTagsChange={handleDietaryChange} />
               <Text style={styles.itemCount}>{dietaryTags.length} 项</Text>
+            </>
+          )}
+
+          {/* ---- Taste preferences ---- */}
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('taste')} activeOpacity={0.6}>
+            <Text style={styles.sectionHeaderText}>口味与菜系</Text>
+            <Text style={styles.chevron}>{expandedSections.has('taste') ? '▾' : '▸'}</Text>
+          </TouchableOpacity>
+          {expandedSections.has('taste') && (
+            <>
+              <DietaryTagInput tags={tasteTags} onTagsChange={handleTasteChange} placeholder="输入偏好，如：川菜、清淡" />
+              <Text style={styles.itemCount}>{tasteTags.length} 项</Text>
             </>
           )}
 

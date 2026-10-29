@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-10-29 — First-launch onboarding & quick date reset
+
+**Added**
+
+- First-launch quick-record flow (`app/onboard.tsx`): three steps — preferred cuisines/flavours, allergies & dislikes, common pantry staples. Selections are written straight into the existing preference fields, and picked staples are appended to the inventory.
+- `tastePreferences` on `UserPreferences`, fed into the Stage 1 prompt as `口味与菜系偏好：…`, and editable from the settings drawer.
+- Per-row refresh button in the ingredient list: resets that ingredient's storage date to today in one tap.
+
+**Changed**
+
+- `SelectableChip` takes a `role` prop so multi-select groups are announced as checkboxes instead of radios.
+- Users with an existing preferences blob are treated as already onboarded (no surprise redirect after updating).
+
 ## 2026-08-13 — Open-source readiness & state-management refactor
 
 **Added**

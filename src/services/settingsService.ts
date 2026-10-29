@@ -12,6 +12,8 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, 'apiKey'> = {
   apiUrl: 'https://api.deepseek.com',
   modelName: 'deepseek-v4-pro',
   dietaryRestrictions: [],
+  tastePreferences: [],
+  onboardingDone: false,
   thinkingEnabled: false,
   reasoningEffort: 'high',
 };
@@ -49,6 +51,8 @@ export async function loadNonSensitiveSettings(): Promise<Omit<UserPreferences, 
   return {
     ...DEFAULT_USER_PREFERENCES,
     ...saved,
+    // Users who already had a saved preferences blob predate onboarding: don't show it to them again.
+    onboardingDone: saved.onboardingDone ?? saved.apiType !== undefined,
   };
 }
 

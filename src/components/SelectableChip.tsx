@@ -10,9 +10,11 @@ interface SelectableChipProps {
   onPress: () => void;
   disabled?: boolean;
   style?: ViewStyle;
+  /** 'radio' for single-choice groups, 'checkbox' for multi-select groups */
+  role?: 'radio' | 'checkbox';
 }
 
-export function SelectableChip({ label, selected, onPress, disabled = false, style }: SelectableChipProps) {
+export function SelectableChip({ label, selected, onPress, disabled = false, style, role = 'radio' }: SelectableChipProps) {
   return (
     <TouchableOpacity
       style={[
@@ -24,7 +26,7 @@ export function SelectableChip({ label, selected, onPress, disabled = false, sty
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
-      accessibilityRole="radio"
+      accessibilityRole={role}
       accessibilityState={{ selected, disabled }}
       accessibilityLabel={label}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

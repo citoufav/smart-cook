@@ -47,6 +47,10 @@ export interface UserPreferences {
   apiUrl: string;
   modelName: string;
   dietaryRestrictions: string[];
+  /** Preferred cuisines / flavours chosen during onboarding (e.g. 川菜, 清淡) */
+  tastePreferences: string[];
+  /** True once the first-launch onboarding has been completed or skipped */
+  onboardingDone: boolean;
   lastPersonCount?: number;
   lastMealType?: string;
   lastCaloriePreference?: number;

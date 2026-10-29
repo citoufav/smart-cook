@@ -1,9 +1,9 @@
 import React from 'react';
 import { Text, TextInput, View, StyleSheet } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { SettingsProvider } from '../src/contexts/SettingsContext';
+import { SettingsProvider, useSettings } from '../src/contexts/SettingsContext';
 import { InventoryProvider } from '../src/contexts/InventoryContext';
 import { CookingProvider } from '../src/contexts/CookingContext';
 import { NutritionProvider } from '../src/contexts/NutritionContext';
@@ -30,11 +30,23 @@ import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 function AppContent() {
   const { visible: chatSheetVisible, recipeContext, hideChatSheet } = useChatSheet();
+  const { state: settingsState } = useSettings();
+  const onboardingDone = settingsState.preferences.onboardingDone;
+
+  // First launch: send to the quick-record screen once preferences have loaded,
+  // so we never redirect an existing user whose data is still being read.
+  React.useEffect(() => {
+    if (!settingsState.isLoading && !onboardingDone) {
+      router.replace('/onboard');
+    }
+  }, [settingsState.isLoading, onboardingDone]);
+
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="onboard" />
         <Stack.Screen
           name="history"
           options={{
