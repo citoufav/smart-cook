@@ -177,6 +177,11 @@ export default function InventoryScreen() {
     setShowForm(true);
   }, []);
 
+  // Re-buy reminder: reset one ingredient's storage date to now (recount "stored N days")
+  const handleResetDate = useCallback((id: string) => {
+    updateIngredient(id, { createDate: new Date().toISOString() });
+  }, [updateIngredient]);
+
   const handleDelete = useCallback((id: string, name: string) => {
     showAlert({ title: '确认删除', message: `确定要删除"${name}"吗？此操作不可恢复。`, buttons: [
       { text: '取消', style: 'cancel' },
@@ -219,6 +224,9 @@ export default function InventoryScreen() {
           {item.weight !== null ? `${item.weight} 克` : '未称量'} · 已存 {getDaysSince(item.createDate)} 天
         </Text>
       </View>
+      <TouchableOpacity onPress={() => handleResetDate(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 8 }} accessibilityLabel={`重置${item.name}的入库日期`}>
+        <Ionicons name="refresh-outline" size={20} color={COLORS.textSecondary} />
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => handleDelete(item.id, item.name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 8 }}>
         <Ionicons name="trash-outline" size={20} color={COLORS.textTertiary} />
       </TouchableOpacity>
