@@ -31,7 +31,8 @@ import HeaderBar from '../../src/components/HeaderBar';
 
 function getDaysSince(dateStr: string): number {
   const diff = Date.now() - new Date(dateStr).getTime();
-  return Math.floor(diff / 86400000);
+  // A future storage date (the picker allows it) should read as 0, not a negative count.
+  return Math.max(0, Math.floor(diff / 86400000));
 }
 
 export default function InventoryScreen() {
@@ -159,7 +160,9 @@ export default function InventoryScreen() {
     }
 
     resetForm();
-  }, [formName, formWeight, formStatus, activeTab, editId, addIngredient, updateIngredient, addSeasoning, updateSeasoning, state.ingredients, state.seasonings]);
+    // formDate must be listed: it is read inside this callback, and picking a new date
+    // in the date-picker does not change any other dependency (stale-closure bug).
+  }, [formName, formWeight, formStatus, formDate, activeTab, editId, addIngredient, updateIngredient, addSeasoning, updateSeasoning, state.ingredients, state.seasonings, resetForm]);
 
   // Tap a list item to enter edit mode
   const handleEditIngredient = useCallback((item: Ingredient) => {
