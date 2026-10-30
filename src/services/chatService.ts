@@ -1,6 +1,7 @@
 import { UserPreferences, PrepStep, CookingStep } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { trimContext } from './chatHistoryService';
+import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 
 const CHAT_SYSTEM_PROMPT = `你是一位专业家庭厨师和营养顾问。你正在帮用户做一道菜，请根据当前菜谱信息回答用户的问题。
 
@@ -115,8 +116,7 @@ export function callAIChatStream(
   callbacks: ChatCallbacks,
   allowModify: boolean = false,
 ): SSEStreamController {
-  const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const url = `${baseUrl}/chat/completions`;
+  const url = aiEndpoint(prefs);
 
   const recipeText = buildRecipeContextText(recipeContext);
 
@@ -133,7 +133,7 @@ export function callAIChatStream(
   apiMessages = trimContext(apiMessages, MAX_CONTEXT_TOKENS, 3);
 
   const body: Record<string, unknown> = {
-    model: prefs.modelName || 'deepseek-v4-pro',
+    model: aiModel(prefs),
     messages: apiMessages,
     stream: true,
     thinking: { type: 'disabled' },
@@ -144,15 +144,10 @@ export function callAIChatStream(
     body.tool_choice = 'auto';
   }
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${prefs.apiKey}`,
-  };
-
   return sseStreamFetch(
     url,
     body as unknown as Record<string, unknown>,
-    headers,
+    aiHeaders(prefs),
     {
       onReasoning: callbacks.onReasoning,
       onContent: callbacks.onToken,

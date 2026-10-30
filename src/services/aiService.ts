@@ -4,6 +4,7 @@ import { DEFAULT_TIMEOUT_MS, MAX_RETRIES, BASE_RETRY_DELAY_MS } from '../constan
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
+import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 
 const log = logger('SVC:AI');
 
@@ -168,13 +169,6 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-function buildHeaders(prefs: UserPreferences): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${prefs.apiKey}`,
-  };
 }
 
 export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾问。请严格遵循以下规则，每条规则附有示例。
@@ -350,11 +344,10 @@ export async function callAIStage1(
   recentMeals?: string[],
 ): Promise<Stage1AIResult> {
   const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences);
-  const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const url = `${baseUrl}/chat/completions`;
+  const url = aiEndpoint(prefs);
 
   const body = {
-    model: prefs.modelName || 'deepseek-v4-pro',
+    model: aiModel(prefs),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_CN },
       { role: 'user', content: userPrompt },
@@ -364,13 +357,13 @@ export async function callAIStage1(
   };
 
   const maskedKey = maskApiKey(prefs.apiKey);
-  log.info(`调用 API: ${baseUrl}, Key: ${maskedKey}`);
+  log.info(`调用 API: ${url}, Key: ${maskedKey}`);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await fetchWithTimeout(url, {
         method: 'POST',
-        headers: buildHeaders(prefs),
+        headers: aiHeaders(prefs),
         body: JSON.stringify(body),
       });
 
@@ -396,7 +389,7 @@ export async function callAIStage1(
           try {
             const retryResponse = await fetchWithTimeout(url, {
               method: 'POST',
-              headers: buildHeaders(prefs),
+              headers: aiHeaders(prefs),
               body: JSON.stringify(fallbackBody),
             });
             if (!retryResponse.ok) {
@@ -463,11 +456,10 @@ export function callAIStage1Stream(
   },
 ): SSEStreamController {
   const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences);
-  const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const url = `${baseUrl}/chat/completions`;
+  const url = aiEndpoint(prefs);
 
   const body = {
-    model: prefs.modelName || 'deepseek-v4-pro',
+    model: aiModel(prefs),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_CN },
       { role: 'user', content: userPrompt },
@@ -478,7 +470,7 @@ export function callAIStage1Stream(
   };
 
   const maskedKey = maskApiKey(prefs.apiKey);
-  log.info(`流式调用 API: ${baseUrl}, Key: ${maskedKey}`);
+  log.info(`流式调用 API: ${url}, Key: ${maskedKey}`);
 
   log.info(`Stage1 流式调用开始`, {
     personCount: requirement.personCount,
@@ -487,7 +479,7 @@ export function callAIStage1Stream(
     ingredientCount: ingredients.length,
     seasoningCount: seasonings.length,
   });
-  log.info(`API 配置`, { model: prefs.modelName || 'deepseek-v4-pro', thinkingEnabled: prefs.thinkingEnabled });
+  log.info(`API 配置`, { model: aiModel(prefs), thinkingEnabled: prefs.thinkingEnabled });
 
   log.time('ai_stage1');
 
@@ -497,7 +489,7 @@ export function callAIStage1Stream(
   return sseStreamFetch(
     url,
     body as unknown as Record<string, unknown>,
-    buildHeaders(prefs),
+    aiHeaders(prefs),
     {
       onReasoning: callbacks.onReasoning,
       onContent: callbacks.onContent,
@@ -587,11 +579,10 @@ export function regenerateMenuStream(
   },
 ): SSEStreamController {
   const userPrompt = buildRegeneratePrompt(currentMenu, modifyRequest, requirement);
-  const baseUrl = (prefs.apiUrl || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const url = `${baseUrl}/chat/completions`;
+  const url = aiEndpoint(prefs);
 
   const body = {
-    model: prefs.modelName || 'deepseek-v4-pro',
+    model: aiModel(prefs),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_CN },
       { role: 'user', content: userPrompt },
@@ -606,7 +597,7 @@ export function regenerateMenuStream(
   return sseStreamFetch(
     url,
     body as unknown as Record<string, unknown>,
-    buildHeaders(prefs),
+    aiHeaders(prefs),
     {
       onReasoning: () => {},
       onContent: () => {},
