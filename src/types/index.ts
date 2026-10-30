@@ -156,7 +156,6 @@ export interface CookingStep {
   stepNumber: number;
   dishName: string;
   instruction: string;
-  bowlReferences: number[];
   isCompleted: boolean;
 }
 
