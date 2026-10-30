@@ -14,30 +14,68 @@ const CHAT_SYSTEM_PROMPT = `你是一位专业家庭厨师和营养顾问。你�
 
 const CHAT_SYSTEM_PROMPT_WITH_MODIFY = `你是一位专业家庭厨师和营养顾问。你正在帮用户做一道菜，请根据当前菜谱信息回答用户的问题。
 
-用户已授权你修改菜谱。当用户要求修改菜谱时：
-1. 先用一句话说明你要做什么修改
-2. 然后调用 modify_recipe 工具，把修改要求用自然语言写在 summary 字段里
-3. 系统会根据 summary 重新生成完整菜谱
+用户已授权你修改菜谱。要求：
+1. 先一句话说明你要改什么，然后调用 edit_menu 工具
+2. **只下发最小改动**：用户说改盐的克数，就只给一条 set_grams，不要顺手改别的菜、别的食材
+3. dish 必须与当前菜谱里的菜名完全一致；找不到对应菜就不要下发该动作，改为用文字问清楚
+4. 只有用户明确要换掉整道菜或加一道菜时，才用 replace_dish / add_dish，并在 instruction 里写清要什么菜
+5. 一次可以给多条动作，它们会按顺序执行
 
 其他规则：
 1. 回答简洁实用，新手友好
 2. 用中文回答`;
 
-const MODIFY_RECIPE_TOOLS = [
+/**
+ * 结构化编辑工具。
+ *
+ * 刻意**不开 strict 模式**：strict 要求 required 覆盖所有字段，而我们这里
+ * 每个动作只用到其中两三个，只能靠 oneOf 或全部可空来表达，两者都更容易出错。
+ * 用扁平对象 + op 枚举 + 字段说明，实测更稳。
+ */
+const EDIT_MENU_TOOLS = [
   {
     type: 'function' as const,
     function: {
-      name: 'modify_recipe',
-      description: '当用户要求修改菜谱时调用此工具，用自然语言描述修改要求。',
+      name: 'edit_menu',
+      description:
+        '按用户要求对当前菜谱做最小改动。每一条只描述一处变化，不要重写整份菜单。'
+        + '可用的 op：set_grams（改某道菜里某食材的克数）、add_ingredient（给某道菜加食材）、'
+        + 'remove_ingredient（去掉某道菜的食材）、remove_dish（删掉整道菜）、'
+        + 'set_person_count（改用餐人数，用量会按比例缩放）、'
+        + 'replace_dish（整道菜换成新的）、add_dish（新增一道菜）。',
       parameters: {
         type: 'object',
         properties: {
-          summary: {
-            type: 'string',
-            description: '修改要求的自然语言描述，例如"把盐从2g改成3g，将番茄炒蛋换成番茄炒虾仁"',
+          edits: {
+            type: 'array',
+            description: '按顺序执行的修改动作',
+            items: {
+              type: 'object',
+              properties: {
+                op: {
+                  type: 'string',
+                  enum: [
+                    'set_grams',
+                    'add_ingredient',
+                    'remove_ingredient',
+                    'remove_dish',
+                    'set_person_count',
+                    'replace_dish',
+                    'add_dish',
+                  ],
+                  description: '动作类型',
+                },
+                dish: { type: 'string', description: '菜名，必须与当前菜谱完全一致（set_grams/add_ingredient/remove_ingredient/remove_dish/replace_dish 必填）' },
+                ingredient: { type: 'string', description: '食材名（set_grams/add_ingredient/remove_ingredient 必填）' },
+                grams: { type: 'number', description: '克数，整数（set_grams/add_ingredient 必填）' },
+                personCount: { type: 'number', description: '新的用餐人数（set_person_count 必填）' },
+                instruction: { type: 'string', description: '一句话说明要什么样的菜（replace_dish/add_dish 必填）' },
+              },
+              required: ['op'],
+            },
           },
         },
-        required: ['summary'],
+        required: ['edits'],
       },
     },
   },
@@ -137,10 +175,12 @@ export function callAIChatStream(
     messages: apiMessages,
     stream: true,
     thinking: { type: 'disabled' },
+    // 聊天回复不该很长，给个明确上限，避免异常输出把话费打飞
+    max_tokens: 4_096,
   };
 
   if (allowModify) {
-    body.tools = MODIFY_RECIPE_TOOLS;
+    body.tools = EDIT_MENU_TOOLS;
     body.tool_choice = 'auto';
   }
 
@@ -152,7 +192,11 @@ export function callAIChatStream(
       onReasoning: callbacks.onReasoning,
       onContent: callbacks.onToken,
       onToolCallDelta: callbacks.onToolCallDelta,
-      onDone: (fullContent: string, _fullReasoning: string, toolCalls?: { id: string; name: string; arguments: string }[]) => {
+      onDone: (fullContent: string, _fullReasoning: string, toolCalls?: { id: string; name: string; arguments: string }[], finishReason?: string) => {
+        if (finishReason === 'length') {
+          callbacks.onError(new Error('回复太长被截断了，再问一次或者说得更具体点'));
+          return;
+        }
         callbacks.onDone(
           fullContent,
           toolCalls?.map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments })),
