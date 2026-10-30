@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
-import { COLORS } from '../constants/colors';
+import { COLORS, getTagColor } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { IngredientTag } from '../types';
 import { parseIngredientTags } from '../utils/ingredientTagParser';
@@ -29,7 +29,7 @@ export function IngredientTagText({
             <Text key={`t${index}`} style={tagStyles.plainText}>{seg.value}</Text>
           );
         }
-        const tagColor = ingredientTags?.find((t) => t.name === seg.value)?.color || COLORS.primary;
+        const tagColor = ingredientTags?.find((t) => t.name === seg.value)?.color || getTagColor(seg.value);
         return (
           <Text
             key={`g${index}`}
