@@ -18,23 +18,37 @@ import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { useSettings } from '../contexts/SettingsContext';
 import { useCooking } from '../contexts/CookingContext';
+import { useInventory } from '../contexts/InventoryContext';
 import { useNutrition } from '../contexts/NutritionContext';
 import { callAIChatStream, RecipeContext, ToolCallResult } from '../services/chatService';
 import { saveChat, loadChat, estimateTokens } from '../services/chatHistoryService';
 import { cookingProgressService } from '../services/cookingProgressService';
-import { regenerateMenuStream, Stage1AIResult } from '../services/aiService';
+import { generateOneDishStream } from '../services/aiService';
+import {
+  applyEdits,
+  diffEdits,
+  isApplicableEdit,
+  type EditDiffLine,
+  type GeneratedDish,
+  type MenuEdit,
+  type ResolvedMenuEdit,
+} from '../services/menuEditService';
+import { RecipeChangeReview } from './RecipeChangeReview';
 import { NutritionalData } from '../types';
+import { logger } from '../utils/logger';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { SSEStreamController } from '../utils/sseStream';
+
+const logChat = logger('UI:CHAT');
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   reasoningContent?: string;
-  /** ID of the tool call awaiting confirmation, renders confirm/cancel buttons */
-  pendingConfirmId?: string;
+  /** system 消息是否要以 assistant 身份回灌给模型（工具执行结果这类） */
+  sendAsAssistant?: boolean;
 }
 
 interface ChatSheetProps {
@@ -43,9 +57,25 @@ interface ChatSheetProps {
   recipeContext: RecipeContext;
 }
 
+/** 从 edit_menu 的工具调用里汇总出编辑动作（纯函数，不依赖组件状态） */
+function collectEdits(toolCalls: ToolCallResult[]): MenuEdit[] {
+  const out: MenuEdit[] = [];
+  for (const tc of toolCalls) {
+    if (tc.name !== 'edit_menu') continue;
+    try {
+      const args = JSON.parse(tc.arguments);
+      if (Array.isArray(args?.edits)) out.push(...args.edits);
+    } catch (e) {
+      logChat.warn('edit_menu 参数解析失败', String(e));
+    }
+  }
+  return out;
+}
+
 export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheetProps) {
   const { state: settingsState } = useSettings();
-  const { state: cookingState, dispatch: cookingDispatch } = useCooking();
+  const { state: cookingState, dispatch: cookingDispatch, updateRequirement } = useCooking();
+  const inventoryState = useInventory().state;
   const { setPreciseNutrition } = useNutrition();
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
@@ -57,6 +87,9 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
   const [allowModify, setAllowModify] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [expandedReasonings, setExpandedReasonings] = useState<Set<string>>(new Set());
+  /** 待确认的变更；非 null 时弹出独立预览面板 */
+  const [review, setReview] = useState<{ edits: ResolvedMenuEdit[]; lines: EditDiffLine[] } | null>(null);
+  const [generating, setGenerating] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const isNearBottomRef = useRef(true);
   const streamRef = useRef<SSEStreamController | null>(null);
@@ -64,8 +97,6 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
   const pendingReasoningRef = useRef<string>('');
   const prevTotalLinesRef = useRef(0); // Throttle: only trigger scroll when lines change
   const toolCallingRef = useRef(false);
-  const pendingToolCallsRef = useRef<ToolCallResult[] | null>(null);
-  const pendingConfirmIdRef = useRef<string>('');
 
   // 消息列表的同步镜像：供回调读取最新消息，避免在 setMessages updater 里执行副作用
   //（updater 必须是纯函数，StrictMode 下会被重复调用）
@@ -77,7 +108,19 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
 
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
 
-  const sessionId = recipeContext.sessionId || 'default';
+  const sessionId = cookingState.session?.id || recipeContext.sessionId || 'default';
+
+  // 菜谱上下文必须**每次发送时现取**，不能用打开面板那一刻的快照：
+  // 面板开着期间用户改过菜谱，拿旧快照会让模型基于过期菜谱推理（多轮修改会越改越偏）。
+  const liveRecipeContext: RecipeContext = React.useMemo(() => {
+    const mp = cookingState.session?.stages?.menu?.menuProposal;
+    return {
+      dishes: mp?.dishes || [],
+      prepSteps: mp?.prepSteps || [],
+      cookingSteps: mp?.cookingSteps || [],
+      sessionId,
+    };
+  }, [cookingState.session, sessionId]);
 
   const scrollToBottom = useCallback((force: boolean = false) => {
     if (!force && !isNearBottomRef.current) return;
@@ -180,132 +223,149 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     });
   }, []);
 
-  // Execute tool calls: regenerate the full menu from the modification summary
-  const executeToolCalls = useCallback(async (toolCalls: ToolCallResult[]): Promise<string> => {
-    const session = cookingState.session;
-    if (!session) return '无活跃做菜会话';
-
-    for (const tc of toolCalls) {
-      if (tc.name !== 'modify_recipe') continue;
-      try {
-        const args = JSON.parse(tc.arguments);
-        const summary: string = args.summary || '';
-        if (!summary) continue;
-
-        const currentMenu = session.stages.menu?.menuProposal;
-        const requirement = session.stages.requirement;
-        if (!currentMenu || !requirement) return '缺少当前菜谱或需求信息';
-
-        // Regenerate the full menu (AI returns a complete new plan to avoid missing fields in partial patches)
-        const result = await new Promise<Stage1AIResult>((resolve, reject) => {
-          regenerateMenuStream(currentMenu, summary, requirement, settingsState.preferences, {
-            onDone: resolve,
-            onError: reject,
-          });
-        });
-
-        // Normalize: fill id/isPurchased for missingItems, recompute root nutrition (same as initial generation)
-        const computedTotalNutrition = (result.dishes || []).reduce(
-          (sum: any, d: any) => {
-            if (d.estimatedNutrition) {
-              sum.calories += d.estimatedNutrition.calories || 0;
-              sum.protein += d.estimatedNutrition.protein || 0;
-              sum.fat += d.estimatedNutrition.fat || 0;
-              sum.carbs += d.estimatedNutrition.carbs || 0;
-            }
-            return sum;
-          },
-          { calories: 0, protein: 0, fat: 0, carbs: 0 },
-        );
-
-        const newProposal = {
-          ...currentMenu,
-          ...result,
-          estimatedNutrition: computedTotalNutrition,
-          missingItems: (result.missingItems || []).map((item: any, idx: number) => ({
-            ...item,
-            id: `${item.type}-${item.name}-${item.forDish}-${idx}`,
-            isPurchased: false,
-          })),
-        } as any;
-
-        cookingDispatch({
-          type: 'UPDATE_PLAN',
-          payload: { menuProposal: newProposal },
-        });
-
-        // Sync nutrition display data
-        if (newProposal.dishes?.length && newProposal.preciseNutrition?.length) {
-          const nutritionByDish: Record<string, NutritionalData> = {};
-          newProposal.dishes.forEach((dish: any, i: number) => {
-            if (newProposal.preciseNutrition[i]) {
-              nutritionByDish[dish.name] = { ...newProposal.preciseNutrition[i], source: 'precise' };
-            }
-          });
-          if (Object.keys(nutritionByDish).length > 0) {
-            setPreciseNutrition(nutritionByDish, requirement.personCount);
-          }
-        }
-
-        // Persist to cookingProgressService
-        const updatedSession = {
-          ...session,
-          stages: {
-            ...session.stages,
-            menu: session.stages.menu
-              ? { ...session.stages.menu, menuProposal: newProposal }
-              : session.stages.menu,
-          },
-        };
-        cookingProgressService.save(updatedSession).catch(() => {});
-
-        return `🔧 ${summary}`;
-      } catch (e: any) {
-        return `❌ 修改失败: ${e.message}`;
-      }
-    }
-    return '未执行任何修改';
-  }, [cookingState.session, cookingDispatch, settingsState.preferences]);
-
-  // User confirms the tool call
-  const handleConfirmToolCalls = useCallback(async () => {
-    const toolCalls = pendingToolCallsRef.current;
-    const confirmId = pendingConfirmIdRef.current;
-    if (!toolCalls) return;
-
-    // Clear pending confirmation state
-    pendingToolCallsRef.current = null;
-    pendingConfirmIdRef.current = '';
-
-    // Remove the confirmation message (直接用镜像值构造新列表，避免副作用进 updater)
-    const base = messagesRef.current.filter((m) => m.id !== `system-${confirmId}`);
-    setMessages(base);
-
-    // Execute the tool (regenerate full menu); show the result directly without extra AI confirmation
-    const resultText = await executeToolCalls(toolCalls);
+  const appendSystem = useCallback((text: string, sendAsAssistant = false) => {
     const next: ChatMessage[] = [
-      ...base,
-      { id: `system-${Date.now()}`, role: 'system', content: resultText },
+      ...messagesRef.current,
+      { id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: 'system', content: text, sendAsAssistant },
     ];
     setMessages(next);
-    // 工具执行改变了菜谱，同步持久化对话（persistMessages 会过滤 system 消息）
     persistMessages(next);
     scrollToBottom(true);
-  }, [executeToolCalls, scrollToBottom, persistMessages]);
+  }, [persistMessages, scrollToBottom]);
 
-  // User cancels the tool call
-  const handleCancelToolCalls = useCallback(() => {
-    const confirmId = pendingConfirmIdRef.current;
-    pendingToolCallsRef.current = null;
-    pendingConfirmIdRef.current = '';
-    const base = messagesRef.current.filter((m) => m.id !== `system-${confirmId}`);
-    const next: ChatMessage[] = [
-      ...base,
-      { id: `system-${Date.now()}`, role: 'system', content: '已取消修改' },
-    ];
-    setMessages(next);
-    persistMessages(next);
-  }, [persistMessages]);
+  /**
+   * 工具调用落地流程：
+   *   结构化动作 → （需要新菜的先单独生成）→ 打开变更预览 → 用户勾选 → 纯本地应用
+   * 不再"把一整份菜单重新生成一遍"。
+   */
+  const openReview = useCallback(async (rawEdits: MenuEdit[]) => {
+    const session = cookingState.session;
+    const menu = session?.stages.menu?.menuProposal;
+    const requirement = session?.stages.requirement;
+    if (!session || !menu || !requirement) {
+      appendSystem('当前没有可修改的菜谱');
+      return;
+    }
+    if (rawEdits.length === 0) {
+      appendSystem('没听出要改哪一处，可以说得更具体点，例如"番茄炒蛋的盐改成3克"');
+      return;
+    }
+
+    const resolved: ResolvedMenuEdit[] = [];
+    const usable = rawEdits.filter((e) => isApplicableEdit(menu, e));
+    const dropped = rawEdits.length - usable.length;
+    if (usable.length === 0) {
+      appendSystem('没找到要改的那道菜/食材，可以说得具体点，例如"番茄炒蛋里的盐改成3克"');
+      return;
+    }
+    if (dropped > 0) {
+      logChat.warn('部分编辑动作对不上当前菜谱，已跳过', { dropped, total: rawEdits.length });
+    }
+
+    for (const edit of usable) {
+      if (edit.op !== 'add_dish' && edit.op !== 'replace_dish') {
+        resolved.push(edit);
+        continue;
+      }
+      setGenerating(true);
+      try {
+        const mode = edit.op === 'add_dish' ? 'add' : 'replace';
+        const generated = await new Promise<GeneratedDish>((resolve, reject) => {
+          generateOneDishStream(
+            edit.instruction,
+            mode,
+            {
+              dishNames: menu.dishes.map((d) => d.name),
+              ingredients: inventoryState.ingredients.map((i) => ({
+                name: i.name,
+                weight: i.weight,
+                createDate: i.createDate,
+              })),
+              seasonings: inventoryState.seasonings.map((s) => ({ name: s.name, status: s.status })),
+              requirement,
+              dietaryRestrictions: settingsState.preferences.dietaryRestrictions,
+              tastePreferences: settingsState.preferences.tastePreferences,
+              cookingSkill: settingsState.preferences.cookingSkill,
+            },
+            settingsState.preferences,
+            { onDone: resolve, onError: reject },
+          );
+        });
+        resolved.push({ ...edit, generated });
+      } catch (e: any) {
+        setGenerating(false);
+        appendSystem(`生成新菜失败：${e.message || '未知错误'}`);
+        return;
+      }
+    }
+    setGenerating(false);
+    setReview({ edits: resolved, lines: diffEdits(menu, resolved) });
+  }, [cookingState.session, inventoryState, settingsState.preferences, appendSystem]);
+
+  /** 用户在预览面板里确认后：纯本地应用，不发请求 */
+  const applyReview = useCallback((selectedIndexes: number[]) => {
+    const session = cookingState.session;
+    const menu = session?.stages.menu?.menuProposal;
+    const requirement = session?.stages.requirement;
+    if (!session || !menu || !requirement || !review) return;
+
+    const chosen = review.edits.filter((_, i) => selectedIndexes.includes(i));
+    if (chosen.length === 0) {
+      setReview(null);
+      appendSystem('没有选中任何改动');
+      return;
+    }
+
+    const nextMenu = applyEdits(menu, requirement, chosen, {
+      inventoryNames: inventoryState.ingredients.map((i) => i.name),
+    });
+
+    // 人数变更要同时更新需求，但**不能**动当前进行到哪一步
+    let nextRequirement = requirement;
+    const personEdit = chosen.find((e) => e.op === 'set_person_count');
+    if (personEdit && personEdit.op === 'set_person_count') {
+      nextRequirement = { ...requirement, personCount: Math.max(1, Math.round(personEdit.personCount)) };
+      updateRequirement(nextRequirement);
+    }
+
+    cookingDispatch({ type: 'UPDATE_PLAN', payload: { menuProposal: nextMenu } });
+
+    if (nextMenu.dishes?.length && nextMenu.preciseNutrition?.length) {
+      const nutritionByDish: Record<string, NutritionalData> = {};
+      nextMenu.dishes.forEach((dish, i) => {
+        const n = nextMenu.preciseNutrition?.[i];
+        if (n) nutritionByDish[dish.name] = { ...n, source: 'precise' };
+      });
+      if (Object.keys(nutritionByDish).length > 0) {
+        setPreciseNutrition(nutritionByDish, nextRequirement.personCount);
+      }
+    }
+
+    const updatedSession = {
+      ...session,
+      stages: {
+        ...session.stages,
+        requirement: nextRequirement,
+        menu: session.stages.menu ? { ...session.stages.menu, menuProposal: nextMenu } : session.stages.menu,
+      },
+    };
+    cookingProgressService.save(updatedSession).catch(() => {});
+
+    setReview(null);
+    // sendAsAssistant：让下一轮对话能看到"刚刚改了什么"，否则模型还在用旧菜谱推理
+    appendSystem(
+      `✅ 已应用 ${chosen.length} 处修改\n${review.lines
+        .filter((l) => selectedIndexes.includes(l.index))
+        .map((l) => `· ${l.dish}：${l.text}`)
+        .join('\n')}`,
+      true,
+    );
+  }, [cookingState.session, review, inventoryState.ingredients, cookingDispatch, updateRequirement, setPreciseNutrition, appendSystem]);
+
+  const cancelReview = useCallback(() => {
+    setReview(null);
+    appendSystem('已取消修改');
+  }, [appendSystem]);
 
   const sendMessage = useCallback(() => {
     const text = inputText.trim();
@@ -324,11 +384,15 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     setIsLoading(true);
     scrollToBottom(true);
 
-    // 发送给 API 前过滤本地系统消息（工具结果/确认提示），
-    // 原实现把 role: 'system' 强转 'user' | 'assistant' 发出去，会污染模型上下文
+    // 发送给 API 前：
+    // - 纯本地状态提示（确认/取消）过滤掉
+    // - 工具执行结果（sendAsAssistant）以 assistant 身份回灌，否则模型不知道自己刚改了什么
     const chatMessages = nextMessages
-      .filter((m) => m.role !== 'system')
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      .filter((m) => m.role !== 'system' || m.sendAsAssistant)
+      .map((m) => ({
+        role: (m.role === 'system' ? 'assistant' : m.role) as 'user' | 'assistant',
+        content: m.content,
+      }));
 
     const assistantId = `assistant-${Date.now()}`;
     pendingAssistantRef.current = '';
@@ -366,7 +430,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     };
 
     const stream = callAIChatStream(
-      recipeContext,
+      liveRecipeContext,
       chatMessages,
       settingsState.preferences,
       {
@@ -405,28 +469,8 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
 
           if (toolCalls && toolCalls.length > 0) {
             toolCallingRef.current = false;
-            pendingToolCallsRef.current = toolCalls;
-
-            // Parse the modification summary as a preview
-            let previewLines: string[] = [];
-            for (const tc of toolCalls) {
-              if (tc.name !== 'modify_recipe') continue;
-              try {
-                const args = JSON.parse(tc.arguments);
-                const summary: string = args.summary || '';
-                if (summary) previewLines.push(`  • ${summary}`);
-              } catch {}
-            }
-
-            const confirmId = `confirm-${Date.now()}`;
-            pendingConfirmIdRef.current = confirmId;
-            const previewText = `📋 拟修改:\n${previewLines.join('\n')}`;
-            setMessages((prev) => [...prev, {
-              id: `system-${confirmId}`,
-              role: 'system',
-              content: previewText,
-              pendingConfirmId: confirmId,
-            }]);
+            // 结构化动作 → 需要新菜的先单独生成 → 打开独立预览面板
+            openReview(collectEdits(toolCalls));
             scrollToBottom(true);
           } else {
             scrollToBottom();
@@ -454,7 +498,7 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     );
 
     streamRef.current = stream;
-  }, [inputText, isLoading, messages, recipeContext, settingsState.preferences, scrollToBottom, allowModify, persistMessages]);
+  }, [inputText, isLoading, messages, liveRecipeContext, settingsState.preferences, scrollToBottom, allowModify, persistMessages, openReview]);
 
   const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
     const isUser = item.role === 'user';
@@ -463,30 +507,12 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
     const hasContent = item.content.length > 0;
     const reasoningExpanded = expandedReasonings.has(item.id);
 
-    // System message (tool execution result / confirmation prompt)
+    // System message（工具执行结果 / 状态提示）
     if (isSystem) {
       return (
         <View style={styles.systemRow}>
-          <View style={[styles.systemBubble, item.pendingConfirmId && styles.systemBubblePending]}>
+          <View style={styles.systemBubble}>
             <Text style={styles.systemText}>{item.content}</Text>
-            {item.pendingConfirmId && item.pendingConfirmId === pendingConfirmIdRef.current && (
-              <View style={styles.confirmRow}>
-                <TouchableOpacity
-                  style={styles.confirmCancelBtn}
-                  onPress={handleCancelToolCalls}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.confirmCancelText}>取消</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.confirmOkBtn}
-                  onPress={handleConfirmToolCalls}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.confirmOkText}>确认修改</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
         </View>
       );
@@ -604,6 +630,12 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
           }
         />
 
+        {generating && (
+          <View style={styles.errorRow}>
+            <Text style={styles.generatingText}>正在生成新菜…</Text>
+          </View>
+        )}
+
         {errorMsg && (
           <View style={styles.errorRow}>
             <Text style={styles.errorText}>{errorMsg}</Text>
@@ -619,24 +651,32 @@ export default function ChatSheet({ visible, onClose, recipeContext }: ChatSheet
             onChangeText={setInputText}
             onSubmitEditing={sendMessage}
             returnKeyType="send"
-            editable={!isLoading}
+            editable={!isLoading && !generating}
             multiline
             maxLength={500}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (!inputText.trim() || isLoading) && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!inputText.trim() || isLoading || generating) && styles.sendBtnDisabled]}
             onPress={sendMessage}
-            disabled={!inputText.trim() || isLoading}
+            disabled={!inputText.trim() || isLoading || generating}
             activeOpacity={0.7}
           >
             <Ionicons
               name="send"
               size={20}
-              color={inputText.trim() && !isLoading ? COLORS.textWhite : COLORS.textTertiary}
+              color={inputText.trim() && !isLoading && !generating ? COLORS.textWhite : COLORS.textTertiary}
             />
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      <RecipeChangeReview
+        key={review ? review.edits.map((e) => e.op).join(',') + review.lines.length : 'none'}
+        visible={!!review}
+        lines={review?.lines ?? []}
+        onCancel={cancelReview}
+        onApply={applyReview}
+      />
     </View>
   );
 }
@@ -764,34 +804,10 @@ const styles = StyleSheet.create({
     borderLeftColor: '#FF9800',
     backgroundColor: '#FFF8E1',
   },
-  confirmRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 8,
-  },
-  confirmCancelBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  confirmCancelText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  confirmOkBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: COLORS.primary,
-  },
-  confirmOkText: {
-    fontSize: 12,
-    color: COLORS.textWhite,
-    fontWeight: '600',
+  generatingText: {
+    fontSize: TYPOGRAPHY.caption,
+    color: COLORS.primary,
+    textAlign: 'center',
   },
   reasoningToggle: {
     flexDirection: 'row',

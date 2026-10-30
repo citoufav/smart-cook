@@ -16,6 +16,7 @@ type CookingAction =
   | { type: 'START_SESSION'; payload: { id: string; requirement: RequirementInput } }
   | { type: 'RESTORE_SESSION'; payload: CookingState['session'] }
   | { type: 'SET_REQUIREMENT'; payload: RequirementInput }
+  | { type: 'UPDATE_REQUIREMENT'; payload: RequirementInput }
   | { type: 'SET_MENU_PROPOSAL'; payload: MenuProposal }
   | { type: 'SET_STAGE1_RESULT'; payload: Stage1Data }
   | { type: 'UPDATE_PLAN'; payload: { menuProposal: MenuProposal } }
@@ -83,6 +84,20 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
         session: {
           ...state.session,
           status: 'menu',
+          stages: { ...state.session.stages, requirement: action.payload },
+          updatedAt: now,
+        },
+      };
+    }
+
+    // 只改需求字段，**不动当前进行到哪一步**。
+    // SET_REQUIREMENT 会把 status 打回 'menu'，正在炒菜时改人数就会把进度清零，所以单独一个动作。
+    case 'UPDATE_REQUIREMENT': {
+      if (!state.session) return state;
+      return {
+        ...state,
+        session: {
+          ...state.session,
           stages: { ...state.session.stages, requirement: action.payload },
           updatedAt: now,
         },
@@ -232,6 +247,7 @@ interface CookingContextValue {
   startSession: (requirement: RequirementInput, id?: string) => void;
   restoreSession: (session: CookingState['session']) => void;
   setStage1Result: (data: Stage1Data) => void;
+  updateRequirement: (requirement: RequirementInput) => void;
   setCurrentStage: (stage: CookingStage) => void;
   resetSession: () => void;
 }
@@ -258,6 +274,11 @@ export function CookingProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_STAGE1_RESULT', payload: data });
   }, []);
 
+  const updateRequirement = useCallback((requirement: RequirementInput) => {
+    log.info('updateRequirement called', { personCount: requirement.personCount });
+    dispatch({ type: 'UPDATE_REQUIREMENT', payload: requirement });
+  }, []);
+
   const setCurrentStage = useCallback((stage: CookingStage) => {
     log.info('setCurrentStage called', { stage });
     dispatch({ type: 'SET_CURRENT_STAGE', payload: stage });
@@ -270,8 +291,8 @@ export function CookingProvider({ children }: { children: React.ReactNode }) {
 
   // 稳定的 context value：避免每次渲染都用新对象触发全部消费者重渲染
   const value = useMemo(
-    () => ({ state, dispatch, startSession, restoreSession, setStage1Result, setCurrentStage, resetSession }),
-    [state, dispatch, startSession, restoreSession, setStage1Result, setCurrentStage, resetSession],
+    () => ({ state, dispatch, startSession, restoreSession, setStage1Result, updateRequirement, setCurrentStage, resetSession }),
+    [state, dispatch, startSession, restoreSession, setStage1Result, updateRequirement, setCurrentStage, resetSession],
   );
 
   return (
