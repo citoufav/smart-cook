@@ -5,14 +5,13 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  Alert,
   Modal,
   StyleSheet,
-  Animated,
   ScrollView,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
 import { useInventory } from '../../src/contexts/InventoryContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import { Ingredient, Seasoning, SeasoningStatus } from '../../src/types';
@@ -24,16 +23,10 @@ import { EmptyState } from '../../src/components/EmptyState';
 import { FAB } from '../../src/components/FAB';
 import { Badge, seasoningStatusToBadge } from '../../src/components/Badge';
 import { Button } from '../../src/components/Button';
-import { Checkbox } from '../../src/components/Checkbox';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
-
-function getDaysSince(dateStr: string): number {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  // A future storage date (the picker allows it) should read as 0, not a negative count.
-  return Math.max(0, Math.floor(diff / 86400000));
-}
+import { daysSince } from '../../src/utils/daysSince';
 
 export default function InventoryScreen() {
   const { state, addIngredient, deleteIngredient, updateIngredient, addSeasoning, deleteSeasoning, updateSeasoning } = useInventory();
@@ -63,7 +56,7 @@ export default function InventoryScreen() {
   const SCROLL_HEIGHT = 180;
 
   // Date picker state
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
   const [pickerYear, setPickerYear] = useState(today.getFullYear());
   const [pickerMonth, setPickerMonth] = useState(today.getMonth() + 1);
   const [pickerDay, setPickerDay] = useState(today.getDate());
@@ -127,15 +120,15 @@ export default function InventoryScreen() {
       return;
     }
 
-    // Edit mode: skip the duplicate-name check (name may be unchanged)
-    if (!editId) {
-      const existingNames = activeTab === 'ingredients'
-        ? state.ingredients.map((i) => i.name)
-        : state.seasonings.map((s) => s.name);
-      if (existingNames.includes(name)) {
+    // 重名检查：编辑时把自己排除掉，否则改名成已有的名字会造出重复数据
+    if (activeTab === 'ingredients') {
+      if (state.ingredients.some((i) => i.name === name && i.id !== editId)) {
         setFormError('该名称已存在');
         return;
       }
+    } else if (state.seasonings.some((s) => s.name === name && s.id !== editId)) {
+      setFormError('该名称已存在');
+      return;
     }
 
     setFormError(null);
@@ -181,8 +174,12 @@ export default function InventoryScreen() {
   }, []);
 
   // Re-buy reminder: reset one ingredient's storage date to now (recount "stored N days")
-  const handleResetDate = useCallback((id: string) => {
+  const handleResetDate = useCallback((id: string, name: string) => {
     updateIngredient(id, { createDate: new Date().toISOString() });
+    // ponytail: 用 Android 原生 toast 给误触兜底，iOS 端静默；要上 iOS 时换成自绘 toast
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(`「${name}」的入库日期已重置为今天`, ToastAndroid.SHORT);
+    }
   }, [updateIngredient]);
 
   const handleDelete = useCallback((id: string, name: string) => {
@@ -210,7 +207,7 @@ export default function InventoryScreen() {
       setPickerYear(today.getFullYear()); setPickerMonth(today.getMonth() + 1); setPickerDay(today.getDate());
     }
     setShowDatePicker(true);
-  }, [formDate]);
+  }, [formDate, today]);
 
   const handleDateConfirm = useCallback(() => {
     const d = String(pickerDay).padStart(2, '0');
@@ -224,10 +221,10 @@ export default function InventoryScreen() {
       <View style={styles.itemInfo}>
         <Text style={styles.itemName}>{item.name}</Text>
         <Text style={styles.itemMeta}>
-          {item.weight !== null ? `${item.weight} 克` : '未称量'} · 已存 {getDaysSince(item.createDate)} 天
+          {item.weight !== null ? `${item.weight} 克` : '未称量'} · 已存 {daysSince(item.createDate)} 天
         </Text>
       </View>
-      <TouchableOpacity onPress={() => handleResetDate(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 8 }} accessibilityLabel={`重置${item.name}的入库日期`}>
+      <TouchableOpacity onPress={() => handleResetDate(item.id, item.name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 8 }} accessibilityLabel={`重置${item.name}的入库日期`}>
         <Ionicons name="refresh-outline" size={20} color={COLORS.textSecondary} />
       </TouchableOpacity>
       <TouchableOpacity onPress={() => handleDelete(item.id, item.name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 8 }}>
@@ -255,6 +252,9 @@ export default function InventoryScreen() {
   const isEmpty = activeTab === 'ingredients'
     ? state.ingredients.length === 0
     : state.seasonings.length === 0;
+  // 有数据但搜索无命中：不能走 isEmpty，否则是一片白屏
+  const noResults = !isEmpty && currentList.length === 0;
+  const itemNoun = activeTab === 'ingredients' ? '食材' : '调料';
 
   return (
     <View style={styles.container}>
@@ -296,6 +296,13 @@ export default function InventoryScreen() {
           title="库存为空"
           description="先添加一些食材和调料，才能开始做菜哦"
           action={{ label: activeTab === 'ingredients' ? '添加第一个食材' : '添加第一个调料', onPress: () => setShowForm(true) }}
+        />
+      ) : noResults ? (
+        <EmptyState
+          icon="🔍"
+          title="没有找到"
+          description={`没有名字包含「${searchText.trim()}」的${itemNoun}`}
+          action={{ label: '清除搜索', onPress: () => setSearchText('') }}
         />
       ) : (
         <FlatList<Ingredient | Seasoning>

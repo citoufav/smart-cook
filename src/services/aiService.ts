@@ -4,6 +4,7 @@ import { DEFAULT_TIMEOUT_MS, MAX_RETRIES, BASE_RETRY_DELAY_MS } from '../constan
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
+import { daysSince } from '../utils/daysSince';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 
 const log = logger('SVC:AI');
@@ -223,7 +224,7 @@ function buildStage1UserPrompt(
     ? ingredients
         .sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime())
         .map((ing, i) => {
-          const days = Math.floor((Date.now() - new Date(ing.createDate).getTime()) / 86400000);
+          const days = daysSince(ing.createDate);
           return `${i + 1}. ${ing.name}：${ing.weight !== null ? ing.weight + '克' : '重量未知'}（已存放${days}天）`;
         })
         .join('\n')
