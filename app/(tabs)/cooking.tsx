@@ -182,14 +182,6 @@ export default function CookingEntryScreen() {
     };
   }, [invState.ingredients]);
 
-  const clearStallTimer = useCallback(() => {
-    // Timer no longer used; keep empty functions for compatibility
-  }, []);
-
-  const resetStallTimer = useCallback(() => {
-    // Timer no longer used; loop detection instead
-  }, []);
-
   /**
    * Detect whether the reasoning chain is stuck in an infinite loop
    * Within the latest LOOP_WINDOW chars, find a fragment repeated LOOP_REPEAT_COUNT times consecutively
@@ -204,9 +196,7 @@ export default function CookingEntryScreen() {
     return m ? m[1] : null;
   }, []);
 
-  const handleStreamDone = useCallback((result: any) => {
-    clearStallTimer();
-
+  const handleStreamDone = useCallback(async (result: any) => {
     const sessionId = generateId();
 
     // Build the requirement and menu proposal once, reused in 3 places (Stage1 state / menu history / cooking progress)
@@ -281,29 +271,38 @@ export default function CookingEntryScreen() {
       customCalorie,
     });
 
-    // Save menu history (menuHistoryService: only stores menu proposals for the history list/detail views)
+    // 两份落盘结果都要看：任一份失败，用户切走再回来就找不到这份菜单了，必须当场提示
     const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
     const sessionName = `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`;
-    menuHistoryService.add({
-      name: sessionName,
-      menuProposal,
-      reasoningContent,
-      requirement: requirementInput,
-      sessionId,
-    }).catch(() => {}); // 失败已由 menuHistoryService 内部日志记录
 
-    // Auto-save cooking progress (cookingProgressService: only stores session progress for resuming later)
-    cookingProgressService.save({
-      id: sessionId,
-      status: 'menu',
-      stages: {
+    const [, progressRecord] = await Promise.all([
+      menuHistoryService.add({
+        name: sessionName,
+        menuProposal,
+        reasoningContent,
         requirement: requirementInput,
-        menu: { menuProposal, requirementInput, reasoningContent },
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      version: 1,
-    }, sessionName).catch(() => {});
+        sessionId,
+      }),
+      cookingProgressService.save({
+        id: sessionId,
+        status: 'menu',
+        stages: {
+          requirement: requirementInput,
+          menu: { menuProposal, requirementInput, reasoningContent },
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      }, sessionName),
+    ]);
+
+    if (progressRecord === null) {
+      showAlert({
+        title: '菜单没能保存',
+        message: '菜谱已生成，但写入本地存储失败（可能是空间不足）。切走这个页面后可能找不回来，建议先按备菜做，或稍后清一下存储再重新生成。',
+        buttons: [{ text: '知道了' }],
+      });
+    }
 
     // 饮食记忆改为在「完成做菜」时记录（见 CompletionSheet / inventory-update），
     // 避免仅生成菜单就污染最近吃过列表
@@ -313,7 +312,7 @@ export default function CookingEntryScreen() {
     if (isScreenFocusedRef.current) {
       router.push('/cooking/pager');
     }
-  }, [effectivePeople, mealType, effectiveCalorie, customRequest, customPeople, customMealType, customCalorie, startSession, setStage1Result, setEstimatedNutrition, saveLastCookingDefaults, clearStallTimer]);
+  }, [effectivePeople, mealType, effectiveCalorie, customRequest, customPeople, customMealType, customCalorie, startSession, setStage1Result, setEstimatedNutrition, saveLastCookingDefaults, showAlert]);
 
   const submitToAI = useCallback(() => {
     setScreenState('loading');
@@ -367,11 +366,9 @@ export default function CookingEntryScreen() {
         },
         onDone: (result: any) => {
           if (loopAbortedRef.current) {
-            clearStallTimer();
             return; // Abort already triggered by onReasoning, do not handle again
           }
           pendingResultRef.current = result;
-          clearStallTimer();
           handleStreamDone(result);
         },
         onError: (error: Error) => {
@@ -384,7 +381,6 @@ export default function CookingEntryScreen() {
             ] });
             return;
           }
-          clearStallTimer();
           setScreenState('error');
           showAlert({ title: 'AI 菜单生成失败', message: error.message || '请检查网络和 API 配置后重试。', buttons: [
             { text: '取消', onPress: () => setScreenState('idle') },
@@ -396,8 +392,7 @@ export default function CookingEntryScreen() {
 
     streamRef.current = stream;
     // Start the first stall detection
-    resetStallTimer();
-  }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, resetStallTimer, clearStallTimer, handleStreamDone, showAlert]);
+  }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, handleStreamDone, showAlert]);
   // 渲染期同步最新引用，供 submitToAI 内部"重试"按钮自引用
   submitToAIRef.current = submitToAI;
 
@@ -407,10 +402,9 @@ export default function CookingEntryScreen() {
       streamRef.current.abort();
       streamRef.current = null;
     }
-    clearStallTimer();
     // Re-submit
     submitToAI();
-  }, [submitToAI, clearStallTimer]);
+  }, [submitToAI]);
 
   const handleSubmit = useCallback(async () => {
     const check = checkInventory();
@@ -775,3 +769,4 @@ const styles = StyleSheet.create({
   modalInput: { borderWidth: 1.5, borderColor: COLORS.border, borderRadius: BORDER_RADIUS.md, height: 44, paddingHorizontal: SPACING.md, fontSize: TYPOGRAPHY.body, color: COLORS.textPrimary, marginBottom: SPACING.lg },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md },
 });
+

@@ -44,6 +44,9 @@ export interface InventoryState {
 // ============ User Settings ============
 export type ApiType = 'deepseek' | 'openai';
 
+/** DeepSeek 思考模式的档位。`low` 是 2026 版模型新增的，老版本只有 high/max */
+export type ReasoningEffort = 'low' | 'high' | 'max';
+
 export interface UserPreferences {
   apiType: ApiType;
   apiKey: string;
@@ -62,7 +65,7 @@ export interface UserPreferences {
   lastMealType?: string;
   lastCaloriePreference?: number;
   thinkingEnabled: boolean;
-  reasoningEffort: 'high' | 'max';
+  reasoningEffort: ReasoningEffort;
 }
 
 // ============ Cooking Requirement ============

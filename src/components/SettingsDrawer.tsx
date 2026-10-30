@@ -24,18 +24,26 @@ import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { Button } from './Button';
 import { useCustomAlert } from './CustomAlert';
-import { ApiType, UserPreferences } from '../types';
+import { ApiType, ReasoningEffort, UserPreferences } from '../types';
 import { validateApiKey } from '../utils/validation';
 
+// 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
+// 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
 const DEEPSEEK_MODELS = [
-  { label: 'deepseek-v4-pro（旗舰模型）', value: 'deepseek-v4-pro' },
-  { label: 'deepseek-v4-flash（快速模型）', value: 'deepseek-v4-flash' },
+  { label: 'deepseek-v4-pro（旗舰，纯文本）', value: 'deepseek-v4-pro' },
+  { label: 'deepseek-flash（快速，支持图片）', value: 'deepseek-flash' },
 ];
 
-const REASONING_OPTIONS: { label: string; value: 'high' | 'max' }[] = [
+const REASONING_OPTIONS: { label: string; value: ReasoningEffort }[] = [
+  { label: '低', value: 'low' },
   { label: '高', value: 'high' },
   { label: '最大', value: 'max' },
 ];
+
+/** 老数据可能存着已下线的档位，读回时回退到 high */
+function pickReasoningEffort(value: string): ReasoningEffort {
+  return REASONING_OPTIONS.some((o) => o.value === value) ? (value as ReasoningEffort) : 'high';
+}
 
 // ---- Dropdown selector ----
 function DropdownSelector({
@@ -177,10 +185,8 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const [apiUrl, setApiUrl] = useState(preferences.apiUrl);
   const [apiType, setApiType] = useState<ApiType>(preferences.apiType);
   const [thinkingEnabled, setThinkingEnabled] = useState(preferences.thinkingEnabled);
-  const [reasoningEffort, setReasoningEffort] = useState<'high' | 'max'>(
-    preferences.reasoningEffort === 'high' || preferences.reasoningEffort === 'max'
-      ? preferences.reasoningEffort
-      : 'high',
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    pickReasoningEffort(preferences.reasoningEffort),
   );
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
   const [tasteTags, setTasteTags] = useState<string[]>([...preferences.tastePreferences]);
@@ -193,11 +199,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       setApiUrl(preferences.apiUrl);
       setApiType(preferences.apiType);
       setThinkingEnabled(preferences.thinkingEnabled);
-      setReasoningEffort(
-        preferences.reasoningEffort === 'high' || preferences.reasoningEffort === 'max'
-          ? preferences.reasoningEffort
-          : 'high',
-      );
+      setReasoningEffort(pickReasoningEffort(preferences.reasoningEffort));
       setDietaryTags([...preferences.dietaryRestrictions]);
       setTasteTags([...preferences.tastePreferences]);
       setExpandedSections(new Set(['diet', 'ai', 'data']));
