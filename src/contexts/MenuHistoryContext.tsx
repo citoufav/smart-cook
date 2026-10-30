@@ -5,7 +5,7 @@ interface MenuHistoryContextValue {
   items: MenuHistoryItem[];
   loading: boolean;
   refresh: () => Promise<void>;
-  add: (item: Omit<MenuHistoryItem, 'id' | 'createdAt'>) => Promise<MenuHistoryItem>;
+  add: (item: Omit<MenuHistoryItem, 'id' | 'createdAt'>) => Promise<MenuHistoryItem | null>;
   remove: (id: string) => Promise<boolean>;
   rename: (id: string, newName: string) => Promise<boolean>;
 }
@@ -29,7 +29,7 @@ export function MenuHistoryProvider({ children }: { children: React.ReactNode })
 
   const add = useCallback(async (item: Omit<MenuHistoryItem, 'id' | 'createdAt'>) => {
     const created = await menuHistoryService.add(item);
-    setItems((prev) => [created, ...prev].slice(0, 50));
+    if (created) setItems((prev) => [created, ...prev].slice(0, 50));
     return created;
   }, []);
 

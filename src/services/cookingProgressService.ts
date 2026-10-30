@@ -49,16 +49,18 @@ class CookingProgressService {
     }
   }
 
-  private async saveAll(items: CookingProgressRecord[]): Promise<void> {
+  private async saveAll(items: CookingProgressRecord[]): Promise<boolean> {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      return true;
     } catch (e) {
       this.log.error('saveAll failed', e);
+      return false;
     }
   }
 
-  /** Save or update cooking progress */
-  async save(session: CookingSession, name?: string): Promise<CookingProgressRecord> {
+  /** Save or update cooking progress. 返回 null 表示写盘失败 */
+  async save(session: CookingSession, name?: string): Promise<CookingProgressRecord | null> {
     const all = await this.getAll();
     const existing = all.find((r) => r.session.id === session.id);
     const now = new Date().toISOString();
@@ -68,7 +70,7 @@ class CookingProgressService {
       existing.currentStage = session.status;
       existing.updatedAt = now;
       if (name) existing.name = name;
-      await this.saveAll(all);
+      if (!(await this.saveAll(all))) return null;
       this.log.info('Updated progress record', { status: session.status, recordCount: all.length });
       return existing;
     }
@@ -83,7 +85,7 @@ class CookingProgressService {
     };
     all.unshift(record);
     if (all.length > 50) all.length = 50;
-    await this.saveAll(all);
+    if (!(await this.saveAll(all))) return null;
     this.log.info('Created progress record', { status: session.status, recordCount: all.length });
     return record;
   }

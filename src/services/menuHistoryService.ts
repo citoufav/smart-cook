@@ -36,15 +36,18 @@ class MenuHistoryService {
     }
   }
 
-  private async saveAll(items: MenuHistoryItem[]): Promise<void> {
+  private async saveAll(items: MenuHistoryItem[]): Promise<boolean> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.COOKING_SESSION_HISTORY, JSON.stringify(items));
+      return true;
     } catch (e) {
       this.log.error('saveAll failed', e);
+      return false;
     }
   }
 
-  async add(item: Omit<MenuHistoryItem, 'id' | 'createdAt'>): Promise<MenuHistoryItem> {
+  /** 返回 null 表示写盘失败——调用方必须提示用户，否则界面照跳、数据其实没存 */
+  async add(item: Omit<MenuHistoryItem, 'id' | 'createdAt'>): Promise<MenuHistoryItem | null> {
     const all = await this.getAll();
     // 思考链体积大（几十 KB/条），落盘时截断，避免单 key 膨胀触发 Android AsyncStorage 写入限制
     const MAX_SAVED_REASONING = 2000;
@@ -61,7 +64,7 @@ class MenuHistoryService {
     all.unshift(newItem); // newest first
     // keep at most 50 entries
     if (all.length > 50) all.length = 50;
-    await this.saveAll(all);
+    if (!(await this.saveAll(all))) return null;
     const dishCount = item.menuProposal?.dishes?.length ?? 0;
     const prepCount = item.menuProposal?.prepSteps?.length ?? 0;
     const cookCount = item.menuProposal?.cookingSteps?.length ?? 0;
@@ -87,18 +90,18 @@ class MenuHistoryService {
     const item = all.find((i) => i.id === id);
     if (!item) return false;
     item.name = newName.trim();
-    await this.saveAll(all);
+    const ok = await this.saveAll(all);
     this.log.info('Renamed menu history item', { id, newName });
-    return true;
+    return ok;
   }
 
   async remove(id: string): Promise<boolean> {
     const all = await this.getAll();
     const filtered = all.filter((i) => i.id !== id);
     if (filtered.length === all.length) return false;
-    await this.saveAll(filtered);
+    const ok = await this.saveAll(filtered);
     this.log.info('Removed menu history item', { id });
-    return true;
+    return ok;
   }
 }
 
