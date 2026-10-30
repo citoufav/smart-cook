@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-10-30 — One copy of the menu records instead of two
+
+**Removed**
+
+- The menu-history copy: `menuHistoryService`, `MenuHistoryContext`, `app/history/` (list, detail, layout) and the `@v1:cooking:session:history` storage key.
+
+  Menus were being stored twice — `cookingProgressService` kept the full session (surfaced on the cooking screen as in-progress / completed), and `menuHistoryService` kept a second snapshot underneath a separate history screen. Two copies of the same thing cannot stay in sync: editing a recipe updated the progress record but left the history snapshot stale, so the history screen showed a menu the user had already changed. Deleting one copy removes the failure mode structurally rather than adding a sync call that the next edit path would forget.
+
+  The history screens had no entry point in the UI — nothing navigated to `/history` — so nothing is lost. The remaining record list on the cooking screen is the single source, and it is now updated when a recipe is edited.
+
+**Known leftover**: the old `@v1:cooking:session:history` key is still sitting in AsyncStorage on existing installs. It is unreferenced and harmless; no migration was written for a single-user app.
+
 ## 2026-10-30 — Recipe editing rewritten as structured local edits
 
 **Added**

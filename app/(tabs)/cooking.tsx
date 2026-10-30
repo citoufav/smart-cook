@@ -27,7 +27,6 @@ import HeaderBar from '../../src/components/HeaderBar';
 import { NutritionalData, InventoryCheckResult } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
 import { getRecentMeals } from '../../src/services/dietMemoryService';
-import { menuHistoryService } from '../../src/services/menuHistoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
 import { SSEStreamController } from '../../src/utils/sseStream';
 import { generateId } from '../../src/utils/uuid';
@@ -270,30 +269,22 @@ export default function CookingEntryScreen() {
       customCalorie,
     });
 
-    // 两份落盘结果都要看：任一份失败，用户切走再回来就找不到这份菜单了，必须当场提示
+    // 只落一份（cookingProgressService）：菜单历史以前还有一份独立副本，
+    // 两份之间不会同步，编辑菜谱后历史页显示的是旧版本，所以副本已删。
     const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
     const sessionName = `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`;
 
-    const [, progressRecord] = await Promise.all([
-      menuHistoryService.add({
-        name: sessionName,
-        menuProposal,
-        reasoningContent,
+    const progressRecord = await cookingProgressService.save({
+      id: sessionId,
+      status: 'menu',
+      stages: {
         requirement: requirementInput,
-        sessionId,
-      }),
-      cookingProgressService.save({
-        id: sessionId,
-        status: 'menu',
-        stages: {
-          requirement: requirementInput,
-          menu: { menuProposal, requirementInput, reasoningContent },
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        version: 1,
-      }, sessionName),
-    ]);
+        menu: { menuProposal, requirementInput, reasoningContent },
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: 1,
+    }, sessionName);
 
     if (progressRecord === null) {
       showAlert({

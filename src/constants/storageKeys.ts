@@ -4,7 +4,6 @@ export const STORAGE_KEYS = {
   SETTINGS_PREFERENCES: '@v1:settings:preferences',
   SETTINGS_API_KEY_FALLBACK: '@settings/api_key_fallback',
   COOKING_INPUT_DEFAULTS: '@v1:cooking:input_defaults',
-  COOKING_SESSION_HISTORY: '@v1:cooking:session:history',
   STORAGE_VERSION: '@v1:system:storageVersion',
   DIET_MEMORY: '@v1:diet:memory',
   CHAT_HISTORY: '@v1:chat:history',

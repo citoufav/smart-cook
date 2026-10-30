@@ -10,7 +10,6 @@ import { NutritionProvider } from '../src/contexts/NutritionContext';
 import { SettingsDrawerProvider } from '../src/contexts/SettingsDrawerContext';
 import { ChatBallProvider, useChatBall } from '../src/contexts/ChatBallContext';
 import { ChatSheetProvider, useChatSheet } from '../src/contexts/ChatSheetContext';
-import { MenuHistoryProvider } from '../src/contexts/MenuHistoryContext';
 import { FloatingBall } from '../src/components/FloatingBall';
 import { ChatBall } from '../src/components/ChatBall';
 import ChatSheet from '../src/components/ChatSheet';
@@ -47,13 +46,6 @@ function AppContent() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="onboard" />
-        <Stack.Screen
-          name="history"
-          options={{
-            headerShown: true,
-            presentation: 'modal',
-          }}
-        />
       </Stack>
       <FloatingBallsLayer />
       <NutritionBottomSheet />
@@ -108,9 +100,7 @@ export default function RootLayout() {
                   <ChatBallProvider>
                     <ChatSheetProvider>
                       <SettingsDrawerProvider>
-                        <MenuHistoryProvider>
                           <AppContent />
-                        </MenuHistoryProvider>
                       </SettingsDrawerProvider>
                     </ChatSheetProvider>
                   </ChatBallProvider>
