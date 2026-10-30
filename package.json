@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:tags": "node scripts/check-ingredient-tags.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "15",
