@@ -33,7 +33,7 @@ SmartCook is a React Native (Expo) mobile app that takes the ingredients and sea
 
 The app follows a clean layered architecture: **routing (app/)** → **components (src/components)** → **state (src/contexts)** → **services (src/services)** → **utils (src/utils)**, with shared types and constants. State is managed with React Context + `useReducer`.
 
-For a detailed breakdown of the data flow and state management, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For a detailed breakdown of the data flow and state management, see the code in `src/contexts` and `src/services`.
 
 ## Getting Started
 
@@ -89,7 +89,7 @@ SmartCook_demo/
 
 ## Development Records
 
-See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the update history, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deep dive into the architecture and data flow.
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the update history.
 
 ## About this project
 
