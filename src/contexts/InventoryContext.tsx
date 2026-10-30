@@ -207,6 +207,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         weight: typeof i.weight === 'number' ? i.weight : null,
         createDate: typeof i.createDate === 'string' && i.createDate ? i.createDate : now,
         updateDate: now,
+        ...(typeof i.expireDate === 'string' && i.expireDate ? { expireDate: i.expireDate } : {}),
       });
       existingNames.add(name);
     }

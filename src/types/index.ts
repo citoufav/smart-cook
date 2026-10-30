@@ -5,12 +5,15 @@ export interface Ingredient {
   weight: number | null;
   createDate: string;
   updateDate: string;
+  /** 过期日（ISO 字符串）。undefined = 未设置，库存页不提醒。R-5 过期提醒用 */
+  expireDate?: string;
 }
 
 export interface IngredientCreateInput {
   name: string;
   weight: number | null;
   createDate?: string;
+  expireDate?: string;
 }
 
 export interface Seasoning {
@@ -51,6 +54,10 @@ export interface UserPreferences {
   tastePreferences: string[];
   /** True once the first-launch onboarding has been completed or skipped */
   onboardingDone: boolean;
+  /** UI 与 AI 输出语言（BCP-47，如 'zh-CN'）。目前只有中文，R-1 i18n 用 */
+  locale: string;
+  /** 菜系 id 列表。目前恒为空，R-2 多菜系用；tastePreferences 仍是自由文本 */
+  cuisineIds: string[];
   lastPersonCount?: number;
   lastMealType?: string;
   lastCaloriePreference?: number;

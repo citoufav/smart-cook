@@ -14,6 +14,8 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, 'apiKey'> = {
   dietaryRestrictions: [],
   tastePreferences: [],
   onboardingDone: false,
+  locale: 'zh-CN',
+  cuisineIds: [],
   thinkingEnabled: false,
   reasoningEffort: 'high',
 };
