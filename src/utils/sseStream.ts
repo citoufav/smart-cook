@@ -20,7 +20,13 @@ export interface SSECallbacks {
   /** Callback when a tool_call delta is received (fires only when the model calls tools) */
   onToolCallDelta?: (toolCalls: { index: number; id?: string; name?: string; arguments: string }[]) => void;
   /** Stream ended; returns the fully concatenated result and tool_calls */
-  onDone: (fullContent: string, fullReasoning: string, toolCalls?: { id: string; name: string; arguments: string }[]) => void;
+  onDone: (
+    fullContent: string,
+    fullReasoning: string,
+    toolCalls?: { id: string; name: string; arguments: string }[],
+    /** stop / length / content_filter / tool_calls …；length 表示输出被截断 */
+    finishReason?: string,
+  ) => void;
   /** Callback on error */
   onError: (error: Error) => void;
 }
@@ -71,6 +77,7 @@ export function sseStreamFetch(
   let lastProcessedIndex = 0;
   let buffer = '';
   let settled = false; // onDone / onError 只触发一次
+  let finishReason: string | undefined;
 
   // Accumulate tool calls (grouped by index)
   const toolCallMap = new Map<number, AccumulatedToolCall>();
@@ -119,7 +126,9 @@ export function sseStreamFetch(
     if (jsonStr === '[DONE]') return;
     try {
       const parsed = JSON.parse(jsonStr);
-      const delta = parsed.choices?.[0]?.delta;
+      const choice = parsed.choices?.[0];
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      const delta = choice?.delta;
       if (!delta) return;
 
       if (delta.reasoning_content) {
@@ -196,12 +205,12 @@ export function sseStreamFetch(
     clearTimers();
 
     if (xhr.status >= 200 && xhr.status < 300) {
-      log.info(`SSE 流结束`, { totalChunks: sseChunkCount });
+      log.info(`SSE 流结束`, { totalChunks: sseChunkCount, finishReason });
       // Process the last event possibly remaining in the buffer
       processBuffer(true);
       const toolCalls: { id: string; name: string; arguments: string }[] = [];
       toolCallMap.forEach((v) => toolCalls.push({ id: v.id, name: v.name, arguments: v.arguments }));
-      callbacks.onDone(fullContent, fullReasoning, toolCalls.length > 0 ? toolCalls : undefined);
+      callbacks.onDone(fullContent, fullReasoning, toolCalls.length > 0 ? toolCalls : undefined, finishReason);
     } else {
       // Error handling
       if (xhr.status === 401) {

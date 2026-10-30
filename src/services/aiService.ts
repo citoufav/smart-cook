@@ -1,12 +1,19 @@
 import { z } from 'zod';
-import { UserPreferences, MenuProposal, ReasoningEffort, CookingSkill } from '../types';
+import { UserPreferences, ReasoningEffort, CookingSkill } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
 import { daysSince } from '../utils/daysSince';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
+import type { GeneratedDish } from './menuEditService';
 
 const log = logger('SVC:AI');
+
+/** 整份菜单的输出上限。非思考模式默认只有 8K，长菜单会被拦腰截断 */
+const MENU_MAX_TOKENS = 32_000;
+/** 单道菜的输出上限，正常只要几百 token */
+const DISH_MAX_TOKENS = 8_000;
+const TRUNCATED_MESSAGE = '输出达到上限被截断：菜品或步骤太多了。试试减少人数/菜数，或在设置里关掉思考模式再试一次。';
 
 // ---------------------------------------------------------------------------
 // AI 输出校验（zod）：字段级异常回退默认值（尽力渲染），结构级异常才报错
@@ -193,6 +200,26 @@ export const SKILL_DETAIL_PROMPT: Record<CookingSkill, string> = {
     + '但用量必须照常写克重（[食材名(Xg)]），系统要靠它扣库存。',
 };
 
+const STATUS_LABEL: Record<string, string> = { sufficient: '充足', low: '少量', out: '缺少' };
+
+function formatIngredientLines(
+  ingredients: { name: string; weight: number | null; createDate: string }[],
+): string {
+  if (ingredients.length === 0) return '库存中暂无食材。';
+  return [...ingredients]
+    .sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime())
+    .map((ing, i) => {
+      const days = daysSince(ing.createDate);
+      return `${i + 1}. ${ing.name}：${ing.weight !== null ? ing.weight + '克' : '重量未知'}（已存放${days}天）`;
+    })
+    .join('\n');
+}
+
+function formatSeasoningLines(seasonings: { name: string; status: string }[]): string {
+  if (seasonings.length === 0) return '库存中暂无调料记录。';
+  return seasonings.map((s) => `- ${s.name}：${STATUS_LABEL[s.status] || s.status}`).join('\n');
+}
+
 function buildStage1UserPrompt(
   ingredients: { name: string; weight: number | null; createDate: string }[],
   seasonings: { name: string; status: string }[],
@@ -202,21 +229,8 @@ function buildStage1UserPrompt(
   tastePreferences: string[] = [],
   cookingSkill: CookingSkill = 'beginner',
 ): string {
-  const statusLabel: Record<string, string> = { sufficient: '充足', low: '少量', out: '缺少' };
-
-  const ingredientLines = ingredients.length > 0
-    ? ingredients
-        .sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime())
-        .map((ing, i) => {
-          const days = daysSince(ing.createDate);
-          return `${i + 1}. ${ing.name}：${ing.weight !== null ? ing.weight + '克' : '重量未知'}（已存放${days}天）`;
-        })
-        .join('\n')
-    : '库存中暂无食材。';
-
-  const seasoningLines = seasonings.length > 0
-    ? seasonings.map((s) => `- ${s.name}：${statusLabel[s.status] || s.status}`).join('\n')
-    : '库存中暂无调料记录。';
+  const ingredientLines = formatIngredientLines(ingredients);
+  const seasoningLines = formatSeasoningLines(seasonings);
 
   const calorieText = requirement.caloriePreference
     ? `热量目标：每人约${requirement.caloriePreference}大卡，${requirement.personCount}人总计约${requirement.caloriePreference * requirement.personCount}大卡，请确保所有菜品热量总和接近此目标`
@@ -355,6 +369,9 @@ export function callAIStage1Stream(
     ],
     ...buildThinkingConfig(prefs),
     stream: true,
+    // 不设这个时非思考模式只有 8K 输出，长菜单会被拦腰截断，
+    // 然后 JSON.parse 失败被误报成"格式异常"。384K 是模型上限，写 32K 足够。
+    max_tokens: MENU_MAX_TOKENS,
     response_format: { type: 'json_object' },
   };
 
@@ -390,10 +407,15 @@ export function callAIStage1Stream(
         }
         callbacks.onData?.();
       },
-      onDone: (fullContent: string, fullReasoning: string, _toolCalls?: any) => {
+      onDone: (fullContent: string, fullReasoning: string, _toolCalls?: any, finishReason?: string) => {
         log.timeEnd('ai_stage1');
         const reasonTail = fullReasoning?.slice(-100) || '(空)';
-        log.debug('流结束', { totalChunks: chunkCount, contentLength: fullContent?.length || 0, reasoningLength: fullReasoning?.length || 0, reasoningTail: reasonTail });
+        log.debug('流结束', { totalChunks: chunkCount, contentLength: fullContent?.length || 0, reasoningLength: fullReasoning?.length || 0, reasoningTail: reasonTail, finishReason });
+        if (finishReason === 'length') {
+          log.error('输出被截断（finish_reason=length）');
+          callbacks.onError(new Error(TRUNCATED_MESSAGE));
+          return;
+        }
         if (!fullContent || fullContent.trim().length === 0) {
           log.error('AI 流式结束但未生成任何内容（只有思考链）');
           callbacks.onError(new Error('AI 未输出有效内容，请重试或关闭思考模式'));
@@ -421,58 +443,32 @@ export function callAIStage1Stream(
   );
 }
 
-function buildRegeneratePrompt(
-  currentMenu: MenuProposal,
-  modifyRequest: string,
-  requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
-  cookingSkill: CookingSkill = 'beginner',
-): string {
-  const calorieText = requirement.caloriePreference
-    ? `热量目标：每人约${requirement.caloriePreference}大卡`
-    : '';
-  const customText = requirement.customRequirement ? `特殊需求：${requirement.customRequirement}` : '';
 
-  return `【修改要求】
-${modifyRequest}
-
-【原需求】
-用餐人数：${requirement.personCount}人
-餐类：${requirement.mealType}
-${calorieText}
-${customText}
-
-【烹饪熟练度】
-${SKILL_DETAIL_PROMPT[cookingSkill] || SKILL_DETAIL_PROMPT.beginner}
-
-【当前完整菜谱 JSON】
-${JSON.stringify(currentMenu)}
-
-请根据上述修改要求，输出一份**完整的新菜谱 JSON**，要求：
-1. 结构与「当前完整菜谱 JSON」完全一致，所有字段都要包含（dishes、estimatedNutrition、missingItems、prepSteps、cookingSteps、preciseNutrition、summary、cookingOrderDescription、flavorDescription 等）
-2. 按修改要求调整 dishes、prepSteps、cookingSteps 等内容
-3. 重新计算 estimatedNutrition（总营养）、preciseNutrition（每菜营养）、missingItems（缺料清单）
-4. 更新 summary、cookingOrderDescription、flavorDescription 以反映修改
-5. 严格 JSON，只返回纯 JSON，禁止任何非 JSON 文本`;
-}
+// ---------------------------------------------------------------------------
+// 单菜生成（对话改菜谱用）
+// ---------------------------------------------------------------------------
 
 /**
- * Regenerate the full menu (used when the user modifies a recipe via AI chat)
- * Takes the current full menu + modification request and outputs a brand-new complete MenuProposal,
- * avoiding partial patches that would desync derived fields such as nutrition/missing items/summary.
- * This call disables thinking mode for faster responses.
+ * 一次只产出一道菜。对话里「换一道菜 / 加一道菜」走这里，
+ * 输出量只有几百 token，不会撞上 max_tokens 导致整段 JSON 被截断。
  */
-export function regenerateMenuStream(
-  currentMenu: MenuProposal,
-  modifyRequest: string,
-  requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
-  prefs: UserPreferences,
-  callbacks: {
-    onDone: (result: Stage1AIResult) => void;
-    onError: (error: Error) => void;
+export function generateOneDishStream(
+  instruction: string,
+  mode: 'add' | 'replace',
+  context: {
+    dishNames: string[];
+    ingredients: { name: string; weight: number | null; createDate: string }[];
+    seasonings: { name: string; status: string }[];
+    requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string };
+    dietaryRestrictions: string[];
+    tastePreferences: string[];
+    cookingSkill: CookingSkill;
   },
+  prefs: UserPreferences,
+  callbacks: { onDone: (dish: GeneratedDish) => void; onError: (error: Error) => void },
 ): SSEStreamController {
-  const userPrompt = buildRegeneratePrompt(currentMenu, modifyRequest, requirement, prefs.cookingSkill);
   const url = aiEndpoint(prefs);
+  const userPrompt = buildOneDishPrompt(instruction, mode, context);
 
   const body = {
     model: aiModel(prefs),
@@ -480,12 +476,13 @@ export function regenerateMenuStream(
       { role: 'system', content: SYSTEM_PROMPT_CN },
       { role: 'user', content: userPrompt },
     ],
-    thinking: { type: 'disabled' },
+    thinking: { type: 'disabled' as const },
     stream: true,
+    max_tokens: DISH_MAX_TOKENS,
     response_format: { type: 'json_object' },
   };
 
-  log.info('重新生成菜单开始', { modifyRequest: modifyRequest.slice(0, 50) });
+  log.info('单菜生成开始', { mode, instruction: instruction.slice(0, 50) });
 
   return sseStreamFetch(
     url,
@@ -494,25 +491,99 @@ export function regenerateMenuStream(
     {
       onReasoning: () => {},
       onContent: () => {},
-      onDone: (fullContent: string) => {
-        if (!fullContent || fullContent.trim().length === 0) {
+      onDone: (fullContent: string, _reasoning: string, _toolCalls?: any, finishReason?: string) => {
+        if (finishReason === 'length') {
+          callbacks.onError(new Error(TRUNCATED_MESSAGE));
+          return;
+        }
+        if (!fullContent || !fullContent.trim()) {
           callbacks.onError(new Error('AI 未输出有效内容，请重试'));
           return;
         }
         try {
-          const result = parseStage1Result(JSON.parse(fullContent), '');
-          log.info('重新生成菜单完成', { dishCount: result.dishes?.length || 0 });
-          callbacks.onDone(result);
+          const parsed = parseStage1Result(JSON.parse(fullContent), '');
+          const dish = parsed.dishes?.[0];
+          if (!dish || !dish.name) {
+            callbacks.onError(new Error('AI 没有给出菜品，请换个说法再试'));
+            return;
+          }
+          // 单菜模式：所有步骤都归这一道菜，dishName 统一覆盖，避免模型漏填
+          const prepSteps = (parsed.prepSteps ?? []).map((s: any, i: number) => ({
+            id: s.id || `prep-${i + 1}`,
+            ingredientName: s.ingredientName || '',
+            quantity: s.quantity || '',
+            dishName: dish.name,
+            description: s.description || '',
+            isCompleted: false,
+            order: i + 1,
+          }));
+          const cookingSteps = (parsed.cookingSteps ?? []).map((s: any, i: number) => ({
+            stepNumber: i + 1,
+            dishName: dish.name,
+            instruction: s.instruction || '',
+            isCompleted: false,
+          }));
+          log.info('单菜生成完成', { dish: dish.name, prepSteps: prepSteps.length, cookingSteps: cookingSteps.length });
+          callbacks.onDone({ dish, prepSteps, cookingSteps });
         } catch {
-          log.error('重新生成的 JSON 解析失败');
+          log.error('单菜生成的 JSON 解析失败');
           callbacks.onError(new Error('AI 返回格式异常，请重试'));
         }
       },
       onError: (error: Error) => {
-        log.error('重新生成菜单失败', error.message);
+        log.error('单菜生成失败', error.message);
         callbacks.onError(error);
       },
     },
-    120_000, // 2-minute timeout
+    120_000,
   );
+}
+
+function buildOneDishPrompt(
+  instruction: string,
+  mode: 'add' | 'replace',
+  context: {
+    dishNames: string[];
+    ingredients: { name: string; weight: number | null; createDate: string }[];
+    seasonings: { name: string; status: string }[];
+    requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string };
+    dietaryRestrictions: string[];
+    tastePreferences: string[];
+    cookingSkill: CookingSkill;
+  },
+): string {
+  const r = context.requirement;
+  const calorieText = r.caloriePreference
+    ? `热量目标：每人约${r.caloriePreference}大卡`
+    : '热量目标：不限';
+  const customText = r.customRequirement ? `特殊需求：${r.customRequirement}` : '';
+  const restrictionText = context.dietaryRestrictions.length > 0 ? `忌口：${context.dietaryRestrictions.join(', ')}` : '';
+  const tasteText = context.tastePreferences.length > 0 ? `口味与菜系偏好：${context.tastePreferences.join(', ')}` : '';
+
+  return `【本次任务】${mode === 'add' ? '新增' : '替换'}一道菜：${instruction}
+
+【已有菜品】（不要与这些重复）
+${context.dishNames.join('、') || '无'}
+
+【基本信息】
+用餐人数：${r.personCount}人
+餐类：${r.mealType}
+${calorieText}
+${customText}
+${restrictionText}
+${tasteText}
+
+【烹饪熟练度】
+${SKILL_DETAIL_PROMPT[context.cookingSkill] || SKILL_DETAIL_PROMPT.beginner}
+
+【库存食材】
+${formatIngredientLines(context.ingredients)}
+
+【库存调料】
+${formatSeasoningLines(context.seasonings)}
+
+【输出要求】
+只输出 1 道菜：dishes 数组长度必须为 1，prepSteps 与 cookingSteps 只写这道菜的。
+summary.description 用一句话说明这道菜；missingItems、preciseNutrition 可以是空数组。
+其余格式与上面的 JSON Schema 完全一致。`;
 }
