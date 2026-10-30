@@ -138,15 +138,9 @@ export interface MenuProposal {
   prepSteps?: PrepStep[];
   cookingSteps?: CookingStep[];
   preciseNutrition?: NutritionInfo[];
-  ingredientTags?: IngredientTag[];
 }
 
 // ============ AI-Generated Plan ============
-export interface IngredientTag {
-  name: string;
-  weight: number;
-  color: string;
-}
 
 export interface PrepStep {
   id: string;

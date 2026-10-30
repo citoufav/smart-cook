@@ -20,7 +20,6 @@ export function Stage3PrepContent() {
   const { setPreciseNutrition } = useNutrition();
   const personCount = state.session?.stages.requirement?.personCount ?? 1;
   const menuProposal = state.session?.stages.menu?.menuProposal;
-  const ingredientTags = menuProposal?.ingredientTags;
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
 
   const nutritionShownRef = useRef(false);
@@ -112,7 +111,7 @@ export function Stage3PrepContent() {
                         {step.quantity ? (
                           <Text style={styles.quantityText}>{step.quantity} </Text>
                         ) : null}
-                        <IngredientTagText text={step.description} ingredientTags={ingredientTags} />
+                        <IngredientTagText text={step.description} />
                       </Text>
                     </View>
                   ))}

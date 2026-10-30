@@ -2,7 +2,6 @@ import React from 'react';
 import { Text, StyleSheet } from 'react-native';
 import { COLORS, getTagColor } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
-import { IngredientTag } from '../types';
 import { parseIngredientTags } from '../utils/ingredientTagParser';
 
 /**
@@ -11,14 +10,10 @@ import { parseIngredientTags } from '../utils/ingredientTagParser';
  *
  * 切分逻辑在 utils/ingredientTagParser.ts —— 旧版本把正则和渲染混在这里，
  * 而那个正则会跨过 `]` 把相邻两个标签并成一个，界面上就会露出半截括号。
+ *
+ * 颜色由 getTagColor 按食材名散列得出，同一食材永远是同一个颜色。
  */
-export function IngredientTagText({
-  text,
-  ingredientTags,
-}: {
-  text: string;
-  ingredientTags?: IngredientTag[];
-}) {
+export function IngredientTagText({ text }: { text: string }) {
   const segments = parseIngredientTags(text);
 
   return (
@@ -29,11 +24,10 @@ export function IngredientTagText({
             <Text key={`t${index}`} style={tagStyles.plainText}>{seg.value}</Text>
           );
         }
-        const tagColor = ingredientTags?.find((t) => t.name === seg.value)?.color || getTagColor(seg.value);
         return (
           <Text
             key={`g${index}`}
-            style={[tagStyles.ingredientTag, { backgroundColor: tagColor }]}
+            style={[tagStyles.ingredientTag, { backgroundColor: getTagColor(seg.value) }]}
           >
             {seg.value}({seg.amount})
           </Text>

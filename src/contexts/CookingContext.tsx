@@ -66,7 +66,6 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
           prepSteps: mp.prepSteps?.length ? mp.prepSteps : legacyGp.prepSteps || [],
           cookingSteps: mp.cookingSteps?.length ? mp.cookingSteps : legacyGp.cookingSteps || [],
           preciseNutrition: mp.preciseNutrition?.length ? mp.preciseNutrition : legacyGp.preciseNutrition || [],
-          ingredientTags: mp.ingredientTags || legacyGp.ingredientTags,
         };
         const migrated: CookingState['session'] = {
           ...sess,

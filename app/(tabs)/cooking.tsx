@@ -238,7 +238,6 @@ export default function CookingEntryScreen() {
       prepSteps: result.prepSteps || [],
       cookingSteps: result.cookingSteps || [],
       preciseNutrition: result.preciseNutrition || [],
-      ingredientTags: result.ingredientTags || [],
     };
     const reasoningContent = result.reasoningContent || '';
 

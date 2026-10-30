@@ -16,7 +16,6 @@ import { IngredientTagText } from '../../src/components/IngredientTagText';
 export function Stage5CookingContent() {
   const { state } = useCooking();
   const menuProposal = state.session?.stages.menu?.menuProposal;
-  const ingredientTags = menuProposal?.ingredientTags;
   const [expandedDishIndex, setExpandedDishIndex] = useState(0);
 
   const cookingSteps = menuProposal?.cookingSteps;
@@ -72,10 +71,7 @@ export function Stage5CookingContent() {
                 <View style={styles.stepList}>
                   {steps.map((step) => (
                     <View key={step.stepNumber} style={styles.stepRow}>
-                      <IngredientTagText
-                        text={step.instruction}
-                        ingredientTags={ingredientTags}
-                      />
+                      <IngredientTagText text={step.instruction} />
                     </View>
                   ))}
                 </View>
