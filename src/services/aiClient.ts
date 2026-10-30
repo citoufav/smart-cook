@@ -8,7 +8,7 @@ import { UserPreferences } from '../types';
  * 把 aiHeaders 换成会话 token，aiEndpoint 换成自建网关地址，调用方一行都不用动。
  */
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
-const DEFAULT_MODEL = 'deepseek-v4-pro';
+const DEFAULT_MODEL = 'deepseek-flash';
 
 /** /chat/completions 的完整地址，容忍用户填的地址末尾带斜杠 */
 export function aiEndpoint(prefs: UserPreferences): string {

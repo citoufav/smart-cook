@@ -10,7 +10,7 @@ const log = logger('SVC:SETTINGS');
 export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, 'apiKey'> = {
   apiType: 'deepseek',
   apiUrl: 'https://api.deepseek.com',
-  modelName: 'deepseek-v4-pro',
+  modelName: 'deepseek-flash',
   dietaryRestrictions: [],
   tastePreferences: [],
   onboardingDone: false,
