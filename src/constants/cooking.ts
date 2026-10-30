@@ -9,8 +9,6 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
 };
 
-export const MAX_RETRY_COUNT = 3;
-
 export const PEOPLE_OPTIONS = [
   { label: '1人', value: 1 },
   { label: '2人', value: 2 },
@@ -35,23 +33,6 @@ export const CALORIE_OPTIONS = [
   { label: '1000卡', value: 1000 },
   { label: '自定义', value: -1 },
 ];
-
-export const CIRCLE_NUMBER_MAP: Record<string, number> = {
-  '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
-  '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
-};
-
-export const CHINESE_NUMBER_MAP: Record<string, number> = {
-  '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
-  '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
-};
-
-export const DEFAULT_TIMEOUT_MS = 120_000;
-export const MAX_RETRIES = 3;
-export const BASE_RETRY_DELAY_MS = 1000;
-export const MAX_PATCH_ATTEMPTS = 3;
-
-export const STEP_WIDTH = 62;
 
 export const DAILY_RECOMMENDED = {
   /** Chinese Dietary Guidelines: 2250 kcal for adult males / 1800 for females; use the average */
