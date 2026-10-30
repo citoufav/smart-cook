@@ -24,7 +24,7 @@ import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { Button } from './Button';
 import { useCustomAlert } from './CustomAlert';
-import { ApiType, ReasoningEffort, UserPreferences } from '../types';
+import { ApiType, CookingSkill, ReasoningEffort, UserPreferences } from '../types';
 import { validateApiKey } from '../utils/validation';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
@@ -43,6 +43,16 @@ const REASONING_OPTIONS: { label: string; value: ReasoningEffort }[] = [
 /** 老数据可能存着已下线的档位，读回时回退到 high */
 function pickReasoningEffort(value: string): ReasoningEffort {
   return REASONING_OPTIONS.some((o) => o.value === value) ? (value as ReasoningEffort) : 'high';
+}
+
+const COOKING_SKILL_OPTIONS: { label: string; value: CookingSkill; hint: string }[] = [
+  { label: '新手', value: 'beginner', hint: '每一步都写清火候、温度、时长和判断标准' },
+  { label: '家常', value: 'intermediate', hint: '火候和时长给范围，关键判断点写清楚' },
+  { label: '熟练', value: 'experienced', hint: '只写操作顺序和配料，细节省略（用量仍写克重）' },
+];
+
+function pickCookingSkill(value: string): CookingSkill {
+  return COOKING_SKILL_OPTIONS.some((o) => o.value === value) ? (value as CookingSkill) : 'beginner';
 }
 
 // ---- Dropdown selector ----
@@ -190,7 +200,10 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   );
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
   const [tasteTags, setTasteTags] = useState<string[]>([...preferences.tastePreferences]);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['diet', 'ai', 'data']));
+  const [cookingSkill, setCookingSkill] = useState<CookingSkill>(
+    pickCookingSkill(preferences.cookingSkill),
+  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['diet', 'skill', 'ai', 'data']));
 
   // Sync external state changes
   useEffect(() => {
@@ -202,7 +215,8 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       setReasoningEffort(pickReasoningEffort(preferences.reasoningEffort));
       setDietaryTags([...preferences.dietaryRestrictions]);
       setTasteTags([...preferences.tastePreferences]);
-      setExpandedSections(new Set(['diet', 'ai', 'data']));
+      setCookingSkill(pickCookingSkill(preferences.cookingSkill));
+      setExpandedSections(new Set(['diet', 'skill', 'ai', 'data']));
     }
   }, [visible, preferences]);
 
@@ -353,6 +367,30 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
             <>
               <DietaryTagInput tags={tasteTags} onTagsChange={handleTasteChange} placeholder="输入偏好，如：川菜、清淡" />
               <Text style={styles.itemCount}>{tasteTags.length} 项</Text>
+            </>
+          )}
+
+          {/* ---- Cooking skill ---- */}
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('skill')} activeOpacity={0.6}>
+            <Text style={styles.sectionHeaderText}>烹饪熟练度</Text>
+            <Text style={styles.chevron}>{expandedSections.has('skill') ? '▾' : '▸'}</Text>
+          </TouchableOpacity>
+          {expandedSections.has('skill') && (
+            <>
+              <View style={styles.chipRow}>
+                {COOKING_SKILL_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.reasoningChip, cookingSkill === opt.value && styles.reasoningChipActive]}
+                    onPress={() => { setCookingSkill(opt.value); autoSave({ cookingSkill: opt.value }); }}
+                  >
+                    <Text style={[styles.reasoningChipText, cookingSkill === opt.value && styles.reasoningChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                {COOKING_SKILL_OPTIONS.find((o) => o.value === cookingSkill)?.hint}
+              </Text>
             </>
           )}
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserPreferences, MenuProposal, ReasoningEffort } from '../types';
+import { UserPreferences, MenuProposal, ReasoningEffort, CookingSkill } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
@@ -149,8 +149,9 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
 6. 主食=菜品：米饭、馒头、面条、花卷、烙饼等主食与炒菜一样是独立菜品，必须包含在 dishes 中，有独立的 estimatedNutrition。
 
 【营养与搭配】
-7. 成年男性 600-800 大卡/餐，成年女性 500-600 大卡/餐。
-8. 早餐 300-500 大卡，20 分钟内可完成。
+7. 热量以用户消息里的「热量目标」为准。只有那里写"不限"时，才用这组默认区间：
+   成年男性 600-800 大卡/餐，成年女性 500-600 大卡/餐。
+8. 早餐 300-500 大卡，20 分钟内可完成（同样只在没有热量目标时作为参考）。
 9. 午餐/晚餐根据人数和热量目标合理搭配，荤素搭配，有主食。
 10. 中餐为主，1人份主料 150-300g。
 
@@ -166,10 +167,9 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
     ✅ 正确："淘洗[大米(200g)]，换水浸泡20分钟后沥干"
 
 【炒制步骤 — 重要】
-14. 新手友好：每一步操作写明确切的克数、温度和时间。
-    ✅ 正确："锅中加入[食用油(10g)]，烧至六成热（约160°C），放入[蒜末(5g)]爆香..."
-    ❌ 错误："水米比例1:1.2"、"油温适中"、"适量加水"、"焖至熟"
-    煮米饭等需要加水的操作：必须写确切水量，如"加入清水300g，大火煮沸后转小火焖15分钟"
+14. 描述写到多细，按用户消息里的【烹饪熟练度】执行——那里说了要写多细就写多细。
+    唯一不可省略的是用量：食材和调料一律写克重，任何熟练度都一样。
+    煮米饭等需要加水的操作，无论哪一档都要写确切水量，如"加入清水300g，大火煮沸后转小火焖15分钟"。
 15. cookingSteps.instruction 中用 [食材名(克重)] 引用食材。
     ✅ 正确："将[猪肉丝(150g)]倒入锅中，加入[清水(300g)]，大火煮沸"
 16. cookingSteps 格式：每条包含 stepNumber(从1递增)、dishName(对应菜品名)、instruction(炒制说明)、isCompleted(false)。
@@ -181,6 +181,18 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
 18. 食材不足时 dishes 数组不能为空，至少给出 1 道利用现有食材的简易菜（蛋炒饭、拌面、炒时蔬等）。
 19. 所有输出使用中文。`;
 
+/** 熟练度 → 描述详细程度。用量克重不在其中，任何档位都必须写。 */
+export const SKILL_DETAIL_PROMPT: Record<CookingSkill, string> = {
+  beginner:
+    '新手：每一步都要写清火候（如"六成热，约160°C"）、时长（如"大火煮沸后转小火焖15分钟"）、以及怎么判断（如"至边缘金黄"）。'
+    + '禁止"水米比例1:1.2""油温适中""适量加水""焖至熟"这类无法照着做的描述。',
+  intermediate:
+    '家常：火候和时长给范围即可（如"中火3-5分钟"），关键判断点写清楚；不必逐句标温度和克重之外的细节。',
+  experienced:
+    '熟练：只写操作顺序和关键配料，火候、时长、手法可以省略。'
+    + '但用量必须照常写克重（[食材名(Xg)]），系统要靠它扣库存。',
+};
+
 function buildStage1UserPrompt(
   ingredients: { name: string; weight: number | null; createDate: string }[],
   seasonings: { name: string; status: string }[],
@@ -188,6 +200,7 @@ function buildStage1UserPrompt(
   dietaryRestrictions: string[],
   recentMeals?: string[],
   tastePreferences: string[] = [],
+  cookingSkill: CookingSkill = 'beginner',
 ): string {
   const statusLabel: Record<string, string> = { sufficient: '充足', low: '少量', out: '缺少' };
 
@@ -225,6 +238,9 @@ ${customText}
 ${restrictionText}
 ${tasteText}
 ${dietMemoryText}
+
+【烹饪熟练度】
+${SKILL_DETAIL_PROMPT[cookingSkill] || SKILL_DETAIL_PROMPT.beginner}
 
 【库存食材】
 ${ingredientLines}
@@ -328,7 +344,7 @@ export function callAIStage1Stream(
     onError: (error: Error) => void;
   },
 ): SSEStreamController {
-  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences);
+  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences, prefs.cookingSkill);
   const url = aiEndpoint(prefs);
 
   const body = {
@@ -409,6 +425,7 @@ function buildRegeneratePrompt(
   currentMenu: MenuProposal,
   modifyRequest: string,
   requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
+  cookingSkill: CookingSkill = 'beginner',
 ): string {
   const calorieText = requirement.caloriePreference
     ? `热量目标：每人约${requirement.caloriePreference}大卡`
@@ -423,6 +440,9 @@ ${modifyRequest}
 餐类：${requirement.mealType}
 ${calorieText}
 ${customText}
+
+【烹饪熟练度】
+${SKILL_DETAIL_PROMPT[cookingSkill] || SKILL_DETAIL_PROMPT.beginner}
 
 【当前完整菜谱 JSON】
 ${JSON.stringify(currentMenu)}
@@ -451,7 +471,7 @@ export function regenerateMenuStream(
     onError: (error: Error) => void;
   },
 ): SSEStreamController {
-  const userPrompt = buildRegeneratePrompt(currentMenu, modifyRequest, requirement);
+  const userPrompt = buildRegeneratePrompt(currentMenu, modifyRequest, requirement, prefs.cookingSkill);
   const url = aiEndpoint(prefs);
 
   const body = {

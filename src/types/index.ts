@@ -47,6 +47,12 @@ export type ApiType = 'deepseek' | 'openai';
 /** DeepSeek 思考模式的档位。`low` 是 2026 版模型新增的，老版本只有 high/max */
 export type ReasoningEffort = 'low' | 'high' | 'max';
 
+/**
+ * 烹饪熟练度，决定步骤描述写到多细。
+ * 只影响火候/时长/判断标准这类说明，**不影响用量克重**——库存扣减依赖 dishes 里的精确克数。
+ */
+export type CookingSkill = 'beginner' | 'intermediate' | 'experienced';
+
 export interface UserPreferences {
   apiType: ApiType;
   apiKey: string;
@@ -66,6 +72,8 @@ export interface UserPreferences {
   lastCaloriePreference?: number;
   thinkingEnabled: boolean;
   reasoningEffort: ReasoningEffort;
+  /** 烹饪熟练度，喂给 AI 决定步骤描述的详细程度 */
+  cookingSkill: CookingSkill;
 }
 
 // ============ Cooking Requirement ============

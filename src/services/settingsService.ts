@@ -18,6 +18,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, 'apiKey'> = {
   cuisineIds: [],
   thinkingEnabled: false,
   reasoningEffort: 'high',
+  cookingSkill: 'beginner',
 };
 
 export async function saveApiKey(apiKey: string): Promise<void> {
