@@ -94,7 +94,7 @@
 **要什么**：
 
 - `expo-image-picker`（相机 + 相册，含权限弹窗）
-- 多模态调用——**注意 DeepSeek 当前无视觉能力**，要么换模型，要么走 R-3 的云端代理
+- 多模态调用——**已确认可行，不用换供应商**：官方 `deepseek-flash`（DeepSeek-V4.1-Flash-1017）的 `input_modalities` 是 `["text","image"]`，`deepseek-v4-pro` 只有 `["text"]`。所以只要把模型切到 flash 就能发图，不需要走 R-3 的云端代理。（2026-10-30 更正：此前记的"DeepSeek 无视觉能力"是错的）
 - 识别结果确认界面——**可复用 `cooking/inventory-update.tsx` 的批量勾选确认模式**，那块已经有「建议 vs 当前」的对照 UI
 
 **对架构无要求**：纯新增一个 service 函数 + 一个页面，不挡路。放后台做。
