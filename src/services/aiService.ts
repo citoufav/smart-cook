@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { UserPreferences, MenuProposal } from '../types';
-import { DEFAULT_TIMEOUT_MS, MAX_RETRIES, BASE_RETRY_DELAY_MS } from '../constants/cooking';
+import { UserPreferences, MenuProposal, ReasoningEffort } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
@@ -8,14 +7,6 @@ import { daysSince } from '../utils/daysSince';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 
 const log = logger('SVC:AI');
-
-/** 不可重试的错误（鉴权失败、参数错误、限流到顶等），直接抛出终止重试循环 */
-export class AINonRetryableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AINonRetryableError';
-  }
-}
 
 // ---------------------------------------------------------------------------
 // AI 输出校验（zod）：字段级异常回退默认值（尽力渲染），结构级异常才报错
@@ -137,7 +128,7 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
   };
 }
 
-function buildThinkingConfig(prefs: UserPreferences): { thinking: { type: 'enabled' | 'disabled' }; reasoning_effort?: 'high' | 'max' } {
+function buildThinkingConfig(prefs: UserPreferences): { thinking: { type: 'enabled' | 'disabled' }; reasoning_effort?: ReasoningEffort } {
   if (prefs.thinkingEnabled) {
     return {
       thinking: { type: 'enabled' },
@@ -145,31 +136,6 @@ function buildThinkingConfig(prefs: UserPreferences): { thinking: { type: 'enabl
     };
   }
   return { thinking: { type: 'disabled' } };
-}
-
-function getRetryDelay(attempt: number): number {
-  const base = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-  const jitter = Math.random() * 500;
-  return base + jitter;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾问。请严格遵循以下规则，每条规则附有示例。
@@ -189,26 +155,31 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
 10. 中餐为主，1人份主料 150-300g。
 
 【备菜步骤 — 重要】
-11. 相同食材、相同切配方式 → 必须合并为一个备菜步骤。
-    ✅ 正确：小葱共10g，切葱花。description: "取[小葱(10g)]洗净，切成葱花"（多道菜品共用时只写一条，说明总量）
-    ❌ 错误：小葱切葱花（紫菜蛋花汤）+ 小葱切葱花（凉拌西兰花）写成两个步骤
-12. prepSteps 格式：每条包含 id("prep-N")、ingredientName(食材名)、quantity(用量如"200g")、dishName(所属菜品名)、description(操作描述)、isCompleted(false)、order(从1递增)。
+11. 备菜按菜品分组，不跨菜合并：每道菜的备菜步骤各写各的，dishName 必须填。
+    同一食材被两道菜用到时，分别在各自的步骤里写各自的用量。
+    ✅ 正确：番茄炒蛋 → "取[番茄(200g)]洗净切块"；紫菜蛋花汤 → "取[番茄(100g)]切丁"（两条，各自属于对应菜品）
+    ❌ 错误：把两道菜的番茄合成一条 "取[番茄(300g)]洗净切块"（用户做了一个菜就不知道该切多少）
+12. 同一道菜内部，相同食材、相同切配方式仍然合并为一条（避免重复劳动）。
+    ✅ 正确：番茄炒蛋用不到两次番茄 → 只写 "取[番茄(200g)]洗净切块" 一条
+13. prepSteps 格式：每条包含 id("prep-N")、ingredientName(食材名)、quantity(用量如"200g")、dishName(所属菜品名)、description(操作描述)、isCompleted(false)、order(从1递增)。
     description 中用 [食材名(克重)] 引用食材。
     ✅ 正确："淘洗[大米(200g)]，换水浸泡20分钟后沥干"
 
 【炒制步骤 — 重要】
-13. 新手友好：每一步操作写明确切的克数、温度和时间。
+14. 新手友好：每一步操作写明确切的克数、温度和时间。
     ✅ 正确："锅中加入[食用油(10g)]，烧至六成热（约160°C），放入[蒜末(5g)]爆香..."
     ❌ 错误："水米比例1:1.2"、"油温适中"、"适量加水"、"焖至熟"
     煮米饭等需要加水的操作：必须写确切水量，如"加入清水300g，大火煮沸后转小火焖15分钟"
-14. cookingSteps.instruction 中用 [食材名(克重)] 引用食材。
+15. cookingSteps.instruction 中用 [食材名(克重)] 引用食材。
     ✅ 正确："将[猪肉丝(150g)]倒入锅中，加入[清水(300g)]，大火煮沸"
-15. cookingSteps 格式：每条包含 stepNumber(从1递增)、dishName(对应菜品名)、instruction(炒制说明)、isCompleted(false)。
+16. cookingSteps 格式：每条包含 stepNumber(从1递增)、dishName(对应菜品名)、instruction(炒制说明)、isCompleted(false)。
 
 【其他规则】
-16. 调料必须给出克重数字：油类、酱油、醋、料酒、盐、糖、淀粉等一律用 [调料名(Xg)] 格式，禁止"适量/少许/X勺"。只有粉状调料（花椒粉、胡椒粉、十三香等）可用1-5g范围。
-17. 食材不足时 dishes 数组不能为空，至少给出 1 道利用现有食材的简易菜（蛋炒饭、拌面、炒时蔬等）。
-18. 所有输出使用中文。`;
+17. dishes[].seasonings[].amount 写用量即可，允许"适量/少许"这类描述（那是给用户看采购清单的）。
+    但只要调料出现在 cookingSteps.instruction 里，就必须是确切克重：油类、酱油、醋、料酒、盐、糖、淀粉等一律用 [调料名(Xg)]，禁止"适量/少许/X勺"。
+    粉状调料（花椒粉、胡椒粉、十三香等）可用 1-5g 范围。
+18. 食材不足时 dishes 数组不能为空，至少给出 1 道利用现有食材的简易菜（蛋炒饭、拌面、炒时蔬等）。
+19. 所有输出使用中文。`;
 
 function buildStage1UserPrompt(
   ingredients: { name: string; weight: number | null; createDate: string }[],
@@ -264,16 +235,18 @@ ${seasoningLines}
 请严格按照以下 JSON Schema 返回，确保 dishes 数组至少包含 1 道菜品。
 
 【prepSteps 生成规则】
-- 覆盖所有需要切/洗/腌制的食材，相同切配方式必须合并为一个步骤
+- 按菜品分组：每道菜自己的备菜步骤，dishName 必须填，不要跨菜合并
+- 同一道菜内，相同食材 + 相同切配方式才合并为一条
 - description 中用 [食材名(克重)] 引用食材
-- 示例：多道菜都用到葱花 → 合并为 "取[小葱(10g)]洗净，切成葱花"
+- 示例：番茄炒蛋 → "取[番茄(200g)]洗净切块"；汤 → "取[番茄(100g)]切丁"（两条，分属两道菜）
 
 【cookingSteps 生成规则】
 - 按 cookingOrder 建议的顺序排列步骤，stepNumber 从 1 递增
 - instruction 中用 [食材名(克重)] 引用食材
 - 油、水、调料必须写确切克数，如 [食用油(10g)]、[清水(300g)]
+- missingItems[].type 只能是 "ingredient" 或 "seasoning"（下面示例里写的是 ingredient）
 
-JSON Schema：
+JSON Schema（数字与布尔按此写法，不要写成"克数""true或false"这类描述）：
 
 {
   "summary": {
@@ -285,12 +258,12 @@ JSON Schema：
     {
       "name": "菜名",
       "ingredients": [
-        { "name": "食材名", "estimatedWeight": 克数, "isInInventory": true或false }
+        { "name": "食材名", "estimatedWeight": 200, "isInInventory": true }
       ],
       "seasonings": [
-        { "name": "调料名", "amount": "用量描述", "isInInventory": true或false }
+        { "name": "调料名", "amount": "用量描述", "isInInventory": true }
       ],
-      "estimatedNutrition": { "calories": 大卡, "protein": 克, "fat": 克, "carbs": 克 }
+      "estimatedNutrition": { "calories": 350, "protein": 20, "fat": 12, "carbs": 40 }
     }
   ],
   "prepSteps": [
@@ -313,10 +286,10 @@ JSON Schema：
     }
   ],
   "preciseNutrition": [
-    { "calories": 大卡, "protein": 克, "fat": 克, "carbs": 克 }
+    { "calories": 350, "protein": 20, "fat": 12, "carbs": 40 }
   ],
   "missingItems": [
-    { "type": "ingredient或seasoning", "name": "名称", "suggestedAmount": "建议购买量", "forDish": "用于菜品名" }
+    { "type": "ingredient", "name": "名称", "suggestedAmount": "建议购买量", "forDish": "用于菜品名" }
   ],
   "cookingOrderDescription": "制作顺序简述",
   "flavorDescription": "风味特色简述"
@@ -334,107 +307,6 @@ export interface Stage1AIResult {
   prepSteps?: any[];
   cookingSteps?: any[];
   preciseNutrition?: any[];
-}
-
-export async function callAIStage1(
-  ingredients: { name: string; weight: number | null; createDate: string }[],
-  seasonings: { name: string; status: string }[],
-  requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
-  dietaryRestrictions: string[],
-  prefs: UserPreferences,
-  recentMeals?: string[],
-): Promise<Stage1AIResult> {
-  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences);
-  const url = aiEndpoint(prefs);
-
-  const body = {
-    model: aiModel(prefs),
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT_CN },
-      { role: 'user', content: userPrompt },
-    ],
-    ...buildThinkingConfig(prefs),
-    response_format: { type: 'json_object' },
-  };
-
-  const maskedKey = maskApiKey(prefs.apiKey);
-  log.info(`调用 API: ${url}, Key: ${maskedKey}`);
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const response = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: aiHeaders(prefs),
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          if (attempt >= MAX_RETRIES) {
-            throw new AINonRetryableError('请求过于频繁（429 限流），请稍后重试');
-          }
-          const retryAfter = response.headers.get('Retry-After');
-          const retrySeconds = retryAfter ? parseInt(retryAfter, 10) : NaN;
-          const waitMs = Number.isFinite(retrySeconds) && retrySeconds > 0
-            ? retrySeconds * 1000
-            : getRetryDelay(attempt);
-          log.warn(`429 限流，等待 ${waitMs}ms`);
-          await sleep(waitMs);
-          continue;
-        }
-        if (response.status === 400) {
-          // 部分兼容端点不支持 response_format：降级重试一次。
-          // 构造新 body 而非 delete，避免污染外层后续重试；降级失败视为不可重试。
-          const fallbackBody = { ...body } as Record<string, unknown>;
-          delete fallbackBody.response_format;
-          try {
-            const retryResponse = await fetchWithTimeout(url, {
-              method: 'POST',
-              headers: aiHeaders(prefs),
-              body: JSON.stringify(fallbackBody),
-            });
-            if (!retryResponse.ok) {
-              throw new AINonRetryableError('请求参数错误（400），请检查 API 地址与模型配置');
-            }
-            const retryData = await retryResponse.json();
-            const retryContent = retryData.choices?.[0]?.message?.content;
-            const retryReasoning = retryData.choices?.[0]?.message?.reasoning_content || '';
-            if (!retryContent) throw new Error('重试后 AI 返回内容为空');
-            return parseStage1Result(JSON.parse(retryContent), retryReasoning);
-          } catch (e) {
-            if (e instanceof AINonRetryableError) throw e;
-            throw new AINonRetryableError('请求参数错误（400），降级重试后仍失败，请检查模型是否支持 JSON Output');
-          }
-        }
-        if (response.status === 401) throw new AINonRetryableError('API Key 无效，请在设置中更新');
-        if (response.status === 403) throw new AINonRetryableError('访问被拒绝（403），请检查 API Key 权限');
-        if (response.status === 404) throw new AINonRetryableError('API 端点不存在（404），请检查 API 地址配置');
-        if (response.status >= 500) {
-          if (attempt < MAX_RETRIES) {
-            await sleep(getRetryDelay(attempt));
-            continue;
-          }
-          throw new AINonRetryableError(`AI 服务器错误（${response.status}）`);
-        }
-        // 其余未覆盖的状态码：不可重试，明确报出状态码，避免穿透到 response.json() 报假错
-        throw new AINonRetryableError(`请求失败（${response.status}），请检查 API 配置`);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      const reasoningContent = data.choices?.[0]?.message?.reasoning_content || '';
-      if (!content) throw new Error('AI 返回内容为空（JSON Output 模式下偶发，请重试）');
-      return parseStage1Result(JSON.parse(content), reasoningContent);
-    } catch (error: any) {
-      if (error instanceof AINonRetryableError) throw error;
-      if (error.name === 'AbortError') {
-        throw new Error('AI 请求超时（深度思考可能需要较长时间），是否重试？');
-      }
-      if (attempt >= MAX_RETRIES) throw error;
-      await sleep(getRetryDelay(attempt));
-    }
-  }
-  throw new Error('AI 调用达到最大重试次数');
 }
 
 /**
