@@ -8,6 +8,14 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Dead code removal
+
+**Removed** — `src/hooks/useSafeJsonParam.ts` (whole file), `findConditionByRule` from `healthConditions.ts`, and five unused validators from `src/utils/validation.ts` (only `validateApiKey` survives; the rest of the file's checks are inlined in the sheets that use them).
+
+**Why.** Deletion is the only refactor that cannot introduce a bug, and the safety net here is the six `check:*` scripts, which cover pure logic only — any change to a component is unprotected. Everything larger was left alone on purpose: `DishSheets.tsx` at ~1000 lines is three sheets sharing one shell (a module, not a god component), and `cooking.tsx` is one screen.
+
+**Left for later** — `detectLoop` in `app/(tabs)/cooking.tsx` is the only guesswork in the codebase with no test, and it is now marked with a `ponytail:` comment: extract it to `src/utils/loopDetect.ts` and add it to the check scripts the next time the generation flow is touched, not as a standalone refactor.
+
 ## 2026-11-01 — 存放方式：常温 / 冷藏 / 冷冻
 
 **Added** — every ingredient row on 库存 carries a small pill (常温 / 冷藏 / 冷冻) before the ↻ and 🗑 icons. Tap to cycle; the state is stored per ingredient. Tapping it does not reset 入库日期.

@@ -37,7 +37,10 @@ import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../
 import { SSEStreamController } from '../../src/utils/sseStream';
 import { generateId } from '../../src/utils/uuid';
 
-// Reasoning-loop detection: a chunk (5-80 chars) repeated 5 times in a row means an infinite loop
+// 思考链卡死检测：5~80 字的片段连续重复 5 次就当死循环，掐断后重试。
+// ponytail: 这段启发式是猜的，项目里唯一没有测试的逻辑，也没进 check 套件；
+// 判断错的表现是「生成莫名其妙中断」。下次要改生成流程时顺手把它抽成
+// src/utils/loopDetect.ts（纯函数）+ 加进 scripts/check-*.mjs，别单独为它开一轮重构。
 const LOOP_REPEAT_COUNT = 5;
 const LOOP_MIN_LEN = 5;
 const LOOP_MAX_LEN = 80;

@@ -25,11 +25,6 @@ export const HEALTH_CONDITIONS: HealthConditionPreset[] = [
   { label: '素食', rule: '素食：不用肉类、禽类、鱼类和海鲜' },
 ];
 
-/** 这条忌口是不是某个预设已经加进去的（用来点亮按钮） */
-export function findConditionByRule(rule: string): HealthConditionPreset | undefined {
-  return HEALTH_CONDITIONS.find((c) => c.rule === rule);
-}
-
 /**
  * 把选中的情况（存的是**名称**，比如「糖尿病」）展开成给模型看的一句话。
  * 预设的用表里那句写清的规则；自己加的（肾病等）原样带上 —— 用户知道自己该避什么，
