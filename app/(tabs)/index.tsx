@@ -27,12 +27,14 @@ import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
 import { InventoryProfileChip, InventoryProfileSheet } from '../../src/components/InventoryProfileSheet';
+import { useKeyboardHeight } from '../../src/hooks/useKeyboardHeight';
 import { daysSince } from '../../src/utils/daysSince';
 
 export default function InventoryScreen() {
   const { state, addIngredient, deleteIngredient, updateIngredient, addSeasoning, deleteSeasoning, updateSeasoning } = useInventory();
   const { hideBall } = useNutrition();
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+  const keyboardHeight = useKeyboardHeight();
 
   useFocusEffect(
     useCallback(() => {
@@ -324,7 +326,7 @@ export default function InventoryScreen() {
       )}
 
       {showForm && (
-        <View style={styles.formOverlay}>
+        <View style={[styles.formOverlay, { paddingBottom: SPACING.xxl + keyboardHeight }]}>
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>
               {editId ? '编辑' : '添加'}{activeTab === 'ingredients' ? '食材' : '调料'}

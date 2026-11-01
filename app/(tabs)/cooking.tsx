@@ -29,6 +29,7 @@ import { NutritionalData, InventoryCheckResult, SavedDish } from '../../src/type
 import { callAIStage1Stream } from '../../src/services/aiService';
 import { prepareReusedDishes, applyEdits } from '../../src/services/menuEditService';
 import { logger } from '../../src/utils/logger';
+import { useKeyboardHeight } from '../../src/hooks/useKeyboardHeight';
 import { DishPickerSheet } from '../../src/components/DishSheets';
 import { getRecentMeals } from '../../src/services/dietMemoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
@@ -62,6 +63,8 @@ export default function CookingEntryScreen() {
   const [reuseSelected, setReuseSelected] = useState<SavedDish[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+  // Modal 是独立窗口，系统不会帮它让开键盘，只能自己量了往上抬
+  const keyboardHeight = useKeyboardHeight();
   const [recentMeals, setRecentMeals] = useState<string[]>([]);
   const { showAlert } = useCustomAlert();
   const { openSettings } = useSettingsDrawer();
@@ -717,7 +720,7 @@ export default function CookingEntryScreen() {
         onRequestClose={() => setCustomModal(null)}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, { paddingBottom: SPACING.xxl + keyboardHeight }]}
           activeOpacity={1}
           onPress={() => setCustomModal(null)}
         >

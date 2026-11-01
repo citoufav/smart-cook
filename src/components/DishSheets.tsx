@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
   Switch,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
@@ -49,6 +51,16 @@ export function SheetShell({
   footer?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
+  const { height: windowHeight } = useWindowDimensions();
+  // 键盘弹起时：整个弹层往上让开（overlay 的 paddingBottom），
+  // 同时用**像素**重算 maxHeight —— 百分比是相对父容器算的，一旦哪天
+  // padding 没参与计算，88% 就会顶到屏幕外面去，弹层上半截被切掉
+  const sheetMaxHeight = Math.min(
+    windowHeight * 0.88,
+    windowHeight - keyboardHeight - insets.top - SPACING.lg,
+  );
+
   return (
     <Modal
       visible={visible}
@@ -61,12 +73,18 @@ export function SheetShell({
       statusBarTranslucent
       navigationBarTranslucent
     >
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, { paddingBottom: keyboardHeight }]}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View
           style={[
             styles.sheet,
-            { paddingBottom: Math.max(insets.bottom, SPACING.md) + SPACING.sm },
+            {
+              maxHeight: sheetMaxHeight,
+              // 键盘弹起时底部已经贴在键盘上，再按手势条留白就是多出来的一条空白
+              paddingBottom: keyboardHeight > 0
+                ? SPACING.md
+                : Math.max(insets.bottom, SPACING.md) + SPACING.sm,
+            },
           ]}
         >
           <View style={styles.sheetHeader}>

@@ -30,6 +30,7 @@ import { validateApiKey } from '../utils/validation';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { backupService, describeImport } from '../services/backupService';
 import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
@@ -194,6 +195,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const { preferences } = state;
   const { showAlert } = useCustomAlert();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { width: screenWidth } = useWindowDimensions();
   const panelWidth = screenWidth * 0.85;
 
@@ -371,7 +373,10 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
 
         <ScrollView
           style={styles.scrollArea}
-          contentContainerStyle={styles.scrollContent}
+          // 键盘弹起时多留出底部空间：抽屉不是 Modal，系统不会帮它让位，
+          // 多一截滚动余量至少能让输入框滚到键盘上方
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardHeight + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {/* ---- Dietary restrictions ---- */}
