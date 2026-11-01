@@ -8,18 +8,28 @@ No backend, no account, no tracking. All data stays on the device, and the AI is
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/01-inventory.png" width="180" alt="Inventory"></td>
-    <td><img src="docs/screenshots/04-cooking-tab.png" width="180" alt="What to cook today"></td>
-    <td><img src="docs/screenshots/03-dishes.png" width="180" alt="My dishes"></td>
-    <td><img src="docs/screenshots/05-dish-detail.png" width="180" alt="Dish detail"></td>
+    <td><img src="docs/screenshots/01-inventory.png" width="220" alt="Inventory"></td>
+    <td><img src="docs/screenshots/02-request.png" width="220" alt="What to cook today"></td>
+    <td><img src="docs/screenshots/03-menu.png" width="220" alt="Generated menu"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Inventory, with storage state</sub></td>
-    <td align="center"><sub>Ask the AI for a menu</sub></td>
-    <td align="center"><sub>Dishes you have cooked</sub></td>
-    <td align="center"><sub>Scale, prep, cook</sub></td>
+    <td align="center"><sub>1 · What is in the fridge</sub></td>
+    <td align="center"><sub>2 · Ask for a menu</sub></td>
+    <td align="center"><sub>3 · A whole menu, with the gaps marked</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/04-prep.png" width="220" alt="Prep steps"></td>
+    <td><img src="docs/screenshots/05-cooking.png" width="220" alt="Cooking steps"></td>
+    <td><img src="docs/screenshots/06-dishes.png" width="220" alt="My dishes"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>4 · Prep, dish by dish</sub></td>
+    <td align="center"><sub>5 · Then cook, step by step</sub></td>
+    <td align="center"><sub>Everything cooked is kept</sub></td>
   </tr>
 </table>
+
+<sub>Screenshots from the running app with demo data.</sub>
 
 ## Download
 
