@@ -6,7 +6,7 @@ import { useSettings } from '../src/contexts/SettingsContext';
 import { useInventory } from '../src/contexts/InventoryContext';
 import { SelectableChip } from '../src/components/SelectableChip';
 import { Button } from '../src/components/Button';
-import { useKeyboardAwareScroll } from '../src/hooks/useKeyboardAwareScroll';
+import { useKeyboardAwareScroll, type Measurable } from '../src/hooks/useKeyboardAwareScroll';
 import { validateApiKey } from '../src/utils/validation';
 import { COLORS } from '../src/constants/colors';
 import { TYPOGRAPHY } from '../src/constants/typography';
@@ -17,10 +17,22 @@ const DEEPSEEK_KEY_URL = 'https://platform.deepseek.com/api_keys';
 
 // Presets shown on first launch. Tapping a chip writes it into the same fields
 // the AI prompt already reads, so no extra merge/sync logic is needed.
-const CUISINES = ['家常菜', '川菜', '粤菜', '日式', '韩式', '意式', '东南亚', '美式'];
-const FLAVORS = ['清淡', '重口', '微辣', '酸辣', '鲜香', '甜口'];
-const ALLERGENS = ['花生', '坚果', '海鲜', '虾蟹', '乳制品', '鸡蛋', '麸质', '大豆'];
-const AVOIDANCES = ['不吃辣', '不吃猪肉', '不吃牛肉', '不吃羊肉', '不吃内脏', '不吃香菜', '不吃葱蒜'];
+const CUISINES = [
+  '家常菜', '川菜', '湘菜', '粤菜', '江浙菜', '东北菜', '西北菜', '云南菜',
+  '日式', '韩式', '泰式', '东南亚', '意式', '美式', '地中海',
+];
+const FLAVORS = [
+  '清淡', '少油', '重口', '微辣', '中辣', '特辣', '酸辣', '酸甜',
+  '咸鲜', '香辣', '孜然', '蒜香', '甜口',
+];
+const ALLERGENS = [
+  '花生', '坚果', '海鲜', '虾蟹', '贝类', '鱼类', '乳制品', '鸡蛋',
+  '麸质', '大豆', '芝麻', '芒果',
+];
+const AVOIDANCES = [
+  '不吃辣', '不吃猪肉', '不吃牛肉', '不吃羊肉', '不吃鸡肉', '不吃内脏',
+  '不吃海鲜', '不吃鸡蛋', '不吃香菜', '不吃葱蒜', '不吃姜', '不吃菌菇',
+];
 const PANTRY_STAPLES = [
   '鸡蛋', '番茄', '土豆', '洋葱', '青椒', '胡萝卜', '白菜', '西兰花',
   '豆腐', '猪肉', '鸡胸肉', '牛肉', '大米', '面条', '小葱', '大蒜',
@@ -44,17 +56,37 @@ function ChipGroup({
   items,
   selected,
   onChange,
+  addPlaceholder = '自己写一个',
+  onInputFocus,
 }: {
   title: string;
   items: string[];
   selected: string[];
   onChange: (next: string[]) => void;
+  addPlaceholder?: string;
+  /** 键盘弹起时把输入框滚上来；子组件自己持 ref，所以传节点不给 ref */
+  onInputFocus?: (node: Measurable | null) => void;
 }) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState('');
+  const inputRef = useRef<TextInput>(null);
+
+  // 预设之外的自己填的，也要显示成 chip（已选中状态），否则加完就看不见了
+  const extras = selected.filter((s) => !items.includes(s));
+  const all = [...items, ...extras];
+
+  const submit = () => {
+    const value = text.trim();
+    if (value && !selected.includes(value)) onChange([...selected, value]);
+    setText('');
+    setAdding(false);
+  };
+
   return (
     <View style={styles.group}>
       <Text style={styles.groupTitle}>{title}</Text>
       <View style={styles.chipWrap}>
-        {items.map((item) => (
+        {all.map((item) => (
           <SelectableChip
             key={item}
             label={item}
@@ -63,7 +95,38 @@ function ChipGroup({
             onPress={() => onChange(toggleIn(selected, item))}
           />
         ))}
+        {!adding && (
+          <TouchableOpacity
+            style={styles.addChip}
+            onPress={() => setAdding(true)}
+            activeOpacity={0.7}
+            accessibilityLabel={`添加${title}`}
+          >
+            <Text style={styles.addChipText}>＋</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {adding && (
+        <View style={styles.addRow}>
+          <TextInput
+            ref={inputRef}
+            style={styles.addInput}
+            value={text}
+            onChangeText={setText}
+            placeholder={addPlaceholder}
+            placeholderTextColor={COLORS.textTertiary}
+            maxLength={20}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={submit}
+            onFocus={() => onInputFocus?.(inputRef.current)}
+            accessibilityLabel={`${title}自定义输入`}
+          />
+          <Button title="加上" variant="primary" size="sm" onPress={submit} />
+          <Button title="取消" variant="ghost" size="sm" onPress={() => { setAdding(false); setText(''); }} />
+        </View>
+      )}
     </View>
   );
 }
@@ -72,7 +135,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { state: settingsState, updatePreferences, updateApiKey } = useSettings();
   const { state: invState, addIngredient } = useInventory();
-  const { scrollRef, onScroll, captureFocus } = useKeyboardAwareScroll();
+  const { scrollRef, onScroll, captureFocus, captureNode } = useKeyboardAwareScroll();
   const keyInputRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState(0);
@@ -222,14 +285,14 @@ export default function OnboardingScreen() {
         )}
         {step === 1 && (
           <>
-            <ChipGroup title="偏爱菜系" items={CUISINES} selected={taste} onChange={setTaste} />
-            <ChipGroup title="口味倾向" items={FLAVORS} selected={taste} onChange={setTaste} />
+            <ChipGroup title="偏爱菜系" items={CUISINES} selected={taste} onChange={setTaste} addPlaceholder="其他菜系，如：东北菜" onInputFocus={captureNode} />
+            <ChipGroup title="口味倾向" items={FLAVORS} selected={taste} onChange={setTaste} addPlaceholder="其他口味，如：咖喱" onInputFocus={captureNode} />
           </>
         )}
         {step === 2 && (
           <>
-            <ChipGroup title="过敏（务必勾选）" items={ALLERGENS} selected={avoid} onChange={setAvoid} />
-            <ChipGroup title="忌口" items={AVOIDANCES} selected={avoid} onChange={setAvoid} />
+            <ChipGroup title="过敏（务必勾选）" items={ALLERGENS} selected={avoid} onChange={setAvoid} addPlaceholder="其他过敏原，如：菠萝" onInputFocus={captureNode} />
+            <ChipGroup title="忌口" items={AVOIDANCES} selected={avoid} onChange={setAvoid} addPlaceholder="其他忌口，如：不吃苦瓜" onInputFocus={captureNode} />
           </>
         )}
         {step === 3 && (
@@ -276,7 +339,30 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     marginBottom: SPACING.md,
   },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, alignItems: 'center' },
+  addChip: {
+    width: 36,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BORDER_RADIUS.full,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: COLORS.textTertiary,
+  },
+  addChipText: { fontSize: 16, color: COLORS.textSecondary, fontWeight: '600' },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.sm },
+  addInput: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    fontSize: TYPOGRAPHY.bodySmall,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.surface,
+  },
 
   // API Key 那一步
   steps: {

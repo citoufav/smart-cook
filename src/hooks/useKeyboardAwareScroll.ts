@@ -4,7 +4,7 @@ import { Dimensions } from 'react-native';
 import { useKeyboardHeight } from './useKeyboardHeight';
 
 /** 只要能量位置就行，TextInput 和 View 都满足 */
-type Measurable = { measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void };
+export type Measurable = { measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void };
 
 /**
  * 让被键盘盖住的输入框自己滚到键盘上方。
@@ -62,5 +62,17 @@ export function useKeyboardAwareScroll() {
     [keyboardHeight, scrollToFocused],
   );
 
-  return { scrollRef, onScroll, captureFocus, keyboardHeight };
+  /**
+   * 同上，但直接给节点而不是 ref —— 子组件自己持有 ref、父组件不知道的类型时用这个，
+   * 免得为了传个 ref 把 prop 类型搞成 any。
+   */
+  const captureNode = useCallback(
+    (node: Measurable | null) => {
+      focusedRef.current = node;
+      if (keyboardHeight > 0) scrollToFocused(keyboardHeight);
+    },
+    [keyboardHeight, scrollToFocused],
+  );
+
+  return { scrollRef, onScroll, captureFocus, captureNode, keyboardHeight };
 }
