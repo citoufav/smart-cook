@@ -26,6 +26,8 @@ import { Stage3PrepContent } from '../../app/cooking/stage3-prep';
 import { Stage5CookingContent } from '../../app/cooking/stage5-cooking';
 
 const STAGE_LABELS = ['菜谱概览', '备菜步骤', '炒制步骤'];
+/** 最后一页（炒制）才有"完成做菜"，前面几页只给"下一步" */
+const LAST_PAGE = STAGE_LABELS.length - 1;
 
 interface CookingPagerProps {
   initialStage?: string;
@@ -92,15 +94,33 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
     };
   }, [historyMode, showChatBall, hideChatBall, setOnChatPressRef, recipeContext, showChatSheet]);
 
+  /**
+   * 翻页。**必须同时更新 currentPage**：
+   * 光 scrollTo 只能指望 onMomentumScrollEnd 回来补状态，
+   * 而"下一步"按钮点完用户马上会再点一次，状态没跟上就会原地不动。
+   */
+  const goToPage = useCallback(
+    (page: number) => {
+      const clamped = Math.max(0, Math.min(STAGE_KEYS.length - 1, page));
+      scrollRef.current?.scrollTo({ x: clamped * screenWidth, animated: true });
+      setCurrentPage(clamped);
+      const stageKey = STAGE_KEYS[clamped];
+      if (stageKey) {
+        dispatch({ type: 'SET_CURRENT_STAGE', payload: stageKey as any });
+      }
+    },
+    [screenWidth, dispatch],
+  );
+
   // Progress bar tap-to-jump + scroll sync
   // 注意：hooks 必须无条件调用，全部放在 early return 之前（rules-of-hooks）
   const handleProgressBarPress = useCallback(
     (stageKey: string) => {
       const idx = getStageIndex(stageKey as any);
       if (idx < 0) return;
-      scrollRef.current?.scrollTo({ x: idx * screenWidth, animated: true });
+      goToPage(idx);
     },
-    [screenWidth],
+    [goToPage],
   );
 
   // Scroll event: sync current page
@@ -151,15 +171,30 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
         </View>
       </ScrollView>
 
-      {/* Done button */}
+      {/*
+        底部按钮跟着页码走：
+        菜谱 / 备菜 是"下一步"，只有炒制页才是"完成做菜"。
+        以前三页共用一个绿色「完成做菜」，用户可能在菜谱页就点了，
+        然后以为整份菜做完了 —— 后面的备菜和炒制他根本没看见。
+      */}
       {!historyMode && (
-        <TouchableOpacity
-          style={styles.completeBtn}
-          onPress={() => setShowCompletion(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.completeBtnText}>完成做菜</Text>
-        </TouchableOpacity>
+        currentPage < LAST_PAGE ? (
+          <TouchableOpacity
+            style={styles.nextBtn}
+            onPress={() => goToPage(currentPage + 1)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.nextBtnText}>下一步</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.completeBtn}
+            onPress={() => setShowCompletion(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.completeBtnText}>完成做菜</Text>
+          </TouchableOpacity>
+        )
       )}
 
       <CookingProgressBar
@@ -207,6 +242,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   stageContent: { flex: 1 },
+  nextBtn: {
+    marginHorizontal: SPACING.lg,
+    marginVertical: SPACING.xs,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+  },
+  nextBtnText: {
+    fontSize: TYPOGRAPHY.body,
+    fontWeight: '700',
+    color: COLORS.textWhite,
+  },
   completeBtn: {
     marginHorizontal: SPACING.lg,
     marginVertical: SPACING.xs,
