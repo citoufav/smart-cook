@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -7,24 +7,112 @@ import {
   StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
-import { MenuProposal, DishPlan } from '../../src/types';
+import { useInventory } from '../../src/contexts/InventoryContext';
+import { useCustomAlert } from '../../src/components/CustomAlert';
+import { MenuProposal, DishPlan, NutritionalData } from '../../src/types';
 import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Card } from '../../src/components/Card';
-import { useSafeJsonParam } from '../../src/hooks/useSafeJsonParam';
-import { RequirementInput } from '../../src/types';
+import { applyEdits, MenuEdit } from '../../src/services/menuEditService';
+import { cookingProgressService } from '../../src/services/cookingProgressService';
+import { DishEditorSheet, AddDishSheet } from '../../src/components/DishSheets';
 
 export function Stage1MenuContent() {
-  const { state } = useCooking();
-  const { state: nutritionState } = useNutrition();
-  const requirement = useSafeJsonParam<RequirementInput>('requirement');
+  const { state, dispatch } = useCooking();
+  const { setPreciseNutrition, setEstimatedNutrition } = useNutrition();
+  const inventoryState = useInventory().state;
+  const { showAlert } = useCustomAlert();
   const [showReasoning, setShowReasoning] = useState(false);
+  const [editingDish, setEditingDish] = useState<DishPlan | null>(null);
+  const [addingDish, setAddingDish] = useState(false);
 
-  const menuProposal: MenuProposal | undefined = state.session?.stages.menu?.menuProposal;
-  const reasoningContent: string = state.session?.stages.menu?.reasoningContent || '';
+  const session = state.session;
+  const menuProposal: MenuProposal | undefined = session?.stages.menu?.menuProposal;
+  const requirement = session?.stages.requirement;
+  const reasoningContent: string = session?.stages.menu?.reasoningContent || '';
+
+  /** 把改动落进 session、同步营养面板，并写回本地记录 */
+  const commitMenu = useCallback(
+    (nextMenu: MenuProposal) => {
+      if (!session) return;
+      dispatch({ type: 'UPDATE_PLAN', payload: { menuProposal: nextMenu } });
+
+      const personCount = requirement?.personCount ?? 1;
+      const byDish: Record<string, NutritionalData> = {};
+      for (const d of nextMenu.dishes) {
+        const n = d.preciseNutrition ?? d.estimatedNutrition;
+        if (n) byDish[d.name] = { ...n, source: d.preciseNutrition ? 'precise' : 'estimated' };
+      }
+      if (Object.keys(byDish).length > 0) {
+        if (nextMenu.dishes.some((d) => d.preciseNutrition)) {
+          setPreciseNutrition(byDish, personCount);
+        } else {
+          setEstimatedNutrition(byDish, personCount);
+        }
+      }
+
+      const name = nextMenu.dishes.map((d) => d.name).join('、') || '菜单';
+      cookingProgressService
+        .save(
+          {
+            ...session,
+            stages: { ...session.stages, menu: { ...session.stages.menu!, menuProposal: nextMenu } },
+          } as any,
+          name,
+        )
+        .catch(() => {});
+    },
+    [session, requirement, dispatch, setPreciseNutrition, setEstimatedNutrition],
+  );
+
+  const runEdits = useCallback(
+    (edits: MenuEdit[]) => {
+      if (!menuProposal || !requirement || edits.length === 0) return;
+      const nextMenu = applyEdits(menuProposal, requirement, edits, {
+        inventoryNames: inventoryState.ingredients.map((i) => i.name),
+      });
+      commitMenu(nextMenu);
+    },
+    [menuProposal, requirement, inventoryState.ingredients, commitMenu],
+  );
+
+  const handleSaveDish = useCallback(
+    (edits: MenuEdit[]) => {
+      setEditingDish(null);
+      runEdits(edits);
+    },
+    [runEdits],
+  );
+
+  const handleDeleteDish = useCallback(
+    (dish: DishPlan) => {
+      showAlert({
+        title: `删掉「${dish.name}」？`,
+        message: '这道菜的食材、调料、备菜和炒制步骤会一起删掉，采购清单也会重新算。',
+        buttons: [
+          { text: '取消', style: 'cancel' },
+          {
+            text: '删掉',
+            style: 'destructive',
+            onPress: () => runEdits([{ op: 'remove_dish', dish: dish.name }]),
+          },
+        ],
+      });
+    },
+    [showAlert, runEdits],
+  );
+
+  const handleAddDish = useCallback(
+    (dish: DishPlan) => {
+      setAddingDish(false);
+      runEdits([{ op: 'add_dish', generated: dish }]);
+    },
+    [runEdits],
+  );
 
   if (!menuProposal) {
     return (
@@ -96,32 +184,39 @@ export function Stage1MenuContent() {
           </View>
         )}
 
-        {/* Dish list */}
-        {menuProposal.dishes.length === 0 ? (
-          <View style={styles.emptyDishesAlert}>
-            <Text style={styles.emptyDishesTitle}>暂无可搭配的完整菜品</Text>
+        {/* Dish list — 每道菜一张卡片，改和删都在卡片上 */}
+        <Card title={`菜品清单（${menuProposal.dishes.length} 道）`}>
+          {menuProposal.dishes.length === 0 && (
             <Text style={styles.emptyDishesText}>
-              当前食材较少，AI 暂未生成完整菜品。请查看下方的采购建议，前往采购后再试。
+              还没有菜品。点下面的「加一道菜」让 AI 想一道，或查看采购清单补齐食材。
             </Text>
-            {menuProposal.missingItems.length > 0 && (
-              <TouchableOpacity
-                style={styles.shoppingBtn}
-                onPress={() => router.push('/cooking/shopping-list')}
-              >
-                <Text style={styles.shoppingBtnText}>查看采购清单 →</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <Card title={`菜品清单（${menuProposal.dishes.length} 道）`}>
-          {menuProposal.dishes.map((dish: DishPlan, index: number) => (
-            <View key={dish.name} style={styles.dishBlock}>
+          )}
+
+          {menuProposal.dishes.map((dish, index) => (
+            <View key={dish.id} style={styles.dishBlock}>
               <View style={styles.dishHeader}>
                 <View style={styles.dishNumber}>
                   <Text style={styles.dishNumberText}>{index + 1}</Text>
                 </View>
-                <Text style={styles.dishName}>{dish.name}</Text>
+                <Text style={styles.dishName} numberOfLines={2}>{dish.name}</Text>
+                <TouchableOpacity
+                  style={styles.dishAction}
+                  onPress={() => setEditingDish(dish)}
+                  hitSlop={8}
+                  accessibilityLabel={`编辑 ${dish.name}`}
+                >
+                  <Ionicons name="create-outline" size={20} color={COLORS.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.dishAction}
+                  onPress={() => handleDeleteDish(dish)}
+                  hitSlop={8}
+                  accessibilityLabel={`删除 ${dish.name}`}
+                >
+                  <Ionicons name="trash-outline" size={19} color={COLORS.danger} />
+                </TouchableOpacity>
               </View>
+
               <View style={styles.ingredientList}>
                 {dish.ingredients.map((ing) => (
                   <View key={ing.name} style={styles.ingredientRow}>
@@ -135,14 +230,18 @@ export function Stage1MenuContent() {
                   </View>
                 ))}
               </View>
-              <View style={styles.seasoningList}>
-                {dish.seasonings.map((s) => (
-                  <View key={s.name} style={styles.seasoningRow}>
-                    <Text style={styles.seasoningName}>{s.name}</Text>
-                    <Text style={styles.seasoningAmount}>{s.amount}</Text>
-                  </View>
-                ))}
-              </View>
+
+              {dish.seasonings.length > 0 && (
+                <View style={styles.seasoningList}>
+                  {dish.seasonings.map((s) => (
+                    <View key={s.name} style={styles.seasoningRow}>
+                      <Text style={styles.seasoningName}>{s.name}</Text>
+                      <Text style={styles.seasoningAmount}>{s.amount}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {dish.estimatedNutrition && (
                 <View style={styles.nutritionMini}>
                   <Text style={styles.nutritionMiniText}>
@@ -152,8 +251,12 @@ export function Stage1MenuContent() {
               )}
             </View>
           ))}
+
+          <TouchableOpacity style={styles.addDishBtn} onPress={() => setAddingDish(true)} activeOpacity={0.7}>
+            <Ionicons name="add" size={18} color={COLORS.primary} />
+            <Text style={styles.addDishText}>加一道菜</Text>
+          </TouchableOpacity>
         </Card>
-        )}
 
         {/* Estimated nutrition */}
         <Card title="营养成分（初估）">
@@ -178,6 +281,14 @@ export function Stage1MenuContent() {
           </View>
         </Card>
       </ScrollView>
+
+      <DishEditorSheet
+        visible={!!editingDish}
+        dish={editingDish}
+        onClose={() => setEditingDish(null)}
+        onSave={handleSaveDish}
+      />
+      <AddDishSheet visible={addingDish} onClose={() => setAddingDish(false)} onAdd={handleAddDish} />
     </View>
   );
 }
@@ -195,7 +306,8 @@ const styles = StyleSheet.create({
   dishHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.sm },
   dishNumber: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', marginRight: SPACING.sm },
   dishNumberText: { fontSize: 13, fontWeight: '700', color: COLORS.textWhite },
-  dishName: { fontSize: TYPOGRAPHY.body, fontWeight: '700', color: COLORS.textPrimary },
+  dishName: { flex: 1, fontSize: TYPOGRAPHY.body, fontWeight: '700', color: COLORS.textPrimary },
+  dishAction: { paddingLeft: SPACING.sm },
   ingredientList: { marginLeft: 32 },
   ingredientRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 2 },
   ingredientName: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textBody, flex: 1 },
@@ -208,6 +320,18 @@ const styles = StyleSheet.create({
   seasoningAmount: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary },
   nutritionMini: { marginLeft: 32, marginTop: SPACING.xs },
   nutritionMiniText: { fontSize: 12, color: COLORS.textTertiary },
+  addDishBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.sm,
+  },
+  addDishText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary, fontWeight: '600' },
   missingAlert: { backgroundColor: '#FFF8E1', borderLeftWidth: 3, borderLeftColor: COLORS.warning, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.md },
   missingTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.warningText, marginBottom: SPACING.xs },
   missingItem: { fontSize: TYPOGRAPHY.caption, color: COLORS.warningText, marginBottom: 2 },
@@ -225,9 +349,6 @@ const styles = StyleSheet.create({
   reasoningHint: { fontSize: 11, color: COLORS.textTertiary },
   reasoningContent: { maxHeight: 250, paddingHorizontal: SPACING.md, paddingBottom: SPACING.md },
   reasoningText: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18 },
-  // Empty dish warning
-  emptyDishesAlert: { backgroundColor: '#FFF3E0', borderRadius: BORDER_RADIUS.md, padding: SPACING.lg, marginBottom: SPACING.md, borderLeftWidth: 3, borderLeftColor: COLORS.warning },
-  emptyDishesTitle: { fontSize: TYPOGRAPHY.body, fontWeight: '700', color: COLORS.warningText, marginBottom: SPACING.sm },
   emptyDishesText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, lineHeight: 20, marginBottom: SPACING.md },
 });
 

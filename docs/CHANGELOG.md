@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — A dish is a module; the chat assistant stops editing
+
+**Changed**
+
+- **A dish is now self-contained.** `DishPlan` gained `id` and owns its own `prepSteps`, `cookingSteps` and nutrition. The menu-level `prepSteps`, `cookingSteps` and `preciseNutrition` arrays are gone.
+
+  Before, one dish was spread across four parallel collections linked by different mechanisms: `dishes` (the object itself), `prepSteps`/`cookingSteps` (joined by `dishName` string), `preciseNutrition` (aligned by array index). Every add/remove/replace had to patch all four, and `preciseNutrition[3]` was the quiet failure mode — one off-by-one and calories land on the wrong dish while the totals still look right. Now adding a dish is `push`, removing is `filter`, and a dish can leave the menu and still exist on its own, which is the foundation the dish library needs.
+
+  Old sessions are migrated on restore: menu-level steps are distributed back into their dishes by `dishName`, `preciseNutrition` moves onto each dish by index, ids are generated, and **already-completed prep/cooking checkmarks are preserved** — the migration is idempotent, so running it twice changes nothing.
+
+- **The chat assistant no longer edits the recipe.** Deleting and changing a dish are deterministic operations that a button does better than a model. The `edit_menu` tool, the "allow recipe modification" switch, `RecipeChangeReview`, and the tool-call plumbing in `ChatSheet` are all removed.
+
+  The assistant is now a pure Q&A helper (how to judge oil temperature, how to cut something), and its system prompt says so: when the user wants a change, it points at the dish's edit button. This removes a whole failure class — telling the assistant "add some milk" got interpreted as a new dish, and a nameless dish fell through as "未命名菜品".
+
+- Adding a dish is the only AI-backed edit left. It lives behind「加一道菜」 on the menu page, generates exactly one dish, shows it for confirmation, then merges it.
+
+**Added**
+
+- Dish cards on the recipe overview page carry edit and delete actions. 「编辑」opens a sheet for the dish name, ingredient gram values, and adding/removing ingredients — step text is deliberately not hand-editable, because the `[ingredient(Ng)]` tags must stay consistent with the gram values and `applyEdits` already rewrites them.
+- `rename_dish` edit operation; because steps now belong structurally to a dish rather than by name, a rename needs no other bookkeeping.
+- Editing happens only on the recipe overview page. Prep and cooking pages are execution views — adding a dish halfway through prep would invalidate work already done.
+
+**Fixed**
+
+- `SettingsDrawer` had `['diet','skill','ai','data']` hardcoded as the expanded set, so 口味与菜系 was always collapsed while its neighbours were open. The set was also reset inside an effect that watched `preferences`, so changing any setting re-expanded everything. The collapse state now persists separately and defaults to all-open.
+- `updatePreferences` merged onto a stale `state.preferences` snapshot, so two quick setting changes could overwrite each other. It now merges onto a synchronously-updated ref, and storage failures are logged instead of silently swallowed.
+- A dish without a name used to be caught by zod as the string `'未命名菜品'` — which is truthy, so the "AI gave no dish" guard downstream never fired and a blank dish entered the menu. It now falls back to an empty string, nameless dishes are dropped, and an all-empty result reports "AI 没有给出菜品".
+
 ## 2026-10-30 — One copy of the menu records instead of two
 
 **Removed**
