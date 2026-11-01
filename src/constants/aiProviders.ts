@@ -1,39 +1,60 @@
 /**
  * AI 服务商预设。
  *
- * 只有**OpenAI 兼容协议**（`POST /chat/completions`）的服务商能进这张表 ——
- * 因为客户端只有一条请求/解析路径（见 services/aiClient.ts 与 sseStream.ts）。
+ * 只留**两种协议**、三家预设。理由：自己维护一堆厂商的地址和模型名是纯负担，
+ * 而几乎所有主流厂商都提供这两种兼容端点之一（Kimi、智谱、通义、SiliconFlow、
+ * OpenRouter、本地 Ollama/vLLM 基本都支持 OpenAI 兼容；DeepSeek 自己也提供
+ * Anthropic 兼容端点）。要接谁，选对应协议、把地址和模型名填进去就行。
  *
- * Anthropic 不在表里，是刻意的：它走 `POST /v1/messages`，认证用 `x-api-key` +
- * `anthropic-version`，流式事件结构也完全不同（content_block_delta 那套）。
- * 塞进下拉里只会得到一个"选了就用不了"的选项，真支持得写第二个适配器。
- *
- * 选定服务商只是**填一次**地址和模型名，之后字段仍可手改 —— 预设是省事，不是锁死。
+ * `protocol` 决定请求形状和流式解析方式（见 services/aiClient.ts、utils/sseStream.ts），
+ * 不是装饰字段 —— 选错协议会直接调不通。
  */
+import type { AIProtocol } from '../utils/aiRequest';
+
+export type { AIProtocol };
+
 export interface AIProviderPreset {
   id: string;
   label: string;
-  /** 空字符串 = 自定义，沿用用户当前填的 */
+  protocol: AIProtocol;
   baseUrl: string;
   /** 空字符串 = 让用户自己填模型名 */
   model: string;
+  /** 显示在下拉下方的说明 */
+  hint?: string;
 }
 
 export const AI_PROVIDERS: AIProviderPreset[] = [
-  { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
-  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  { id: 'moonshot', label: '月之暗面 Kimi', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  { id: 'zhipu', label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-  { id: 'qwen', label: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
-  { id: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: '' },
-  { id: 'custom', label: '自定义（OpenAI 兼容）', baseUrl: '', model: '' },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek（官方）',
+    protocol: 'openai',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-flash',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI 兼容',
+    protocol: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+    hint: '走 /chat/completions。用别家时改地址和模型名即可（Kimi、智谱、通义、Ollama…）',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic 兼容',
+    protocol: 'anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-5',
+    hint: '走 /v1/messages。DeepSeek 也提供 Anthropic 兼容端点（https://api.deepseek.com/anthropic）',
+  },
 ];
 
 export function findProvider(id: string): AIProviderPreset | undefined {
   return AI_PROVIDERS.find((p) => p.id === id);
 }
 
-/** 只有 DeepSeek 认 `thinking` / `reasoning_effort` 这两个字段，别家发过去可能直接 400 */
+/** 只有 DeepSeek 认 `thinking` / `reasoning_effort` 这两个字段 */
 export function isDeepSeekType(id: string): boolean {
   return id === 'deepseek';
 }

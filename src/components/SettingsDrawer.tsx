@@ -463,7 +463,8 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                 }}
               />
               <Text style={styles.hint}>
-                只有 OpenAI 兼容协议的服务商能用。Anthropic 是另一套协议（/v1/messages、x-api-key），暂不支持。
+                {findProvider(apiType)?.hint
+                  ?? '选一个协议，把地址和模型名填成你的服务商提供的即可。'}
               </Text>
 
               {isDeepSeekType(apiType) && (
@@ -523,7 +524,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                   <TextInput
                     ref={modelRef}
                     style={styles.input}
-                    placeholder="模型名称 (如 gpt-4o-mini)"
+                    placeholder="模型名称 (如 claude-sonnet-4-5)"
                     value={modelName}
                     onChangeText={setModelName}
                     placeholderTextColor={COLORS.textTertiary}

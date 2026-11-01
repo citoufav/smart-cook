@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserPreferences, ReasoningEffort, CookingSkill, DishPlan, SavedDish } from '../types';
+import { UserPreferences, CookingSkill, DishPlan, SavedDish } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
@@ -7,8 +7,7 @@ import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
 import { pickNumber, readNumber } from '../utils/looseNumber';
 import { MENU_FORMAT_EXAMPLE } from '../constants/menuFormatExample';
-import { isDeepSeekType } from '../constants/aiProviders';
-import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
+import { aiEndpoint, aiHeaders, aiModel, aiBody, aiProtocol } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
 const log = logger('SVC:AI');
@@ -231,19 +230,6 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
     cookingOrderDescription: parsed.cookingOrderDescription,
     flavorDescription: parsed.flavorDescription,
   };
-}
-
-function buildThinkingConfig(prefs: UserPreferences): { thinking?: { type: 'enabled' | 'disabled' }; reasoning_effort?: ReasoningEffort } {
-  // thinking / reasoning_effort 是 DeepSeek 的字段，别家收到未知参数可能直接 400，
-  // 所以非 DeepSeek 一律不传 —— 聊天补全请求对多余的键容忍度各家不一样，别赌
-  if (!isDeepSeekType(prefs.apiType)) return {};
-  if (prefs.thinkingEnabled) {
-    return {
-      thinking: { type: 'enabled' },
-      reasoning_effort: prefs.reasoningEffort,
-    };
-  }
-  return { thinking: { type: 'disabled' } };
 }
 
 export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾问。请严格遵循以下规则。
@@ -469,19 +455,17 @@ export function callAIStage1Stream(
   const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences, prefs.cookingSkill, reused);
   const url = aiEndpoint(prefs);
 
-  const body = {
-    model: aiModel(prefs),
+  const body = aiBody(prefs, {
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_CN },
       { role: 'user', content: userPrompt },
     ],
-    ...buildThinkingConfig(prefs),
-    stream: true,
     // 不设这个时非思考模式只有 8K 输出，长菜单会被拦腰截断，
     // 然后 JSON.parse 失败被误报成"格式异常"。384K 是模型上限，写 32K 足够。
-    max_tokens: MENU_MAX_TOKENS,
-    response_format: { type: 'json_object' },
-  };
+    maxTokens: MENU_MAX_TOKENS,
+    thinking: 'auto',
+    json: true,
+  });
 
   const maskedKey = maskApiKey(prefs.apiKey);
   log.info(`流式调用 API: ${url}, Key: ${maskedKey}`);
@@ -559,6 +543,7 @@ export function callAIStage1Stream(
       },
     },
     300_000, // 5-minute timeout
+    aiProtocol(prefs),
   );
 }
 
@@ -589,17 +574,16 @@ export function generateOneDishStream(
   const url = aiEndpoint(prefs);
   const userPrompt = buildOneDishPrompt(instruction, mode, context);
 
-  const body = {
-    model: aiModel(prefs),
+  const body = aiBody(prefs, {
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_CN },
       { role: 'user', content: userPrompt },
     ],
-    thinking: { type: 'disabled' as const },
-    stream: true,
-    max_tokens: DISH_MAX_TOKENS,
-    response_format: { type: 'json_object' },
-  };
+    maxTokens: DISH_MAX_TOKENS,
+    // 单道菜不需要长思考，明确关掉：省时间也省 token
+    thinking: 'off',
+    json: true,
+  });
 
   log.info('单菜生成开始', { mode, instruction: instruction.slice(0, 50) });
 
@@ -652,6 +636,7 @@ export function generateOneDishStream(
       },
     },
     120_000,
+    aiProtocol(prefs),
   );
 }
 

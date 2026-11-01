@@ -49,6 +49,7 @@ export interface SSEStreamController {
  * @param headers Request headers
  * @param callbacks Callbacks
  * @param timeoutMs Total timeout in milliseconds, defaults to 5 minutes
+ * @param protocol 流式解析协议：openai（choices[0].delta）或 anthropic（content_block_delta）
  */
 export function sseStreamFetch(
   url: string,
@@ -56,6 +57,7 @@ export function sseStreamFetch(
   headers: Record<string, string>,
   callbacks: SSECallbacks,
   timeoutMs: number = 300_000,
+  protocol: 'openai' | 'anthropic' = 'openai',
 ): SSEStreamController {
   const xhr = new XMLHttpRequest();
   xhr.open('POST', url, true);
@@ -121,11 +123,51 @@ export function sseStreamFetch(
 
   resetIdleTimer();
 
+  /** Anthropic 的事件名不靠 `event:` 行，JSON 里自带 type，所以只认 data 行就够 */
+  const handleAnthropicLine = (parsed: any): void => {
+    const type = parsed?.type;
+
+    if (type === 'content_block_delta') {
+      const delta = parsed.delta ?? {};
+      // 思考链和正文是两种 delta，别互相喂错
+      if (delta.type === 'thinking_delta' && delta.thinking) {
+        fullReasoning += delta.thinking;
+        callbacks.onReasoning(delta.thinking);
+        sseChunkCount++;
+      } else if (delta.type === 'text_delta' && delta.text) {
+        fullContent += delta.text;
+        callbacks.onContent(delta.text);
+        sseChunkCount++;
+      }
+      return;
+    }
+
+    if (type === 'message_delta') {
+      const stop = parsed.delta?.stop_reason;
+      // 我们的调用方只认 'length'（被截断），所以把 Anthropic 的 max_tokens 映射过去
+      if (stop === 'max_tokens') finishReason = 'length';
+      else if (stop) finishReason = stop;
+      return;
+    }
+
+    if (type === 'error') {
+      const msg = parsed.error?.message || 'AI 返回了错误';
+      log.error('Anthropic 流内错误', { message: msg });
+      finishWithError(new Error(msg));
+    }
+  };
+
   /** Parse a single SSE data line and merge deltas into the accumulators */
   const handleDataLine = (jsonStr: string): void => {
     if (jsonStr === '[DONE]') return;
     try {
       const parsed = JSON.parse(jsonStr);
+
+      if (protocol === 'anthropic') {
+        handleAnthropicLine(parsed);
+        return;
+      }
+
       const choice = parsed.choices?.[0];
       if (choice?.finish_reason) finishReason = choice.finish_reason;
       const delta = choice?.delta;

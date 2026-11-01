@@ -78,11 +78,11 @@ export function estimateTokens(text: string): number {
 }
 
 /** Keep context within maxTokens by trimming oldest messages first */
-export function trimContext(
-  messages: { role: string; content: string }[],
+export function trimContext<T extends { role: string; content: string }>(
+  messages: T[],
   maxTokens: number = 200_000,
   systemMessages: number = 3, // first 3 are system + recipe context
-): { role: string; content: string }[] {
+): T[] {
   const systemMsgs = messages.slice(0, systemMessages);
   let conversationMsgs = messages.slice(systemMessages);
 

@@ -1,7 +1,7 @@
 import { UserPreferences, DishPlan } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { trimContext } from './chatHistoryService';
-import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
+import { aiEndpoint, aiHeaders, aiBody, aiProtocol, type AIChatMessage } from './aiClient';
 
 /**
  * 菜谱助手**只回答问题和给建议，不改菜谱**。
@@ -86,7 +86,7 @@ export function callAIChatStream(
   const url = aiEndpoint(prefs);
   const recipeText = buildRecipeContextText(recipeContext);
 
-  let apiMessages = [
+  let apiMessages: AIChatMessage[] = [
     { role: 'system', content: CHAT_SYSTEM_PROMPT },
     { role: 'user', content: `以下是当前菜谱的完整信息，请在后续对话中基于此信息回答用户问题：\n\n${recipeText}` },
     { role: 'assistant', content: '好的，我已经了解了当前的菜谱。请问有什么可以帮助你的？' },
@@ -96,14 +96,12 @@ export function callAIChatStream(
   // Context length control: trim old messages when exceeding 200K tokens
   apiMessages = trimContext(apiMessages, MAX_CONTEXT_TOKENS, 3);
 
-  const body: Record<string, unknown> = {
-    model: aiModel(prefs),
+  const body = aiBody(prefs, {
     messages: apiMessages,
-    stream: true,
-    thinking: { type: 'disabled' },
     // 聊天回复不该很长，给个明确上限，避免异常输出把话费打飞
-    max_tokens: 4_096,
-  };
+    maxTokens: 4_096,
+    thinking: 'off',
+  });
 
   return sseStreamFetch(
     url,
@@ -122,5 +120,6 @@ export function callAIChatStream(
       onError: callbacks.onError,
     },
     120_000, // 2-minute timeout
+    aiProtocol(prefs),
   );
 }

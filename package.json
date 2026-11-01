@@ -12,7 +12,8 @@
     "check:tags": "node scripts/check-ingredient-tags.mjs",
     "check:edits": "node scripts/check-menu-edits.mjs",
     "check:dishes": "node scripts/check-dish-library.mjs",
-    "check:backup": "node scripts/check-backup.mjs"
+    "check:backup": "node scripts/check-backup.mjs",
+    "check:ai": "node scripts/check-ai-request.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "15",
