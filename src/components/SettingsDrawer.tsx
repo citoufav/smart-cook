@@ -30,7 +30,8 @@ import { validateApiKey } from '../utils/validation';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { backupService, describeImport } from '../services/backupService';
 import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
-import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
+import { useKeyboardAwareScroll } from '../hooks/useKeyboardAwareScroll';
+import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProviders';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
@@ -195,7 +196,6 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const { preferences } = state;
   const { showAlert } = useCustomAlert();
   const insets = useSafeAreaInsets();
-  const keyboardHeight = useKeyboardHeight();
   const { width: screenWidth } = useWindowDimensions();
   const panelWidth = screenWidth * 0.85;
 
@@ -203,6 +203,11 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const [showApiKey, setShowApiKey] = useState(false);
   const [modelName, setModelName] = useState(preferences.modelName);
   const [apiUrl, setApiUrl] = useState(preferences.apiUrl);
+  // 键盘弹起时把输入框滚到键盘上方（edge-to-edge 下系统不会自己滚）
+  const { scrollRef, onScroll, captureFocus, keyboardHeight } = useKeyboardAwareScroll();
+  const apiKeyRef = useRef<TextInput>(null);
+  const apiUrlRef = useRef<TextInput>(null);
+  const modelRef = useRef<TextInput>(null);
   const [apiType, setApiType] = useState<ApiType>(preferences.apiType);
   const [thinkingEnabled, setThinkingEnabled] = useState(preferences.thinkingEnabled);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
@@ -372,7 +377,10 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
         </View>
 
         <ScrollView
+          ref={scrollRef}
           style={styles.scrollArea}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
           // 键盘弹起时多留出底部空间：抽屉不是 Modal，系统不会帮它让位，
           // 多一截滚动余量至少能让输入框滚到键盘上方
           contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardHeight + insets.bottom }]}
@@ -434,22 +442,31 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           </TouchableOpacity>
           {expandedSections.has('ai') && (
             <>
-              <View style={styles.apiTypeRow}>
-                <TouchableOpacity
-                  style={[styles.apiTypeChip, apiType === 'deepseek' && styles.apiTypeChipActive]}
-                  onPress={() => { setApiType('deepseek'); autoSave({ apiType: 'deepseek' }); }}
-                >
-                  <Text style={[styles.apiTypeText, apiType === 'deepseek' && styles.apiTypeTextActive]}>DeepSeek</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.apiTypeChip, apiType === 'openai' && styles.apiTypeChipActive]}
-                  onPress={() => { setApiType('openai'); autoSave({ apiType: 'openai' }); }}
-                >
-                  <Text style={[styles.apiTypeText, apiType === 'openai' && styles.apiTypeTextActive]}>OpenAI 兼容</Text>
-                </TouchableOpacity>
-              </View>
+              <DropdownSelector
+                label="服务商"
+                options={AI_PROVIDERS.map((p) => ({ label: p.label, value: p.id }))}
+                selectedValue={apiType}
+                onSelect={(val) => {
+                  const preset = findProvider(val);
+                  setApiType(val as ApiType);
+                  // 预设只填一次：自定义/空值不覆盖用户已经填好的东西
+                  const patch: Partial<UserPreferences> = { apiType: val as ApiType };
+                  if (preset?.baseUrl) {
+                    setApiUrl(preset.baseUrl);
+                    patch.apiUrl = preset.baseUrl;
+                  }
+                  if (preset?.model) {
+                    setModelName(preset.model);
+                    patch.modelName = preset.model;
+                  }
+                  autoSave(patch);
+                }}
+              />
+              <Text style={styles.hint}>
+                只有 OpenAI 兼容协议的服务商能用。Anthropic 是另一套协议（/v1/messages、x-api-key），暂不支持。
+              </Text>
 
-              {apiType === 'deepseek' && (
+              {isDeepSeekType(apiType) && (
                 <>
                   <DropdownSelector
                     label="选择模型"
@@ -488,37 +505,64 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                 </>
               )}
 
-              {apiType === 'openai' && (
+              {!isDeepSeekType(apiType) && (
                 <>
                   <TextInput
+                    ref={apiUrlRef}
                     style={styles.input}
                     placeholder="API 地址 (如 https://api.openai.com/v1)"
                     value={apiUrl}
                     onChangeText={setApiUrl}
                     placeholderTextColor={COLORS.textTertiary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onFocus={captureFocus(apiUrlRef)}
                     onSubmitEditing={() => autoSave({ apiUrl })}
                     onBlur={() => { if (apiUrl.trim()) autoSave({ apiUrl: apiUrl.trim() }); }}
                   />
                   <TextInput
+                    ref={modelRef}
                     style={styles.input}
-                    placeholder="模型名称 (如 gpt-4o)"
+                    placeholder="模型名称 (如 gpt-4o-mini)"
                     value={modelName}
                     onChangeText={setModelName}
                     placeholderTextColor={COLORS.textTertiary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onFocus={captureFocus(modelRef)}
                     onSubmitEditing={() => autoSave({ modelName })}
                     onBlur={() => { if (modelName.trim()) autoSave({ modelName: modelName.trim() }); }}
                   />
                 </>
               )}
+              {isDeepSeekType(apiType) && (
+                <TextInput
+                  ref={apiUrlRef}
+                  style={styles.input}
+                  placeholder="API 地址 (默认 https://api.deepseek.com)"
+                  value={apiUrl}
+                  onChangeText={setApiUrl}
+                  placeholderTextColor={COLORS.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={captureFocus(apiUrlRef)}
+                  onSubmitEditing={() => autoSave({ apiUrl })}
+                  onBlur={() => { if (apiUrl.trim()) autoSave({ apiUrl: apiUrl.trim() }); }}
+                />
+              )}
 
               <Text style={styles.apiKeyLabel}>API Key: {maskedKey}</Text>
               <TextInput
+                ref={apiKeyRef}
                 style={styles.input}
                 placeholder="输入新的 API Key (sk-...)"
                 placeholderTextColor={COLORS.textTertiary}
                 value={apiKeyInput}
                 onChangeText={setApiKeyInput}
                 secureTextEntry={!showApiKey}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onFocus={captureFocus(apiKeyRef)}
               />
               <View style={styles.row}>
                 <TouchableOpacity onPress={() => setShowApiKey(!showApiKey)}>
@@ -619,18 +663,6 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     backgroundColor: COLORS.surface,
   },
-  apiTypeRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md },
-  apiTypeChip: {
-    flex: 1,
-    paddingVertical: SPACING.sm,
-    alignItems: 'center',
-    borderRadius: BORDER_RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-  },
-  apiTypeChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryBg },
-  apiTypeText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary },
-  apiTypeTextActive: { color: COLORS.primary, fontWeight: '600' },
   apiKeyLabel: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, marginBottom: SPACING.sm },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   linkText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary },

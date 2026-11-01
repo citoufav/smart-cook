@@ -7,6 +7,7 @@ import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
 import { pickNumber, readNumber } from '../utils/looseNumber';
 import { MENU_FORMAT_EXAMPLE } from '../constants/menuFormatExample';
+import { isDeepSeekType } from '../constants/aiProviders';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
@@ -232,7 +233,10 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
   };
 }
 
-function buildThinkingConfig(prefs: UserPreferences): { thinking: { type: 'enabled' | 'disabled' }; reasoning_effort?: ReasoningEffort } {
+function buildThinkingConfig(prefs: UserPreferences): { thinking?: { type: 'enabled' | 'disabled' }; reasoning_effort?: ReasoningEffort } {
+  // thinking / reasoning_effort 是 DeepSeek 的字段，别家收到未知参数可能直接 400，
+  // 所以非 DeepSeek 一律不传 —— 聊天补全请求对多余的键容忍度各家不一样，别赌
+  if (!isDeepSeekType(prefs.apiType)) return {};
   if (prefs.thinkingEnabled) {
     return {
       thinking: { type: 'enabled' },

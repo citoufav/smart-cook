@@ -29,7 +29,7 @@ import { NutritionalData, InventoryCheckResult, SavedDish } from '../../src/type
 import { callAIStage1Stream } from '../../src/services/aiService';
 import { prepareReusedDishes, applyEdits } from '../../src/services/menuEditService';
 import { logger } from '../../src/utils/logger';
-import { useKeyboardHeight } from '../../src/hooks/useKeyboardHeight';
+import { useKeyboardAwareScroll } from '../../src/hooks/useKeyboardAwareScroll';
 import { DishPickerSheet } from '../../src/components/DishSheets';
 import { getRecentMeals } from '../../src/services/dietMemoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
@@ -63,8 +63,9 @@ export default function CookingEntryScreen() {
   const [reuseSelected, setReuseSelected] = useState<SavedDish[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
-  // Modal 是独立窗口，系统不会帮它让开键盘，只能自己量了往上抬
-  const keyboardHeight = useKeyboardHeight();
+  // Modal 是独立窗口，系统不会帮它让开键盘；页面内的长输入框也要自己滚上来
+  const { scrollRef, onScroll, captureFocus, keyboardHeight } = useKeyboardAwareScroll();
+  const customRequestRef = useRef<TextInput>(null);
   const [recentMeals, setRecentMeals] = useState<string[]>([]);
   const { showAlert } = useCustomAlert();
   const { openSettings } = useSettingsDrawer();
@@ -500,7 +501,13 @@ export default function CookingEntryScreen() {
         onOpenDrawer={openSettings}
         right={<InventoryProfileChip onPress={() => setProfileSheetOpen(true)} />}
       />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: SPACING.xxl + keyboardHeight }]}
+      >
         <Text style={styles.title}>今天吃什么？</Text>
         <Text style={styles.subtitle}>告诉 AI 你的需求，让它为你搭配菜单</Text>
 
@@ -570,6 +577,7 @@ export default function CookingEntryScreen() {
 
         <Text style={styles.sectionTitle}>个性需求（可选）</Text>
         <TextInput
+          ref={customRequestRef}
           style={styles.customInput}
           placeholder="如：想吃辣的、清淡一点、不要猪肉、30分钟内"
           placeholderTextColor={COLORS.textTertiary}
@@ -578,6 +586,7 @@ export default function CookingEntryScreen() {
           multiline
           numberOfLines={4}
           textAlignVertical="top"
+          onFocus={captureFocus(customRequestRef)}
           accessibilityLabel="个性需求输入框"
         />
 

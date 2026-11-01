@@ -42,7 +42,19 @@ export interface InventoryState {
 }
 
 // ============ User Settings ============
-export type ApiType = 'deepseek' | 'openai';
+/**
+ * AI 服务商。全部是 **OpenAI 兼容协议**，客户端只有一条请求路径。
+ * 新增一家的成本 = 在 constants/aiProviders.ts 里加一行预设；
+ * 要支持 Anthropic 那种另一套协议的，得写第二个适配器，不是加个枚举值。
+ */
+export type ApiType =
+  | 'deepseek'
+  | 'openai'
+  | 'moonshot'
+  | 'zhipu'
+  | 'qwen'
+  | 'openrouter'
+  | 'custom';
 
 /** DeepSeek 思考模式的档位。`low` 是 2026 版模型新增的，老版本只有 high/max */
 export type ReasoningEffort = 'low' | 'high' | 'max';
