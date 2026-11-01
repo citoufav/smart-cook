@@ -49,8 +49,8 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
 
   // Initial page: jump to the last stage with data when viewing history
   const initialPage = historyMode
-    ? (session?.stages.menu?.menuProposal?.cookingSteps?.length ? 2
-        : session?.stages.menu?.menuProposal?.prepSteps?.length ? 1
+    ? (session?.stages.menu?.menuProposal?.dishes?.some((d) => d.cookingSteps.length) ? 2
+        : session?.stages.menu?.menuProposal?.dishes?.some((d) => d.prepSteps.length) ? 1
         : 0)
     : statusIndex < 0 ? 0 : statusIndex;
 
@@ -69,8 +69,6 @@ export default function CookingPager({ initialStage, historyMode }: CookingPager
     const mp = session?.stages?.menu?.menuProposal;
     return {
       dishes: mp?.dishes || [],
-      prepSteps: mp?.prepSteps || [],
-      cookingSteps: mp?.cookingSteps || [],
       sessionId: session?.id || '',
     };
   }, [session?.stages, session?.id]);

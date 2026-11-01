@@ -8,7 +8,6 @@ export const STORAGE_KEYS = {
   STORAGE_VERSION: '@v1:system:storageVersion',
   DIET_MEMORY: '@v1:diet:memory',
   CHAT_HISTORY: '@v1:chat:history',
-  CHAT_ALLOW_MODIFY: '@v1:chat:allow_modify',
 } as const;
 
 export const SECURE_STORE_KEY = 'secure_api_key';

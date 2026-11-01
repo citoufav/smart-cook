@@ -26,6 +26,7 @@ import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
 import { NutritionalData, InventoryCheckResult } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
+import { sumNutrition } from '../../src/services/menuEditService';
 import { getRecentMeals } from '../../src/services/dietMemoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
 import { SSEStreamController } from '../../src/utils/sseStream';
@@ -206,19 +207,8 @@ export default function CookingEntryScreen() {
       customRequirement: customRequest,
     };
 
-    // Sum nutrition per dish on the client side (do not rely on the root-level estimatedNutrition from AI)
-    const computedTotalNutrition = (result.dishes || []).reduce(
-      (sum: any, d: any) => {
-        if (d.estimatedNutrition) {
-          sum.calories += d.estimatedNutrition.calories || 0;
-          sum.protein += d.estimatedNutrition.protein || 0;
-          sum.fat += d.estimatedNutrition.fat || 0;
-          sum.carbs += d.estimatedNutrition.carbs || 0;
-        }
-        return sum;
-      },
-      { calories: 0, protein: 0, fat: 0, carbs: 0 },
-    );
+    // 总营养在客户端自己加：不信任 AI 给的根级 estimatedNutrition
+    const computedTotalNutrition = sumNutrition(result.dishes || []);
 
     const menuProposal = {
       dishes: result.dishes || [],
@@ -234,9 +224,6 @@ export default function CookingEntryScreen() {
       cookingOrderDescription: result.cookingOrderDescription || '',
       flavorDescription: result.flavorDescription || '',
       summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
-      prepSteps: result.prepSteps || [],
-      cookingSteps: result.cookingSteps || [],
-      preciseNutrition: result.preciseNutrition || [],
     };
     const reasoningContent = result.reasoningContent || '';
 

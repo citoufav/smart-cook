@@ -106,11 +106,26 @@ export interface DishNutrition {
   carbs: number;
 }
 
+/**
+ * 一道菜 = 一个自包含的模块。
+ *
+ * 菜名、食材、调料、热量、备菜步骤、炒制步骤全部挂在这里，不再有菜单级的
+ * prepSteps / cookingSteps / preciseNutrition 平行数组。带 id 是为了让菜品
+ * 可以脱离这份菜单单独存在（菜品库、历史菜单选菜都靠它）。
+ */
 export interface DishPlan {
+  id: string;
   name: string;
   ingredients: DishIngredient[];
   seasonings: DishSeasoning[];
   estimatedNutrition: DishNutrition;
+  /**
+   * AI 按最终克重重算的一份营养估算（同一份响应里给的 preciseNutrition）。
+   * 有值时营养面板按"精确"显示，没有就退回 estimatedNutrition。
+   */
+  preciseNutrition?: DishNutrition;
+  prepSteps: PrepStep[];
+  cookingSteps: CookingStep[];
 }
 
 export interface MenuSummary {
@@ -135,26 +150,25 @@ export interface MenuProposal {
   cookingOrderDescription: string;
   flavorDescription: string;
   summary: MenuSummary;
-  prepSteps?: PrepStep[];
-  cookingSteps?: CookingStep[];
-  preciseNutrition?: NutritionInfo[];
 }
 
 // ============ AI-Generated Plan ============
 
+/** 备菜步骤。归属由所在的 DishPlan 决定，不再用 dishName 挂靠 */
 export interface PrepStep {
   id: string;
   ingredientName: string;
   quantity: string;
   description: string;
-  dishName?: string;
   isCompleted: boolean;
+  /** 在这道菜内的序号，从 1 开始 */
   order: number;
 }
 
+/** 炒制步骤。归属由所在的 DishPlan 决定 */
 export interface CookingStep {
+  /** 在这道菜内的序号，从 1 开始 */
   stepNumber: number;
-  dishName: string;
   instruction: string;
   isCompleted: boolean;
 }

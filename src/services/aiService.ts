@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { UserPreferences, ReasoningEffort, CookingSkill } from '../types';
+import { UserPreferences, ReasoningEffort, CookingSkill, DishPlan } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
 import { daysSince } from '../utils/daysSince';
+import { generateId } from '../utils/uuid';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
-import type { GeneratedDish } from './menuEditService';
+import { attachStepsToDishes } from './menuEditService';
 
 const log = logger('SVC:AI');
 
@@ -111,36 +112,60 @@ const stage1ResultSchema = z
   .passthrough();
 
 /**
- * 校验并规范化 AI 返回的菜谱 JSON：
- * - 字段级异常回退默认值（缺 prep id/stepNumber 自动补齐）
- * - 结构级异常（根不是对象等）向上抛出，由调用方提示"返回格式异常"
+ * 校验并规范化 AI 返回的菜谱 JSON，并把 AI 输出的**平铺步骤按菜名挂回各自的菜**。
+ *
+ * AI 那份 JSON 保持扁平（prepSteps/cookingSteps 带 dishName），因为模型对这个形状
+ * 更熟、输出也更省 token；落到本地后统一变成 DishPlan 自包含结构，
+ * 之后加菜/删菜/改克数都不用再同步多个平行数组。
+ *
+ * - 字段级异常回退默认值；结构级异常（根不是对象等）向上抛出
+ * - 缺菜名的菜直接丢弃：没名字既显示不了也定位不到
+ * - 步骤找不到所属菜品时挂到第一道菜并告警（宁可串菜也不要静默丢步骤）
  */
 export function parseStage1Result(raw: unknown, reasoningContent: string): Stage1AIResult {
   const parsed = stage1ResultSchema.parse(raw);
-  // 没有菜名的菜既显示不了也定位不到，直接丢弃；上层收到空数组会提示"没有给出菜品"，
-  // 比塞一道空壳菜让人以为生成成功要好。
-  const dishes = parsed.dishes.filter((d) => d.name.trim().length > 0);
+
+  const dishes: DishPlan[] = parsed.dishes
+    .filter((d) => d.name.trim().length > 0)
+    .map((d, i) => ({
+      id: generateId(),
+      name: d.name.trim(),
+      ingredients: d.ingredients.map((i2) => ({ ...i2 })),
+      seasonings: d.seasonings.map((s) => ({ ...s })),
+      estimatedNutrition: { ...d.estimatedNutrition },
+      // preciseNutrition 是按 dishes 下标对齐的另一份估算，挂进对应的菜
+      preciseNutrition: parsed.preciseNutrition[i] ? { ...parsed.preciseNutrition[i] } : undefined,
+      prepSteps: [],
+      cookingSteps: [],
+    }));
+
   if (dishes.length < parsed.dishes.length) {
     log.warn('已丢弃缺少菜名的菜品', { dropped: parsed.dishes.length - dishes.length });
   }
-  const prepSteps = parsed.prepSteps.map((s, i) => ({
-    ...s,
-    id: s.id ?? `prep-${i + 1}`,
-  }));
-  const cookingSteps = parsed.cookingSteps.map((s, i) => ({
-    ...s,
-    stepNumber: s.stepNumber > 0 ? s.stepNumber : i + 1,
-  }));
+  if (dishes.length === 0) {
+    return {
+      dishes,
+      missingItems: parsed.missingItems,
+      reasoningContent,
+      summary: parsed.summary,
+      cookingOrderDescription: parsed.cookingOrderDescription,
+      flavorDescription: parsed.flavorDescription,
+    };
+  }
+
+  // 把 AI 输出的扁平步骤按 dishName 挂回各自的菜
+  const orphans = attachStepsToDishes(dishes, parsed.prepSteps, parsed.cookingSteps);
+  if (orphans > 0) {
+    log.warn('有步骤找不到所属菜品，已挂到第一道菜', { orphans });
+  }
+
   return {
-    summary: parsed.summary,
     dishes,
-    prepSteps,
-    cookingSteps,
-    preciseNutrition: parsed.preciseNutrition,
     missingItems: parsed.missingItems,
+    reasoningContent,
+    summary: parsed.summary,
     cookingOrderDescription: parsed.cookingOrderDescription,
     flavorDescription: parsed.flavorDescription,
-    reasoningContent,
   };
 }
 
@@ -336,16 +361,12 @@ JSON Schema（数字与布尔按此写法，不要写成"克数""true或false"�
 }
 
 export interface Stage1AIResult {
-  dishes: any[];
+  dishes: DishPlan[];
   missingItems: any[];
   reasoningContent: string;
   summary?: any;
-  estimatedNutrition?: any;
   cookingOrderDescription?: string;
   flavorDescription?: string;
-  prepSteps?: any[];
-  cookingSteps?: any[];
-  preciseNutrition?: any[];
 }
 
 /**
@@ -439,7 +460,11 @@ export function callAIStage1Stream(
             return;
           }
           log.info(`流式调用完成`, { dishCount, totalChunks: chunkCount });
-          log.debug('输出统计', { dishCount, prepSteps: result.prepSteps?.length, cookingSteps: result.cookingSteps?.length, preciseNutrition: result.preciseNutrition?.length });
+          log.debug('输出统计', {
+            dishCount,
+            prepSteps: result.dishes.reduce((n, d) => n + d.prepSteps.length, 0),
+            cookingSteps: result.dishes.reduce((n, d) => n + d.cookingSteps.length, 0),
+          });
           callbacks.onDone(result);
         } catch {
           log.error('流式返回的 JSON 解析失败');
@@ -479,7 +504,7 @@ export function generateOneDishStream(
     cookingSkill: CookingSkill;
   },
   prefs: UserPreferences,
-  callbacks: { onDone: (dish: GeneratedDish) => void; onError: (error: Error) => void },
+  callbacks: { onDone: (dish: DishPlan) => void; onError: (error: Error) => void },
 ): SSEStreamController {
   const url = aiEndpoint(prefs);
   const userPrompt = buildOneDishPrompt(instruction, mode, context);
@@ -525,24 +550,12 @@ export function generateOneDishStream(
             callbacks.onError(new Error('AI 给的菜没有食材，请说得更具体一点'));
             return;
           }
-          // 单菜模式：所有步骤都归这一道菜，dishName 统一覆盖，避免模型漏填
-          const prepSteps = (parsed.prepSteps ?? []).map((s: any, i: number) => ({
-            id: s.id || `prep-${i + 1}`,
-            ingredientName: s.ingredientName || '',
-            quantity: s.quantity || '',
-            dishName: dish.name,
-            description: s.description || '',
-            isCompleted: false,
-            order: i + 1,
-          }));
-          const cookingSteps = (parsed.cookingSteps ?? []).map((s: any, i: number) => ({
-            stepNumber: i + 1,
-            dishName: dish.name,
-            instruction: s.instruction || '',
-            isCompleted: false,
-          }));
-          log.info('单菜生成完成', { dish: dish.name, prepSteps: prepSteps.length, cookingSteps: cookingSteps.length });
-          callbacks.onDone({ dish, prepSteps, cookingSteps });
+          log.info('单菜生成完成', {
+            dish: dish.name,
+            prepSteps: dish.prepSteps.length,
+            cookingSteps: dish.cookingSteps.length,
+          });
+          callbacks.onDone(dish);
         } catch {
           log.error('单菜生成的 JSON 解析失败');
           callbacks.onError(new Error('AI 返回格式异常，请重试'));

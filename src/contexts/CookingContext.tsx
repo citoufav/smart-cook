@@ -11,6 +11,7 @@ import {
 import { VALID_TRANSITIONS } from '../constants/cooking';
 import { generateId } from '../utils/uuid';
 import { logger } from '../utils/logger';
+import { migrateMenuProposal } from '../services/menuEditService';
 
 type CookingAction =
   | { type: 'START_SESSION'; payload: { id: string; requirement: RequirementInput } }
@@ -56,25 +57,39 @@ function cookingReducer(state: CookingState, action: CookingAction): CookingStat
     case 'RESTORE_SESSION': {
       log.info('RESTORE_SESSION', { status: action.payload?.status });
       const sess = action.payload;
-      // Data migration: legacy data stored steps in stages.generatedPlan; backfill into menu.menuProposal
-      // reducer 必须是纯函数：通过创建新对象迁移，不得修改传入的 session
-      //（否则会同步污染列表页/进度页持有的同一对象）
+      if (!sess) return { ...state, error: null, session: null };
+
+      // 数据迁移（reducer 必须是纯函数：创建新对象，不改传入的 session）
+      // 1) 极老版本把步骤放在 stages.generatedPlan，先回填进 menuProposal
+      // 2) 老版本把步骤/营养放在菜单级的平行数组，migrateMenuProposal 会搬进各自的菜
       const legacyGp = (sess as any)?.stages?.generatedPlan;
-      if (sess && legacyGp && sess.stages.menu?.menuProposal) {
-        const mp = sess.stages.menu.menuProposal;
-        const merged = {
-          ...mp,
-          prepSteps: mp.prepSteps?.length ? mp.prepSteps : legacyGp.prepSteps || [],
-          cookingSteps: mp.cookingSteps?.length ? mp.cookingSteps : legacyGp.cookingSteps || [],
-          preciseNutrition: mp.preciseNutrition?.length ? mp.preciseNutrition : legacyGp.preciseNutrition || [],
-        };
-        const migrated: CookingState['session'] = {
+      const menuStage = sess.stages?.menu;
+      // 老数据结构在这里可能还带着菜单级的 prepSteps/cookingSteps，按 any 处理
+      const rawMenu: any = menuStage?.menuProposal;
+      if (!menuStage || !rawMenu) return { ...state, error: null, session: sess };
+
+      const withLegacy = legacyGp
+        ? {
+            ...rawMenu,
+            prepSteps: rawMenu.prepSteps?.length ? rawMenu.prepSteps : legacyGp.prepSteps || [],
+            cookingSteps: rawMenu.cookingSteps?.length ? rawMenu.cookingSteps : legacyGp.cookingSteps || [],
+            preciseNutrition: rawMenu.preciseNutrition?.length
+              ? rawMenu.preciseNutrition
+              : legacyGp.preciseNutrition || [],
+          }
+        : rawMenu;
+
+      const migrated = migrateMenuProposal(withLegacy);
+      if (!migrated) return { ...state, error: null, session: sess };
+
+      return {
+        ...state,
+        error: null,
+        session: {
           ...sess,
-          stages: { ...sess.stages, menu: { ...sess.stages.menu, menuProposal: merged } },
-        };
-        return { ...state, error: null, session: migrated };
-      }
-      return { ...state, error: null, session: sess };
+          stages: { ...sess.stages, menu: { ...menuStage, menuProposal: migrated } },
+        },
+      };
     }
 
     case 'SET_REQUIREMENT': {

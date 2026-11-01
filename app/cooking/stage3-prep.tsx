@@ -26,55 +26,38 @@ export function Stage3PrepContent() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!nutritionShownRef.current && menuProposal?.preciseNutrition) {
+      if (!nutritionShownRef.current && menuProposal) {
         nutritionShownRef.current = true;
-        if (menuProposal) {
-          const nutritionByDish: Record<string, NutritionalData> = {};
-          for (let i = 0; i < menuProposal.dishes.length; i++) {
-            const dish = menuProposal.dishes[i];
-            if (menuProposal.preciseNutrition[i]) {
-              nutritionByDish[dish.name] = {
-                ...menuProposal.preciseNutrition[i],
-                source: 'precise',
-              };
-            }
-          }
-          if (Object.keys(nutritionByDish).length > 0) {
-            setPreciseNutrition(nutritionByDish, personCount);
+        const nutritionByDish: Record<string, NutritionalData> = {};
+        for (const dish of menuProposal.dishes) {
+          const n = dish.preciseNutrition ?? dish.estimatedNutrition;
+          if (n) {
+            nutritionByDish[dish.name] = { ...n, source: dish.preciseNutrition ? 'precise' : 'estimated' };
           }
         }
+        if (Object.keys(nutritionByDish).length > 0) {
+          setPreciseNutrition(nutritionByDish, personCount);
+        }
       }
-    }, [state.session, menuProposal]),
+    }, [state.session, menuProposal, personCount, setPreciseNutrition]),
   );
 
-  const prepSteps = menuProposal?.prepSteps;
+  // 步骤已经挂在各自的菜里，分组是天然的，不需要再按 dishName 归并
+  const dishGroups = useMemo(
+    () =>
+      (menuProposal?.dishes ?? [])
+        .filter((d) => d.prepSteps.length > 0)
+        .map((d) => ({ dishId: d.id, dishName: d.name, steps: d.prepSteps })),
+    [menuProposal],
+  );
 
-  // Group prep steps by dish
-  const groupedPrepSteps = useMemo(() => {
-    if (!prepSteps) return [];
-    const map = new Map<string, typeof prepSteps>();
-    const ungrouped: typeof prepSteps = [];
-    for (const step of prepSteps) {
-      if (step.dishName) {
-        const list = map.get(step.dishName) || [];
-        list.push(step);
-        map.set(step.dishName, list);
-      } else {
-        ungrouped.push(step);
-      }
-    }
-    const result = [...map.entries()].map(([dishName, steps]) => ({ dishName, steps }));
-    if (ungrouped.length > 0) result.push({ dishName: '通用备菜', steps: ungrouped });
-    return result;
-  }, [prepSteps]);
-
-  if (!menuProposal || !prepSteps || prepSteps.length === 0) {
+  if (!menuProposal || dishGroups.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>暂无备菜数据</Text>
-          {menuProposal && !prepSteps && (
-            <Text style={styles.emptyHint}>AI 返回的生成方案中缺少备菜步骤，请返回重新生成</Text>
+          {menuProposal && (
+            <Text style={styles.emptyHint}>这份菜谱没有备菜步骤，可以直接看炒制</Text>
           )}
         </View>
       </View>
@@ -86,11 +69,11 @@ export function Stage3PrepContent() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>切菜备菜</Text>
 
-        {groupedPrepSteps.map((group, dishIndex) => {
+        {dishGroups.map((group, dishIndex) => {
           const isExpanded = expandedDishIndex === dishIndex;
 
           return (
-            <View key={group.dishName} style={styles.dishCard}>
+            <View key={group.dishId} style={styles.dishCard}>
               <TouchableOpacity
                 style={styles.dishHeader}
                 onPress={() => setExpandedDishIndex(isExpanded ? -1 : dishIndex)}
