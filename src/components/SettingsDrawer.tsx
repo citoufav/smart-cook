@@ -6,7 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
-  Switch,
   Animated,
   useWindowDimensions,
   StyleSheet,
@@ -25,7 +24,7 @@ import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { Button } from './Button';
 import { useCustomAlert } from './CustomAlert';
-import { ApiType, CookingSkill, ReasoningEffort, UserPreferences } from '../types';
+import { ApiType, CookingSkill, UserPreferences } from '../types';
 import { validateApiKey } from '../utils/validation';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { backupService, describeImport } from '../services/backupService';
@@ -35,22 +34,6 @@ import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProvi
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
-const DEEPSEEK_MODELS = [
-  { label: 'deepseek-v4-pro（旗舰，纯文本）', value: 'deepseek-v4-pro' },
-  { label: 'deepseek-flash（快速，支持图片）', value: 'deepseek-flash' },
-];
-
-const REASONING_OPTIONS: { label: string; value: ReasoningEffort }[] = [
-  { label: '低', value: 'low' },
-  { label: '高', value: 'high' },
-  { label: '最大', value: 'max' },
-];
-
-/** 老数据可能存着已下线的档位，读回时回退到 high */
-function pickReasoningEffort(value: string): ReasoningEffort {
-  return REASONING_OPTIONS.some((o) => o.value === value) ? (value as ReasoningEffort) : 'high';
-}
-
 const COOKING_SKILL_OPTIONS: { label: string; value: CookingSkill; hint: string }[] = [
   { label: '新手', value: 'beginner', hint: '每一步都写清火候、温度、时长和判断标准' },
   { label: '家常', value: 'intermediate', hint: '火候和时长给范围，关键判断点写清楚' },
@@ -209,10 +192,6 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const apiUrlRef = useRef<TextInput>(null);
   const modelRef = useRef<TextInput>(null);
   const [apiType, setApiType] = useState<ApiType>(preferences.apiType);
-  const [thinkingEnabled, setThinkingEnabled] = useState(preferences.thinkingEnabled);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
-    pickReasoningEffort(preferences.reasoningEffort),
-  );
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
   const [tasteTags, setTasteTags] = useState<string[]>([...preferences.tastePreferences]);
   const [cookingSkill, setCookingSkill] = useState<CookingSkill>(
@@ -227,8 +206,6 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       setModelName(preferences.modelName);
       setApiUrl(preferences.apiUrl);
       setApiType(preferences.apiType);
-      setThinkingEnabled(preferences.thinkingEnabled);
-      setReasoningEffort(pickReasoningEffort(preferences.reasoningEffort));
       setDietaryTags([...preferences.dietaryRestrictions]);
       setTasteTags([...preferences.tastePreferences]);
       setCookingSkill(pickCookingSkill(preferences.cookingSkill));
@@ -467,44 +444,11 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                   ?? '选一个协议，把地址和模型名填成你的服务商提供的即可。'}
               </Text>
 
-              {isDeepSeekType(apiType) && (
-                <>
-                  <DropdownSelector
-                    label="选择模型"
-                    options={DEEPSEEK_MODELS}
-                    selectedValue={modelName}
-                    onSelect={(val) => { setModelName(val); autoSave({ modelName: val }); }}
-                  />
-                  <View style={styles.switchRow}>
-                    <View style={styles.switchLabelWrap}>
-                      <Text style={styles.switchLabel}>思考模式</Text>
-                      <Text style={styles.switchHint}>开启后 AI 推理更精准，但生成时间更长</Text>
-                    </View>
-                    <Switch
-                      value={thinkingEnabled}
-                      onValueChange={(val) => { setThinkingEnabled(val); autoSave({ thinkingEnabled: val }); }}
-                      trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                      thumbColor="#fff"
-                    />
-                  </View>
-                  {thinkingEnabled && (
-                    <View style={styles.reasoningRow}>
-                      <Text style={styles.hint}>思考强度</Text>
-                      <View style={styles.chipRow}>
-                        {REASONING_OPTIONS.map((opt) => (
-                          <TouchableOpacity
-                            key={opt.value}
-                            style={[styles.reasoningChip, reasoningEffort === opt.value && styles.reasoningChipActive]}
-                            onPress={() => { setReasoningEffort(opt.value); autoSave({ reasoningEffort: opt.value }); }}
-                          >
-                            <Text style={[styles.reasoningChipText, reasoningEffort === opt.value && styles.reasoningChipTextActive]}>{opt.label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                </>
-              )}
+              {/*
+                DeepSeek 不再给模型 / 思考开关：默认 deepseek-flash + 高强度思考已经在
+                aiClient 里写死。能选的东西越多，小白越容易配错还看不出错在哪。
+                真要换模型，选「OpenAI 兼容」把地址填成 api.deepseek.com、模型名手填即可。
+              */}
 
               {!isDeepSeekType(apiType) && (
                 <>

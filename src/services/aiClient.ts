@@ -56,7 +56,7 @@ export interface AIChatInput {
   maxTokens: number;
   /**
    * 要不要开思考模式：
-   * - `auto` = 听用户设置
+   * - `auto` = 开（菜单生成用，强度固定 high）
    * - `off`  = 明确关掉（跑单道菜、聊天这种不需要长思考的场景）
    */
   thinking?: 'auto' | 'off';
@@ -64,18 +64,28 @@ export interface AIChatInput {
   json?: boolean;
 }
 
+/** 这家会不会真的返回思考过程。UI 用它决定要不要展示思考窗口，别展示一个永远空着的框 */
+export function aiSupportsThinking(prefs: UserPreferences): boolean {
+  return aiProtocol(prefs) === 'anthropic' || isDeepSeekType(prefs.apiType);
+}
+
 export function aiBody(prefs: UserPreferences, input: AIChatInput): Record<string, unknown> {
   const protocol = aiProtocol(prefs);
-  const wantThinking = input.thinking === 'auto' && prefs.thinkingEnabled;
-  // 只有 Anthropic 和 DeepSeek 认思考相关字段，别家一律不发
-  const supportsThinking = protocol === 'anthropic' || isDeepSeekType(prefs.apiType);
+  /**
+   * 思考模式**不再由用户选**：界面上的开关和强度都撤掉了。
+   * 菜单生成固定开、固定高强度；聊天和单道菜走 thinking:'off' 不受影响。
+   *
+   * 为什么不读 `prefs.thinkingEnabled`：老用户的这个值是 false，而界面已经没有
+   * 地方能把它打开 —— 读它等于让一部分人永远拿不到"默认就该有"的效果。
+   */
+  const wantThinking = input.thinking === 'auto';
 
   return buildChatBody({
     protocol,
     model: aiModel(prefs),
     messages: input.messages,
     maxTokens: input.maxTokens,
-    thinking: supportsThinking ? { enabled: wantThinking, effort: prefs.reasoningEffort } : undefined,
+    thinking: aiSupportsThinking(prefs) ? { enabled: wantThinking, effort: 'high' } : undefined,
     json: input.json,
   });
 }

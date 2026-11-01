@@ -7,7 +7,7 @@ import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
 import { pickNumber, readNumber } from '../utils/looseNumber';
 import { MENU_FORMAT_EXAMPLE } from '../constants/menuFormatExample';
-import { aiEndpoint, aiHeaders, aiModel, aiBody, aiProtocol } from './aiClient';
+import { aiEndpoint, aiHeaders, aiModel, aiBody, aiProtocol, aiSupportsThinking } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
 const log = logger('SVC:AI');
@@ -477,7 +477,7 @@ export function callAIStage1Stream(
     ingredientCount: ingredients.length,
     seasoningCount: seasonings.length,
   });
-  log.info(`API 配置`, { model: aiModel(prefs), thinkingEnabled: prefs.thinkingEnabled });
+  log.info(`API 配置`, { model: aiModel(prefs), thinking: aiSupportsThinking(prefs) ? '强制开启(high)' : '该服务商不支持' });
 
   log.time('ai_stage1');
 

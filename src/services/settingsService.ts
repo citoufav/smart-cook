@@ -16,7 +16,8 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, 'apiKey'> = {
   onboardingDone: false,
   locale: 'zh-CN',
   cuisineIds: [],
-  thinkingEnabled: false,
+  // 思考模式界面已撤掉，这里只作为默认值留着（aiClient 现在写死"生成菜单时开"）
+  thinkingEnabled: true,
   reasoningEffort: 'high',
   cookingSkill: 'beginner',
 };

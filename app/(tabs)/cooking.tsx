@@ -27,6 +27,7 @@ import HeaderBar from '../../src/components/HeaderBar';
 import { InventoryProfileChip, InventoryProfileSheet } from '../../src/components/InventoryProfileSheet';
 import { NutritionalData, InventoryCheckResult, SavedDish } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
+import { aiSupportsThinking } from '../../src/services/aiClient';
 import { prepareReusedDishes, applyEdits } from '../../src/services/menuEditService';
 import { logger } from '../../src/utils/logger';
 import { useKeyboardAwareScroll } from '../../src/hooks/useKeyboardAwareScroll';
@@ -709,7 +710,7 @@ export default function CookingEntryScreen() {
         thinkingText={thinkingText}
         isLooping={isLooping}
         onRetry={handleRetry}
-        showThinking={settingsState.preferences.thinkingEnabled}
+        showThinking={aiSupportsThinking(settingsState.preferences)}
       />
 
       <DishPickerSheet
