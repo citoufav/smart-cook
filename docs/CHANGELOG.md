@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Colour table gets a character-level fallback, and why not embeddings
+
+**Added**
+
+- `CHARACTER_HINTS`: when no whole keyword matches, the ingredient name is scanned for semantic morphemes — 菜/苗/笋/瓜/芽 → green, 肉/腩/腱/排/菇/菌 → brown, 鱼 → teal, 虾/蟹 → pink, 蛋/油 → yellow, 奶/酪 → blue, 米/面/薯/藕 → neutral, 豆 → bean-green.
+
+  A finite table against an open-ended ingredient vocabulary was the obvious objection: 鸡毛菜, 牛腩, 芝麻油 are not in the list. But Chinese ingredient names carry their category in the characters, so a second pass over morphemes covers "not in the table but guessable from the name" for far less data than enumerating names. Whole words are still matched first and by longest match, so 番茄酱 beats 番茄 and 豆角 beats 豆.
+
+- A handful of common gaps filled in the whole-word table: cooking oils, potatoes/yam/lotus root, noodles/bread/pasta.
+
+**Rejected — embeddings for colour.** The suggestion was to run a vector model and assign hues from the vector. Three reasons not to: (1) an embedding tells you ingredients are *similar*, not *what colour they should be* — turning a vector into a hue still needs an arbitrary mapping, so it solves a problem the app does not have; (2) similar hues are the opposite of what a reader wants within one dish, where the whole point is telling ingredients apart, and the per-menu assignment already guarantees that; (3) shipping or calling a model to pick a background tint is disproportionate to a cosmetic concern, and it would add another provider/key to an app that talks to exactly one API.
+
+  Anything genuinely unrecognised still gets a valid, distinct, non-colliding colour via the golden-angle fallback. The table is a *hint layer*, not a classifier — degrading to "clean but arbitrary" is acceptable; degrading to "missing" or "colliding" would not be.
+
+**Tests**: 鸡毛菜 → green, 牛腩 → brown, 芝麻油 → yellow (all pure character fallback), 小油菜 still green via whole word, and an unrecognised name still returns a valid `hsl()` pair.
+
 ## 2026-11-01 — Ingredient tags take the colour the ingredient actually has
 
 **Changed**

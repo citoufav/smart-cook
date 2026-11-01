@@ -98,22 +98,69 @@ const HUE_KEYWORDS: { family: keyof typeof FAMILIES; words: string[] }[] = [
   { family: 'teal', words: ['紫菜', '海带', '虾皮', '鱼'] },
   { family: 'purple', words: ['茄子', '紫甘蓝', '洋葱'] },
   { family: 'blue', words: ['牛奶', '酸奶', '奶酪', '黄油'] },
-  { family: 'neutral', words: ['大米', '米饭', '面粉', '面条', '馒头', '花卷', '年糕', '清水', '水', '盐', '糖', '白糖', '冰糖', '白胡椒', '味精', '鸡精'] },
+  { family: 'neutral', words: ['大米', '米饭', '面粉', '面条', '馒头', '花卷', '年糕', '清水', '水', '盐', '糖', '白糖', '冰糖', '白胡椒', '味精', '鸡精', '土豆', '山药', '芋头', '莲藕', '粉丝', '粉条', '面包', '吐司', '意面'] },
+  { family: 'yellow', words: ['食用油', '花生油', '菜籽油', '橄榄油', '香油'] },
 ];
 
+/**
+ * 认不出整词时，退一步看名字里的部件字。
+ *
+ * 表是有限的、食材是无限的，但中文食材名大多带语义词素：
+ * 菜/苗/笋/瓜/芽 基本是绿的，鱼/虾是青的，肉/腩/排是棕的，米/面/薯是米色的，豆是豆绿的。
+ * 这一层兜住"表里没有、但字面上猜得出来"的一大类，比一条条往表里塞划算得多。
+ */
+const CHARACTER_HINTS: { word: string; family: keyof typeof FAMILIES }[] = [
+  { word: '萝卜', family: 'orange' },
+  { word: '菜', family: 'green' },
+  { word: '苗', family: 'green' },
+  { word: '芽', family: 'green' },
+  { word: '笋', family: 'green' },
+  { word: '瓜', family: 'green' },
+  { word: '菇', family: 'brown' },
+  { word: '菌', family: 'brown' },
+  { word: '肉', family: 'brown' },
+  { word: '腩', family: 'brown' },
+  { word: '腱', family: 'brown' },
+  { word: '排', family: 'brown' },
+  { word: '鱼', family: 'teal' },
+  { word: '虾', family: 'pink' },
+  { word: '蟹', family: 'pink' },
+  { word: '蛋', family: 'yellow' },
+  { word: '奶', family: 'blue' },
+  { word: '酪', family: 'blue' },
+  { word: '油', family: 'yellow' },
+  { word: '米', family: 'neutral' },
+  { word: '面', family: 'neutral' },
+  { word: '薯', family: 'neutral' },
+  { word: '藕', family: 'neutral' },
+  { word: '豆', family: 'lime' },
+];
+
+/** 整词表拍平，避免每次查询都 flatMap */
+const WHOLE_WORDS = HUE_KEYWORDS.flatMap(({ family, words }) =>
+  words.map((word) => ({ word, family })),
+);
+
+/** 取最长命中：既要"番茄酱"压过"番茄"，也要"豆角"压过"豆" */
 function familyOf(name: string): keyof typeof FAMILIES | null {
   const key = name.trim();
   if (!key) return null;
-  // 先找更长的关键词，"番茄酱"要优先于"番茄"，"鸡蛋"优先于"蛋"
-  let best: { family: keyof typeof FAMILIES; len: number } | null = null;
-  for (const { family, words } of HUE_KEYWORDS) {
-    for (const w of words) {
-      if (key.includes(w) && (!best || w.length > best.len)) {
-        best = { family, len: w.length };
+
+  const longest = (entries: { word: string; family: keyof typeof FAMILIES }[]) => {
+    let found: { family: keyof typeof FAMILIES; len: number } | null = null;
+    for (const e of entries) {
+      if (key.includes(e.word) && (!found || e.word.length > found.len)) {
+        found = { family: e.family, len: e.word.length };
       }
     }
-  }
-  return best?.family ?? null;
+    return found;
+  };
+
+  const whole = longest(WHOLE_WORDS);
+  if (whole) return whole.family;
+
+  // 整词没命中，才退到部件字
+  return longest(CHARACTER_HINTS)?.family ?? null;
 }
 
 function colorFromHue(h: number, family: { s: number; l: number }): TagColor {

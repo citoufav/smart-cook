@@ -109,8 +109,14 @@ const twoGreens = buildMenuIngredientColorMap([dish(['小葱', '菠菜', '青椒
 const greenBgs = ['小葱', '菠菜', '青椒'].map((n) => twoGreens[n].bg);
 assert.equal(new Set(greenBgs).size, 3, `三种绿色食材撞色了：${JSON.stringify(greenBgs)}`);
 
-// 17. 表里没有的食材也要有颜色，且合法
+// 17. 表收不全，靠部件字兜底：整词没命中时看"菜/腩/油"这类语素
+assert.equal(hueOf('鸡毛菜'), 120, '带"菜"的应该按绿的算');
+assert.equal(hueOf('牛腩'), 24, '带"腩"的应该按肉的棕色算');
+assert.equal(hueOf('芝麻油'), 48, '带"油"的应该按油的黄色算');
+assert.equal(hueOf('小油菜'), 120, '整词优先，仍是绿');
+
+// 18. 真的认不出来的，也要有颜色且合法（只是语义上不保证）
 assert.ok(/hsl\(/.test(getTagColor('迷迭香').bg));
 assert.ok(/hsl\(/.test(getTagColor('迷迭香').text));
 
-console.log('✓ 食材标签解析与配色 17 项全部通过');
+console.log('✓ 食材标签解析与配色 18 项全部通过');
