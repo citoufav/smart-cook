@@ -26,7 +26,9 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
 **Also added — a multiplier on the dish card.** Opening a saved dish now has 「这次做多少」 (×0.5 / 原份量 / ×1.5 / ×2 / ×3). The grams, the seasoning amounts, the gram figures inside the prep and cooking steps, and the calorie figure all rescale together, purely locally via `scaleDish`.
 
-  It deliberately does **not** write back. Wanting to cook one dish at 1.5× tonight does not mean your saved recipe is now 1.5× — the library stays the recipe, the multiplier is a view. Scaling always starts from the stored dish, never from the previous scaled result, or every tap would compound.
+  Scaling **does not write back by itself** — wanting to cook one dish at 1.5× tonight does not mean your saved recipe is now 1.5×. So a 「保存这份用量」 button appears *only while the multiplier is off 1×*, and it asks for confirmation before overwriting, because the library only ever keeps the latest version. Nothing is written unless that button is pressed: leaving the screen restores the stored recipe.
+
+  Scaling always starts from the stored dish, never from the previous scaled result, or every tap would compound.
 
 **Also fixed — 清水 was on the shopping list.** The local check treated `isInInventory === false` as "you need to buy this", and water is never in anyone's ingredient inventory, so it was always flagged. `isAlwaysAvailable` is now an exact-name whitelist for tap water and its synonyms (水/清水/开水/凉白开/纯净水…), skipped when the shopping list is rebuilt and when the 需购买 tag is drawn. It is exact-match on purpose: 水淀粉 is starch and 矿泉水 is a product, and both must still be listed.
 

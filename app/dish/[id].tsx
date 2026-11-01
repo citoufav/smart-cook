@@ -82,6 +82,45 @@ export default function DishDetailScreen() {
     () => (shown ? shown.ingredients.reduce((n, i) => n + i.estimatedWeight, 0) : 0),
     [shown],
   );
+  // 倍数换算成人数只是个说明，允许它不整除（2 人份 ×1.5 = 3 人份）
+  const scaledPeople = dish ? Math.max(1, Math.round(dish.basePersonCount * factor)) : 1;
+
+  const handleSaveScaled = useCallback(() => {
+    if (!dish || !shown || factor === 1) return;
+    showAlert({
+      title: '保存这份用量？',
+      message: `会用 ${scaledPeople} 人份的用量覆盖「${dish.name}」原来的配方，旧用量不保留。`,
+      buttons: [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '保存',
+          onPress: async () => {
+            const next: SavedDish = {
+              ...dish,
+              name: shown.name,
+              ingredients: shown.ingredients.map((i) => ({ ...i })),
+              seasonings: shown.seasonings.map((s) => ({ ...s })),
+              estimatedNutrition: { ...shown.estimatedNutrition },
+              prepSteps: shown.prepSteps.map((s) => ({ ...s, isCompleted: false })),
+              cookingSteps: shown.cookingSteps.map((s) => ({ ...s, isCompleted: false })),
+              basePersonCount: scaledPeople,
+            };
+            const ok = await dishLibraryService.replace(next);
+            if (!ok) {
+              showAlert({
+                title: '没保存成功',
+                message: '写本地存储失败（可能是空间不足）。配方没变，可以再试一次。',
+                buttons: [{ text: '知道了' }],
+              });
+              return;
+            }
+            setDish(next);
+            setFactor(1);
+          },
+        },
+      ],
+    });
+  }, [dish, shown, factor, scaledPeople, showAlert]);
 
   return (
     <View style={styles.container}>
@@ -129,8 +168,14 @@ export default function DishDetailScreen() {
             <Text style={styles.scaleHint}>
               {factor === 1
                 ? '想多做或少做就选倍数，下面的克数和步骤会一起变'
-                : '下面的克数和步骤已按倍数换算；只影响这次查看，不改你存的配方'}
+                : `按 ≈${scaledPeople} 人份换算，下面的克数和步骤已跟着变。不保存的话，退出就恢复原配方`}
             </Text>
+            {factor !== 1 && (
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveScaled} activeOpacity={0.75}>
+                <Ionicons name="bookmark-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.saveBtnText}>保存这份用量</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <Text style={styles.sectionTitle}>食材</Text>
@@ -215,6 +260,19 @@ const styles = StyleSheet.create({
 
   scaleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   scaleHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 17, marginTop: SPACING.sm },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryBg,
+  },
+  saveBtnText: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '700', color: COLORS.primary },
 
   sectionTitle: {
     fontSize: TYPOGRAPHY.body,

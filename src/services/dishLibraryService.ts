@@ -66,6 +66,23 @@ class DishLibraryService {
     return touched;
   }
 
+  /**
+   * 覆盖一条已有记录（同一个 id）。
+   *
+   * 用在"把调整后的用量存回配方"：菜名不变，所以身份不变，只换内容和基准人数。
+   * 不做新增、不改 id —— 改名就是另一道菜，走 saveMenu。
+   */
+  async replace(dish: SavedDish): Promise<boolean> {
+    const items = await this.getAll();
+    const idx = items.findIndex((d) => d.id === dish.id);
+    if (idx < 0) return false;
+    const next = items.slice();
+    next[idx] = dish;
+    const ok = await this.saveAll(next);
+    if (ok) this.log.info('配方用量已更新', { id: dish.id, basePersonCount: dish.basePersonCount });
+    return ok;
+  }
+
   async remove(id: string): Promise<boolean> {
     const items = await this.getAll();
     const next = items.filter((d) => d.id !== id);
