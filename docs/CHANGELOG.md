@@ -8,6 +8,16 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Four chip groups, four sets of state (a regression I caused)
+
+**Fixed** — picking 西北菜 under 偏爱菜系 made it appear under 口味倾向 too, and picking 芒果 under 过敏 made it appear under 忌口. Screenshot-obvious, shipped for one turn.
+
+**Root cause**: onboarding kept one array for 菜系 + 口味 (`taste`) and another for 过敏 + 忌口 (`avoid`), which was harmless while each group only rendered its own preset list. The 「＋」 feature needs to render *selected values that are not presets* — `selected.filter(s => !items.includes(s))` — and that filter cannot tell which group a value came from. Hence the leak.
+
+**Fix**: four arrays, merged only at save time (`[...new Set([...cuisines, ...flavors])]`). The stored shape is unchanged — `tastePreferences` and `dietaryRestrictions` are still the two flat lists the prompts read — so this is purely a UI-state correction.
+
+  Worth noting the general shape of the mistake: adding a feature that *displays* existing state exposed a hidden assumption (one array = one group). The filter was correct; the state model was not.
+
 ## 2026-11-01 — Onboarding chip lists grow, and every group takes a "+"
 
 **Added** — the first-run 口味 and 忌口 steps had 8 and 6 presets; they now carry 15 cuisines, 13 flavours, 12 allergens and 12 avoidances. Every group also ends with a dashed **＋** that opens an inline field (20 chars, Enter or 加上 to commit).
