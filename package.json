@@ -20,7 +20,6 @@
   "dependencies": {
     "@expo/vector-icons": "15",
     "@react-native-async-storage/async-storage": "2.2",
-    "@react-native-community/netinfo": "11.4.1",
     "babel-preset-expo": "~54.0.10",
     "expo": "54",
     "expo-asset": "12",
@@ -30,7 +29,6 @@
     "expo-file-system": "~19.0.23",
     "expo-font": "~14.0.0",
     "expo-image-picker": "~17.0.11",
-    "expo-keep-awake": "15",
     "expo-linking": "8",
     "expo-router": "6",
     "expo-secure-store": "15",

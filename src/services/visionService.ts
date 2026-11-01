@@ -1,6 +1,6 @@
 import type { UserPreferences } from '../types';
 import { aiBody, aiEndpoint, aiHeaders, aiProtocol } from './aiClient';
-import { parseScannedIngredients } from '../utils/visionParse';
+import { parseScannedItems, type ScannedItems } from '../utils/visionParse';
 import { logger } from '../utils/logger';
 
 const log = logger('SVC:VISION');
@@ -9,11 +9,12 @@ const log = logger('SVC:VISION');
  * 提示词写在这个文件里，和 aiService 的菜谱提示词分开：
  * 这个是"只许报名字"的机械活，混进做饭那套规则只会让它自由发挥。
  */
-const SYSTEM_PROMPT = `你是厨房助理。看照片，列出画面里能吃的食材。
-只输出 JSON，形如：{"items":[{"name":"西红柿"}]}
+const SYSTEM_PROMPT = `你是厨房助理。看照片，列出画面里能吃的食材和用得到的调料。
+只输出 JSON，形如：{"items":[{"name":"西红柿","kind":"ingredient"},{"name":"生抽","kind":"seasoning"}]}
 规则：
+- 每条都必须带 kind：主料、配菜、主食写 ingredient；油盐酱醋、糖、料酒、淀粉、豆瓣酱、香料写 seasoning
 - 名字用常见中文说法，2~6 个字；不要写品牌、包装、数量、重量、做法
-- 调料也算（生抽、食用油、盐），但厨具、餐具、桌布、人不要写
+- 厨具、餐具、桌布、人不要写
 - 拿不准或看不清就跳过，宁少勿多
 - 不要解释，不要 markdown`;
 
@@ -23,7 +24,7 @@ const TIMEOUT_MS = 60000;
 
 export interface RecognizeResult {
   ok: boolean;
-  names: string[];
+  items: ScannedItems;
   /** 给用户看的一句话，失败时才有 */
   error?: string;
 }
@@ -88,25 +89,26 @@ export async function recognizeIngredients(
       log.error('识图请求失败', { status: res.status, detail });
       return {
         ok: false,
-        names: [],
+        items: { ingredients: [], seasonings: [] },
         error: `识别失败（HTTP ${res.status}）${detail ? `：${detail}` : ''}`,
       };
     }
 
     const raw = await res.json();
     const text = messageText(raw, protocol);
-    const names = parseScannedIngredients(text);
-    log.info('识图完成', { names: names.length, textLength: text.length });
-    if (names.length === 0) {
-      return { ok: false, names: [], error: '没认出食材，换个角度再拍一张试试' };
+    const items = parseScannedItems(text);
+    const total = items.ingredients.length + items.seasonings.length;
+    log.info('识图完成', { total, ingredients: items.ingredients.length, seasonings: items.seasonings.length });
+    if (total === 0) {
+      return { ok: false, items, error: '没认出食材，换个角度再拍一张试试' };
     }
-    return { ok: true, names };
+    return { ok: true, items };
   } catch (e: any) {
     const aborted = e?.name === 'AbortError';
     log.error('识图异常', { aborted, error: String(e) });
     return {
       ok: false,
-      names: [],
+      items: { ingredients: [], seasonings: [] },
       error: aborted ? '识别超时了，网络慢或图片太大' : `识别失败：${String(e?.message ?? e).slice(0, 120)}`,
     };
   } finally {

@@ -223,20 +223,28 @@ export default function InventoryScreen() {
   }, [activeTab, deleteIngredient, deleteSeasoning, showAlert]);
 
   /**
-   * 拍照识别回来的食材：逐个写库。
-   * 重量留空（照片里看不出克数）、日期默认今天，跟前台手动加一样。
+   * 拍照识别回来的东西：食材和调料分别写库。
+   * 重量留空（照片里看不出克数）、日期默认今天；调料默认状态「够」，少了再自己改。
    */
-  const handleAddScanned = useCallback(async (names: string[]) => {
-    for (const name of names) {
+  const handleAddScanned = useCallback(async ({ ingredients, seasonings }: { ingredients: string[]; seasonings: string[] }) => {
+    for (const name of ingredients) {
       try {
         await addIngredient(name, null);
       } catch {
         // 一条写失败不该让后面的一起消失
         showAlert({ title: '有一条没加上', message: `「${name}」保存失败，其他的已经加进去了。` });
-        break;
+        return;
       }
     }
-  }, [addIngredient, showAlert]);
+    for (const name of seasonings) {
+      try {
+        await addSeasoning(name, 'sufficient');
+      } catch {
+        showAlert({ title: '有一个调料没加上', message: `「${name}」保存失败，其他的已经加进去了。` });
+        return;
+      }
+    }
+  }, [addIngredient, addSeasoning, showAlert]);
 
   const handleOpenDatePicker = useCallback(() => {
     if (formDate) {

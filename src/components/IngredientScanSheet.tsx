@@ -10,14 +10,23 @@ import { recognizeIngredients } from '../services/visionService';
 import { SheetShell } from './DishSheets';
 import { Button } from './Button';
 
+type Kind = 'ingredient' | 'seasoning';
+
+interface Row {
+  name: string;
+  kind: Kind;
+}
+
+const KIND_LABEL: Record<Kind, string> = { ingredient: '食材', seasoning: '调料' };
+
 /**
  * 「＋」点开后的入口：手动输入 / 拍照识别。
  *
  * 为什么不是两颗弹出来的浮动小球：那是纯动画，得手写 spring + 绝对定位，
  * 点击目标还小；而这个弹层是现成组件，识别完的确认清单也正好装在里面。
  *
- * 识别结果**必须先确认再入库**：模型把"老抽"认成"可乐"时，直接写库没人会发现。
- * 重量一律留空 —— 照片里看不出克数，编一个会让后面"用多少"的计算全错。
+ * 识别结果**必须先确认再入库**：模型把"老抽"认成"可乐"、或把"生抽"当成食材时，
+ * 直接写库没人会发现。重量一律留空 —— 照片里看不出克数，编一个会让后面"用多少"全错。
  */
 export function IngredientScanSheet({
   visible,
@@ -28,12 +37,12 @@ export function IngredientScanSheet({
   visible: boolean;
   onClose: () => void;
   onManual: () => void;
-  onAdd: (names: string[]) => Promise<void>;
+  onAdd: (items: { ingredients: string[]; seasonings: string[] }) => Promise<void>;
 }) {
   const { state } = useSettings();
   const prefs = state.preferences;
   const [stage, setStage] = useState<'menu' | 'scanning' | 'review'>('menu');
-  const [names, setNames] = useState<string[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -41,7 +50,7 @@ export function IngredientScanSheet({
   useEffect(() => {
     if (visible) {
       setStage('menu');
-      setNames([]);
+      setRows([]);
       setError('');
       setSaving(false);
     }
@@ -66,22 +75,77 @@ export function IngredientScanSheet({
       setStage('menu');
       return;
     }
-    setNames(result.names);
+    setRows([
+      ...result.items.ingredients.map((name) => ({ name, kind: 'ingredient' as Kind })),
+      ...result.items.seasonings.map((name) => ({ name, kind: 'seasoning' as Kind })),
+    ]);
     setStage('review');
   }, [prefs]);
 
+  const picked = rows.map((r) => ({ ...r, name: r.name.trim() })).filter((r) => r.name.length > 0);
+  const ingredientCount = picked.filter((r) => r.kind === 'ingredient').length;
+  const seasoningCount = picked.filter((r) => r.kind === 'seasoning').length;
+
   const handleSave = useCallback(async () => {
-    const picked = names.map((n) => n.trim()).filter((n) => n.length > 0);
     if (picked.length === 0) return;
     setSaving(true);
-    await onAdd(picked);
+    await onAdd({
+      ingredients: picked.filter((r) => r.kind === 'ingredient').map((r) => r.name),
+      seasonings: picked.filter((r) => r.kind === 'seasoning').map((r) => r.name),
+    });
     setSaving(false);
     onClose();
-  }, [names, onAdd, onClose]);
+  }, [picked, onAdd, onClose]);
 
-  const title = stage === 'review' ? '确认这些食材' : '添加食材';
+  const renderGroup = (kind: Kind) => {
+    const items = rows.map((r, idx) => ({ ...r, idx })).filter((r) => r.kind === kind);
+    if (items.length === 0) return null;
+    return (
+      <View style={styles.group}>
+        <Text style={styles.groupTitle}>
+          {KIND_LABEL[kind]}（{items.length}）
+        </Text>
+        {items.map((row) => (
+          <View key={`${row.idx}-${row.name}`} style={styles.reviewRow}>
+            <TextInput
+              style={styles.reviewInput}
+              value={row.name}
+              onChangeText={(t) => setRows((prev) => prev.map((r, i) => (i === row.idx ? { ...r, name: t } : r)))}
+              maxLength={12}
+              accessibilityLabel={`第 ${row.idx + 1} 个`}
+            />
+            {/* 模型判错了可以点一下换组：这一下比重新拍一张便宜得多 */}
+            <TouchableOpacity
+              style={styles.kindChip}
+              onPress={() =>
+                setRows((prev) =>
+                  prev.map((r, i) =>
+                    i === row.idx ? { ...r, kind: r.kind === 'ingredient' ? 'seasoning' : 'ingredient' } : r,
+                  ),
+                )
+              }
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              accessibilityLabel={`把${row.name}改成${KIND_LABEL[kind === 'ingredient' ? 'seasoning' : 'ingredient']}`}
+            >
+              <Text style={styles.kindChipText}>{KIND_LABEL[kind]}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setRows((prev) => prev.filter((_, i) => i !== row.idx))}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.reviewDelete}
+              accessibilityLabel={`删掉${row.name}`}
+            >
+              <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const title = stage === 'review' ? '确认这些' : '添加';
   const subtitle = stage === 'review'
-    ? '改错的名字、删掉认错的，重量留空，入库后自己补'
+    ? '改错的名字、删掉认错的、点标签换分类；重量留空，入库后自己补'
     : undefined;
 
   return (
@@ -92,7 +156,7 @@ export function IngredientScanSheet({
             <Ionicons name="camera-outline" size={22} color={COLORS.primary} />
             <View style={styles.optionText}>
               <Text style={styles.optionTitle}>拍照识别</Text>
-              <Text style={styles.optionHint}>对着冰箱或台面拍一张，认出里面有什么</Text>
+              <Text style={styles.optionHint}>对着冰箱或台面拍一张，认出食材和调料</Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity
@@ -123,32 +187,15 @@ export function IngredientScanSheet({
       {stage === 'review' && (
         <>
           <ScrollView style={styles.body} contentContainerStyle={styles.reviewContent} keyboardShouldPersistTaps="handled">
-            {names.map((name, idx) => (
-              <View key={`${idx}-${name}`} style={styles.reviewRow}>
-                <TextInput
-                  style={styles.reviewInput}
-                  value={name}
-                  onChangeText={(t) => setNames((prev) => prev.map((n, i) => (i === idx ? t : n)))}
-                  maxLength={12}
-                  accessibilityLabel={`第 ${idx + 1} 个食材`}
-                />
-                <TouchableOpacity
-                  onPress={() => setNames((prev) => prev.filter((_, i) => i !== idx))}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={styles.reviewDelete}
-                  accessibilityLabel={`删掉${name}`}
-                >
-                  <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
-                </TouchableOpacity>
-              </View>
-            ))}
+            {renderGroup('ingredient')}
+            {renderGroup('seasoning')}
           </ScrollView>
           <View style={styles.footer}>
             <Button
-              title={`加入库存（${names.filter((n) => n.trim()).length}）`}
+              title={`加入库存（食材 ${ingredientCount} · 调料 ${seasoningCount}）`}
               onPress={handleSave}
               loading={saving}
-              disabled={names.filter((n) => n.trim()).length === 0}
+              disabled={picked.length === 0}
             />
           </View>
         </>
@@ -177,7 +224,9 @@ const styles = StyleSheet.create({
   scanning: { paddingVertical: SPACING.xxl, alignItems: 'center', gap: SPACING.md },
   scanningText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary },
 
-  reviewContent: { gap: SPACING.sm },
+  reviewContent: { gap: SPACING.md },
+  group: { gap: SPACING.sm },
+  groupTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '700', color: COLORS.textSecondary },
   reviewRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   reviewInput: {
     flex: 1,
@@ -189,6 +238,13 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.body,
     color: COLORS.textPrimary,
   },
+  kindChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: COLORS.primaryBg,
+  },
+  kindChipText: { fontSize: TYPOGRAPHY.caption, fontWeight: '600', color: COLORS.primary },
   reviewDelete: { padding: 6 },
   footer: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm },
 });

@@ -14,6 +14,8 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
 **Why the two-step.** A wrong name is invisible once it is in the inventory — 老抽 recognised as 可乐 sits there for weeks. Weights are always left empty: a photo cannot show grams, and a made-up number poisons every later "how much to use" calculation.
 
+**Ingredients and seasonings are classified.** The model tags every item `kind: ingredient | seasoning`, the confirm sheet shows two groups, and each row has a tappable 食材/调料 chip to fix a misjudgement; saving writes to `ingredientService` and `seasoningService` separately (seasonings default to 够). Anything without a usable `kind` counts as an ingredient — a seasoning filed under 食材 is one tap to move, while an ingredient filed under 调料 silently disappears from the 主料 list the AI gets.
+
 **API note.** DeepSeek's `deepseek-flash` does take images, inline as a base64 `image_url` block (no Files API, no second key, one request). `buildChatBody` now maps a protocol-neutral block array to each protocol's own shape — `image_url` for OpenAI-compatible, `image` + `source.base64` for Anthropic — and drops any block whose data URL cannot be parsed instead of sending a malformed request. `check:vision` pins the parsing rules: fences, small talk before the JSON, 「五花肉（约500g）」 cleanup, dedupe, caps, and the two protocol shapes.
 
 **Deliberately not done** — no floating action bubbles (pure animation for a smaller tap target; the sheet already has room for the confirm list), no gallery picker, no batch of multiple photos, no re-run on a single item, and nothing about the photo is stored.
