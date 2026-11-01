@@ -3,6 +3,7 @@ import type { DishPlan, SavedDish } from '../types';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { logger } from '../utils/logger';
 import { mergeDishIntoLibrary, normalizeDishName, isStapleDish } from '../utils/dishLibrary';
+import { mergeDishes } from '../utils/backupFormat';
 
 /**
  * 菜品库的读写层。合并规则在 utils/dishLibrary.ts（纯函数，可单测），
@@ -45,6 +46,24 @@ class DishLibraryService {
   async list(): Promise<SavedDish[]> {
     const items = (await this.getAll()).filter((d) => !isStapleDish(d.name));
     return items.sort((a, b) => (a.lastCookedAt < b.lastCookedAt ? 1 : -1));
+  }
+
+  /** 备份导出：连老数据里可能残留的主食一起，别让人以为丢了东西 */
+  async exportDishes(): Promise<SavedDish[]> {
+    const items = await this.getAll();
+    return items.sort((a, b) => (a.lastCookedAt < b.lastCookedAt ? 1 : -1));
+  }
+
+  /** 备份导入：只增不改，返回新增条数 */
+  async importDishes(incoming: SavedDish[], limit: number): Promise<number> {
+    if (incoming.length === 0) return 0;
+    const existing = await this.getAll();
+    const merged = mergeDishes(existing, incoming, limit);
+    const added = merged.length - existing.length;
+    if (added <= 0) return 0;
+    if (!(await this.saveAll(merged))) return 0;
+    this.log.info('备份导入菜品', { added, total: merged.length });
+    return added;
   }
 
   async get(id: string): Promise<SavedDish | undefined> {

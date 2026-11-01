@@ -1,10 +1,16 @@
 import { storageService } from './storageService';
-import { STORAGE_KEYS } from '../constants/storageKeys';
+import { inventoryIngredientsKey } from '../constants/storageKeys';
+import { inventoryProfileService } from './inventoryProfileService';
 import { Ingredient, IngredientCreateInput } from '../types';
 import { generateId } from '../utils/uuid';
 import { logger } from '../utils/logger';
 
 const log = logger('SVC:INGREDIENT');
+
+/** 库存跟着档案走：家里和单位各一套。每次操作现问当前档案是谁 */
+async function currentKey(): Promise<string> {
+  return inventoryIngredientsKey(await inventoryProfileService.getCurrentId());
+}
 
 function sortByCreatedAt(items: Ingredient[]): Ingredient[] {
   return [...items].sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime());
@@ -12,7 +18,7 @@ function sortByCreatedAt(items: Ingredient[]): Ingredient[] {
 
 export const ingredientService = {
   async getAll(): Promise<Ingredient[]> {
-    const result = await storageService.get<Ingredient[]>(STORAGE_KEYS.INVENTORY_INGREDIENTS);
+    const result = await storageService.get<Ingredient[]>(await currentKey());
     if (result.success && result.data) {
       const sorted = sortByCreatedAt(result.data);
       log.debug('getAll ingredients', { count: sorted.length });
@@ -34,7 +40,7 @@ export const ingredientService = {
     };
     const all = await this.getAll();
     all.push(ingredient);
-    await storageService.set(STORAGE_KEYS.INVENTORY_INGREDIENTS, sortByCreatedAt(all));
+    await storageService.set(await currentKey(), sortByCreatedAt(all));
     log.info('Added ingredient', { name: ingredient.name, id: ingredient.id });
     return ingredient;
   },
@@ -51,7 +57,7 @@ export const ingredientService = {
       ...(input.expireDate !== undefined ? { expireDate: input.expireDate } : {}),
       updateDate: new Date().toISOString(),
     };
-    await storageService.set(STORAGE_KEYS.INVENTORY_INGREDIENTS, sortByCreatedAt(all));
+    await storageService.set(await currentKey(), sortByCreatedAt(all));
     log.info('Updated ingredient', { name: all[index].name, id });
     return all[index];
   },
@@ -60,7 +66,7 @@ export const ingredientService = {
     const all = await this.getAll();
     const filtered = all.filter((i) => i.id !== id);
     if (filtered.length === all.length) return false;
-    await storageService.set(STORAGE_KEYS.INVENTORY_INGREDIENTS, sortByCreatedAt(filtered));
+    await storageService.set(await currentKey(), sortByCreatedAt(filtered));
     log.info('Removed ingredient', { id });
     return true;
   },
@@ -71,6 +77,6 @@ export const ingredientService = {
   },
 
   async batchSet(items: Ingredient[]): Promise<void> {
-    await storageService.set(STORAGE_KEYS.INVENTORY_INGREDIENTS, sortByCreatedAt(items));
+    await storageService.set(await currentKey(), sortByCreatedAt(items));
   },
 };

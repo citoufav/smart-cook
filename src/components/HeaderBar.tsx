@@ -9,9 +9,11 @@ import { SPACING } from '../constants/spacing';
 interface HeaderBarProps {
   title: string;
   onOpenDrawer: () => void;
+  /** 右上角插槽。标题用绝对定位居中，所以插槽多宽都不会把标题挤歪 */
+  right?: React.ReactNode;
 }
 
-export default function HeaderBar({ title, onOpenDrawer }: HeaderBarProps) {
+export default function HeaderBar({ title, onOpenDrawer, right }: HeaderBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -23,9 +25,10 @@ export default function HeaderBar({ title, onOpenDrawer }: HeaderBarProps) {
         <TouchableOpacity onPress={onOpenDrawer} hitSlop={12}>
           <Ionicons name="menu-outline" size={30} color={COLORS.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
-        {/* Right spacer to keep the title centered */}
-        <View style={styles.headerRight} />
+        <View style={styles.titleWrap} pointerEvents="none">
+          <Text style={styles.title}>{title}</Text>
+        </View>
+        <View style={styles.headerRight}>{right}</View>
       </View>
     </>
   );
@@ -41,12 +44,12 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     backgroundColor: COLORS.surface,
   },
+  // 绝对铺满 + 居中：右上角放了东西也还是正中间，不靠左右等宽凑
+  titleWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   title: {
     fontSize: TYPOGRAPHY.h1,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
-  headerRight: {
-    width: 30, // Same width as the left menu icon to keep the title centered
-  },
+  headerRight: { marginLeft: 'auto' },
 });

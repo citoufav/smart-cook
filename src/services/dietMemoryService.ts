@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { isStapleDish } from '../utils/dishLibrary';
 
-interface DietEntry {
+export interface DietEntry {
   name: string;
   timestamp: string;
 }
@@ -49,3 +49,15 @@ export async function addMeals(mealNames: string[]): Promise<void> {
   const updated = [...newEntries, ...all].slice(0, MAX_ENTRIES);
   await saveAll(updated);
 }
+
+/** 备份导出用 */
+export async function exportDietMemory(): Promise<DietEntry[]> {
+  return getAll();
+}
+
+/** 备份导入用：合并后的整表写回 */
+export async function replaceDietMemory(entries: DietEntry[]): Promise<void> {
+  await saveAll(entries.slice(0, MAX_ENTRIES));
+}
+
+export const DIET_MEMORY_LIMIT = MAX_ENTRIES;

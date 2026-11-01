@@ -116,6 +116,16 @@ class CookingProgressService {
     return records;
   }
 
+  /** Backup: everything, completed or not */
+  async exportRecords(): Promise<CookingProgressRecord[]> {
+    return this.getAll();
+  }
+
+  /** Backup import: whole table written back (already merged by the caller) */
+  async replaceRecords(records: CookingProgressRecord[]): Promise<boolean> {
+    return this.saveAll(records);
+  }
+
   /** Remove a record */
   async remove(recordId: string): Promise<boolean> {
     const all = await this.getAll();

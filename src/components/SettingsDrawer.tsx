@@ -28,6 +28,8 @@ import { useCustomAlert } from './CustomAlert';
 import { ApiType, CookingSkill, ReasoningEffort, UserPreferences } from '../types';
 import { validateApiKey } from '../utils/validation';
 import { STORAGE_KEYS } from '../constants/storageKeys';
+import { backupService, describeImport } from '../services/backupService';
+import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
@@ -188,7 +190,7 @@ interface SettingsDrawerProps {
 
 export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps) {
   const { state, updateApiKey, updatePreferences } = useSettings();
-  const { exportInventoryJson, importInventoryJson } = useInventory();
+  const { refreshFromStorage, refreshProfiles } = useInventory();
   const { preferences } = state;
   const { showAlert } = useCustomAlert();
   const insets = useSafeAreaInsets();
@@ -297,21 +299,21 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   }, [apiKeyInput, updateApiKey, showAlert]);
 
   const handleExport = useCallback(async () => {
-    const json = exportInventoryJson();
     try {
-      const fileName = `随煮_${new Date().toISOString().slice(0, 10)}.json`;
+      const json = await backupService.exportAll();
+      const fileName = `随煮备份_${new Date().toISOString().slice(0, 10)}.json`;
       const filePath = FileSystem.cacheDirectory + fileName;
       await FileSystem.writeAsStringAsync(filePath, json, { encoding: 'utf8' as any });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
-        await Sharing.shareAsync(filePath, { mimeType: 'application/json', dialogTitle: '导出库存' });
+        await Sharing.shareAsync(filePath, { mimeType: 'application/json', dialogTitle: '导出备份' });
       } else {
         showAlert({ title: '提示', message: '当前设备不支持文件分享' });
       }
     } catch (e: any) {
       showAlert({ title: '导出失败', message: e?.message || '无法导出文件' });
     }
-  }, [exportInventoryJson, showAlert]);
+  }, [showAlert]);
 
   const handleImport = useCallback(async () => {
     try {
@@ -325,12 +327,19 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       } else {
         content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' as any });
       }
-      await importInventoryJson(content);
-      showAlert({ title: '导入成功', message: '库存数据已更新' });
+      // 20MB 的 JSON 读进来再解析会把手机卡死，先按体积挡掉
+      if (content.length > MAX_BACKUP_CHARS) {
+        showAlert({ title: '文件太大', message: '超过 20MB，不像随煮的备份文件。' });
+        return;
+      }
+      const summary = await backupService.importAll(content);
+      await refreshProfiles();
+      await refreshFromStorage();
+      showAlert({ title: '导入完成', message: describeImport(summary) });
     } catch (e: any) {
-      showAlert({ title: '导入失败', message: e.message || '请选择有效的 JSON 文件' });
+      showAlert({ title: '导入失败', message: e?.message || '请选择随煮导出的 JSON 备份文件' });
     }
-  }, [importInventoryJson, showAlert]);
+  }, [refreshProfiles, refreshFromStorage, showAlert]);
 
   const maskedKey = preferences.apiKey
     ? preferences.apiKey.length <= 8
@@ -521,16 +530,21 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
             <Text style={styles.chevron}>{expandedSections.has('data') ? '▾' : '▸'}</Text>
           </TouchableOpacity>
           {expandedSections.has('data') && (
-            <View style={styles.dataRow}>
-              <TouchableOpacity style={styles.dataBtn} onPress={handleExport} activeOpacity={0.7}>
-                <Ionicons name="arrow-up-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.dataBtnText}>导出库存</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.dataBtn} onPress={handleImport} activeOpacity={0.7}>
-                <Ionicons name="arrow-down-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.dataBtnText}>导入库存</Text>
-              </TouchableOpacity>
-            </View>
+            <>
+              <View style={styles.dataRow}>
+                <TouchableOpacity style={styles.dataBtn} onPress={handleExport} activeOpacity={0.7}>
+                  <Ionicons name="arrow-up-outline" size={20} color={COLORS.primary} />
+                  <Text style={styles.dataBtnText}>导出备份</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.dataBtn} onPress={handleImport} activeOpacity={0.7}>
+                  <Ionicons name="arrow-down-outline" size={20} color={COLORS.primary} />
+                  <Text style={styles.dataBtnText}>导入备份</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.dataHint}>
+                一次性带走所有库存档案、我的菜和菜单记录。导入只增不改，不会覆盖你现有的东西；API Key 不会导出。
+              </Text>
+            </>
           )}
         </ScrollView>
       </Animated.View>
@@ -733,4 +747,5 @@ const styles = StyleSheet.create({
   dataRow: { flexDirection: 'row', gap: SPACING.md },
   dataBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xs, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: BORDER_RADIUS.md, paddingVertical: SPACING.sm },
   dataBtnText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary, fontWeight: '500' },
+  dataHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 17, marginTop: SPACING.sm },
 });

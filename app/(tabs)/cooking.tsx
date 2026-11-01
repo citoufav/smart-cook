@@ -24,6 +24,7 @@ import { LoadingOverlay } from '../../src/components/LoadingOverlay';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
+import { InventoryProfileChip, InventoryProfileSheet } from '../../src/components/InventoryProfileSheet';
 import { NutritionalData, InventoryCheckResult, SavedDish } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
 import { prepareReusedDishes, applyEdits } from '../../src/services/menuEditService';
@@ -60,6 +61,7 @@ export default function CookingEntryScreen() {
   // 从我的菜里勾的旧菜：原样沿用，AI 只决定每道做多少、还缺什么
   const [reuseSelected, setReuseSelected] = useState<SavedDish[]>([]);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
   const [recentMeals, setRecentMeals] = useState<string[]>([]);
   const { showAlert } = useCustomAlert();
   const { openSettings } = useSettingsDrawer();
@@ -490,7 +492,11 @@ export default function CookingEntryScreen() {
 
   return (
     <View style={styles.container}>
-      <HeaderBar title="随煮" onOpenDrawer={openSettings} />
+      <HeaderBar
+        title="随煮"
+        onOpenDrawer={openSettings}
+        right={<InventoryProfileChip onPress={() => setProfileSheetOpen(true)} />}
+      />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>今天吃什么？</Text>
         <Text style={styles.subtitle}>告诉 AI 你的需求，让它为你搭配菜单</Text>
@@ -700,6 +706,8 @@ export default function CookingEntryScreen() {
         onChange={setReuseSelected}
         onClose={() => setPickerVisible(false)}
       />
+
+      <InventoryProfileSheet visible={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} />
 
       {/* Custom input modal */}
       <Modal

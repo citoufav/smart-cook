@@ -1,10 +1,16 @@
 import { storageService } from './storageService';
-import { STORAGE_KEYS } from '../constants/storageKeys';
+import { inventorySeasoningsKey } from '../constants/storageKeys';
+import { inventoryProfileService } from './inventoryProfileService';
 import { Seasoning, SeasoningCreateInput } from '../types';
 import { generateId } from '../utils/uuid';
 import { logger } from '../utils/logger';
 
 const log = logger('SVC:SEASONING');
+
+/** 库存跟着档案走：家里和单位各一套 */
+async function currentKey(): Promise<string> {
+  return inventorySeasoningsKey(await inventoryProfileService.getCurrentId());
+}
 
 function sortByCreatedAt(items: Seasoning[]): Seasoning[] {
   return [...items].sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime());
@@ -12,7 +18,7 @@ function sortByCreatedAt(items: Seasoning[]): Seasoning[] {
 
 export const seasoningService = {
   async getAll(): Promise<Seasoning[]> {
-    const result = await storageService.get<Seasoning[]>(STORAGE_KEYS.INVENTORY_SEASONINGS);
+    const result = await storageService.get<Seasoning[]>(await currentKey());
     if (result.success && result.data) {
       const sorted = sortByCreatedAt(result.data);
       log.debug('getAll seasonings', { count: sorted.length });
@@ -32,7 +38,7 @@ export const seasoningService = {
     };
     const all = await this.getAll();
     all.push(seasoning);
-    await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(all));
+    await storageService.set(await currentKey(), sortByCreatedAt(all));
     log.info('Added seasoning', { name: seasoning.name, id: seasoning.id });
     return seasoning;
   },
@@ -47,7 +53,7 @@ export const seasoningService = {
       ...(input.status !== undefined ? { status: input.status } : {}),
       updateDate: new Date().toISOString(),
     };
-    await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(all));
+    await storageService.set(await currentKey(), sortByCreatedAt(all));
     log.info('Updated seasoning', { name: all[index].name, id });
     return all[index];
   },
@@ -56,7 +62,7 @@ export const seasoningService = {
     const all = await this.getAll();
     const filtered = all.filter((s) => s.id !== id);
     if (filtered.length === all.length) return false;
-    await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(filtered));
+    await storageService.set(await currentKey(), sortByCreatedAt(filtered));
     log.info('Removed seasoning', { id });
     return true;
   },
@@ -67,6 +73,6 @@ export const seasoningService = {
   },
 
   async batchSet(items: Seasoning[]): Promise<void> {
-    await storageService.set(STORAGE_KEYS.INVENTORY_SEASONINGS, sortByCreatedAt(items));
+    await storageService.set(await currentKey(), sortByCreatedAt(items));
   },
 };

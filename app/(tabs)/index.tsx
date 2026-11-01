@@ -26,11 +26,13 @@ import { Button } from '../../src/components/Button';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
+import { InventoryProfileChip, InventoryProfileSheet } from '../../src/components/InventoryProfileSheet';
 import { daysSince } from '../../src/utils/daysSince';
 
 export default function InventoryScreen() {
   const { state, addIngredient, deleteIngredient, updateIngredient, addSeasoning, deleteSeasoning, updateSeasoning } = useInventory();
   const { hideBall } = useNutrition();
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -258,7 +260,11 @@ export default function InventoryScreen() {
 
   return (
     <View style={styles.container}>
-      <HeaderBar title="随煮" onOpenDrawer={openSettings} />
+      <HeaderBar
+        title="随煮"
+        onOpenDrawer={openSettings}
+        right={<InventoryProfileChip onPress={() => setProfileSheetOpen(true)} />}
+      />
 
       <View style={styles.tabRow}>
         <TouchableOpacity
@@ -426,6 +432,8 @@ export default function InventoryScreen() {
       </Modal>
 
       {!showForm && <FAB icon="＋" onPress={() => setShowForm(true)} accessibilityLabel="添加" />}
+
+      <InventoryProfileSheet visible={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} />
     </View>
   );
 }

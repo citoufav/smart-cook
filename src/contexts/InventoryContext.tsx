@@ -1,8 +1,12 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useState } from 'react';
 import { Ingredient, Seasoning, SeasoningStatus, InventoryState } from '../types';
 import { ingredientService } from '../services/ingredientService';
 import { seasoningService } from '../services/seasoningService';
-import { generateId } from '../utils/uuid';
+import {
+  inventoryProfileService,
+  DEFAULT_PROFILE_ID,
+  type InventoryProfile,
+} from '../services/inventoryProfileService';
 import { logger } from '../utils/logger';
 
 // Actions
@@ -98,15 +102,21 @@ interface InventoryContextValue {
   addSeasoning: (name: string, status: SeasoningStatus) => Promise<Seasoning>;
   updateSeasoning: (id: string, data: { name?: string; status?: SeasoningStatus }) => Promise<Seasoning | null>;
   deleteSeasoning: (id: string) => Promise<boolean>;
-  exportInventoryJson: () => string;
-  importInventoryJson: (json: string) => Promise<void>;
   refreshFromStorage: () => Promise<void>;
+  /** 库存档案：只有库存分档案，菜谱和菜单记录不分 */
+  profiles: InventoryProfile[];
+  currentProfileId: string;
+  switchProfile: (id: string) => Promise<boolean>;
+  createProfile: (name: string) => Promise<InventoryProfile | null>;
+  refreshProfiles: () => Promise<void>;
 }
 
 const InventoryContext = createContext<InventoryContextValue | null>(null);
 
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(inventoryReducer, INITIAL_STATE);
+  const [profiles, setProfiles] = useState<InventoryProfile[]>([]);
+  const [currentProfileId, setCurrentProfileId] = useState<string>(DEFAULT_PROFILE_ID);
 
   const loadData = useCallback(async () => {
     try {
@@ -125,9 +135,39 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loadProfiles = useCallback(async () => {
+    try {
+      const [items, currentId] = await Promise.all([
+        inventoryProfileService.list(),
+        inventoryProfileService.getCurrentId(),
+      ]);
+      setProfiles(items);
+      setCurrentProfileId(currentId);
+    } catch (e) {
+      log.error('loadProfiles failed', { error: String(e) });
+    }
+  }, []);
+
   useEffect(() => {
-    loadData();
+    // 先定档案，再读库存 —— 顺序反了会读到上一个档案的数据
+    loadProfiles().then(loadData);
+  }, [loadProfiles, loadData]);
+
+  const switchProfile = useCallback(async (id: string) => {
+    const ok = await inventoryProfileService.switchTo(id);
+    if (!ok) return false;
+    setCurrentProfileId(id);
+    await loadData();
+    return true;
   }, [loadData]);
+
+  const createProfile = useCallback(async (name: string) => {
+    const profile = await inventoryProfileService.create(name);
+    if (!profile) return null;
+    await loadProfiles();
+    await loadData();
+    return profile;
+  }, [loadProfiles, loadData]);
 
   const addIngredient = useCallback(async (name: string, weight: number | null, createDate?: string) => {
     log.info('addIngredient called', { name, weight });
@@ -173,71 +213,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     await loadData();
   }, [loadData]);
 
-  const exportInventoryJson = useCallback((): string => {
-    const data = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      ingredients: state.ingredients,
-      seasonings: state.seasonings,
-    };
-    return JSON.stringify(data, null, 2);
-  }, [state.ingredients, state.seasonings]);
-
-  const importInventoryJson = useCallback(async (json: string): Promise<void> => {
-    let data: { ingredients?: unknown; seasonings?: unknown };
-    try {
-      data = JSON.parse(json);
-    } catch {
-      throw new Error('不是有效的 JSON 文件');
-    }
-    if (!data || !Array.isArray(data.ingredients) || !Array.isArray(data.seasonings)) {
-      throw new Error('无效的库存数据格式');
-    }
-    // Append mode: skip same-name items；整表合并后一次性写入（避免逐条 add 的 O(n²) 读写）
-    const existingIngredients = await ingredientService.getAll();
-    const existingNames = new Set(existingIngredients.map((i) => i.name));
-    const now = new Date().toISOString();
-    const newIngredients: Ingredient[] = [];
-    for (const i of data.ingredients as Record<string, unknown>[]) {
-      const name = String(i.name || '').trim();
-      if (!name || existingNames.has(name)) continue;
-      newIngredients.push({
-        id: generateId(),
-        name,
-        weight: typeof i.weight === 'number' ? i.weight : null,
-        createDate: typeof i.createDate === 'string' && i.createDate ? i.createDate : now,
-        updateDate: now,
-        ...(typeof i.expireDate === 'string' && i.expireDate ? { expireDate: i.expireDate } : {}),
-      });
-      existingNames.add(name);
-    }
-
-    const existingSeasonings = await seasoningService.getAll();
-    const existingSeasoningNames = new Set(existingSeasonings.map((s) => s.name));
-    const newSeasonings: Seasoning[] = [];
-    for (const s of data.seasonings as Record<string, unknown>[]) {
-      const name = String(s.name || '').trim();
-      if (!name || existingSeasoningNames.has(name)) continue;
-      newSeasonings.push({
-        id: generateId(),
-        name,
-        status: (['sufficient', 'low', 'out'].includes(s.status as string) ? s.status : 'sufficient') as SeasoningStatus,
-        createDate: now,
-        updateDate: now,
-      });
-      existingSeasoningNames.add(name);
-    }
-
-    if (newIngredients.length > 0) {
-      await ingredientService.batchSet(sortByCreatedAt([...existingIngredients, ...newIngredients]));
-    }
-    if (newSeasonings.length > 0) {
-      await seasoningService.batchSet(sortByCreatedAt([...existingSeasonings, ...newSeasonings]));
-    }
-    await loadData();
-    log.info('库存导入完成', { addedIngredients: newIngredients.length, addedSeasonings: newSeasonings.length });
-  }, [loadData]);
-
   const value = useMemo(
     () => ({
       state,
@@ -248,11 +223,18 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       addSeasoning,
       updateSeasoning,
       deleteSeasoning,
-      exportInventoryJson,
-      importInventoryJson,
       refreshFromStorage,
+      profiles,
+      currentProfileId,
+      switchProfile,
+      createProfile,
+      refreshProfiles: loadProfiles,
     }),
-    [state, dispatch, addIngredient, updateIngredient, deleteIngredient, addSeasoning, updateSeasoning, deleteSeasoning, exportInventoryJson, importInventoryJson, refreshFromStorage],
+    [
+      state, dispatch, addIngredient, updateIngredient, deleteIngredient,
+      addSeasoning, updateSeasoning, deleteSeasoning, refreshFromStorage,
+      profiles, currentProfileId, switchProfile, createProfile, loadProfiles,
+    ],
   );
 
   return (

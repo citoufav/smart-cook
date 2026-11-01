@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import HeaderBar from '../../src/components/HeaderBar';
+import { InventoryProfileChip, InventoryProfileSheet } from '../../src/components/InventoryProfileSheet';
 import { EmptyState } from '../../src/components/EmptyState';
 import { dishLibraryService } from '../../src/services/dishLibraryService';
 import { COLORS } from '../../src/constants/colors';
@@ -35,6 +36,7 @@ export default function DishesScreen() {
 
   const [dishes, setDishes] = useState<SavedDish[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
 
   // 这个页面不显示营养球，和其他 tab 保持一致
   useFocusEffect(
@@ -83,7 +85,11 @@ export default function DishesScreen() {
 
   return (
     <View style={styles.container}>
-      <HeaderBar title="随煮" onOpenDrawer={openSettings} />
+      <HeaderBar
+        title="随煮"
+        onOpenDrawer={openSettings}
+        right={<InventoryProfileChip onPress={() => setProfileSheetOpen(true)} />}
+      />
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} />
@@ -106,6 +112,8 @@ export default function DishesScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      <InventoryProfileSheet visible={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} />
     </View>
   );
 }
