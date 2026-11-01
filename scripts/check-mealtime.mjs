@@ -75,4 +75,18 @@ assert.deepEqual(findAgingIngredients([{ name: '', createDate: daysAgo(99) }], N
 assert.deepEqual(findAgingIngredients([{ name: '猪肉', createDate: 'not-a-date' }], NOW), []);
 assert.deepEqual(findAgingIngredients([], NOW), []);
 
-console.log('✓ 下一顿推算与食材保质期 9 组全部通过');
+// 存放方式：常温更短、冷冻更久，没设按冷藏算
+assert.equal(shelfLifeDays('猪肉', 'room'), 2, '常温比冷藏还短');
+assert.equal(shelfLifeDays('猪肉', 'fridge'), 3);
+assert.equal(shelfLifeDays('猪肉', 'freezer'), 45, '冷冻按 15 倍放宽');
+assert.equal(shelfLifeDays('猪肉', undefined), 3, '没设存放方式按冷藏');
+assert.equal(shelfLifeDays('鸡蛋', 'room'), 8, '14 天 × 0.6');
+
+// 同一份食材换个存放方式，提醒结论要跟着变
+assert.equal(findAgingIngredients([{ name: '猪肉', createDate: daysAgo(5), storage: 'freezer' }], NOW).length, 0);
+assert.equal(findAgingIngredients([{ name: '猪肉', createDate: daysAgo(5), storage: 'fridge' }], NOW).length, 1);
+// 常温 2 天上限：存 2 天不提醒，存 3 天才提醒
+assert.equal(findAgingIngredients([{ name: '猪肉', createDate: daysAgo(2), storage: 'room' }], NOW).length, 0);
+assert.equal(findAgingIngredients([{ name: '猪肉', createDate: daysAgo(3), storage: 'room' }], NOW).length, 1);
+
+console.log('✓ 下一顿推算与食材保质期 11 组全部通过');

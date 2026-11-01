@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useState } from 'react';
-import { Ingredient, Seasoning, SeasoningStatus, InventoryState } from '../types';
+import { Ingredient, Seasoning, SeasoningStatus, StorageState, InventoryState } from '../types';
 import { ingredientService } from '../services/ingredientService';
 import { seasoningService } from '../services/seasoningService';
 import {
@@ -97,7 +97,7 @@ interface InventoryContextValue {
   state: InventoryState;
   dispatch: React.Dispatch<InventoryAction>;
   addIngredient: (name: string, weight: number | null, createDate?: string) => Promise<Ingredient>;
-  updateIngredient: (id: string, data: { name?: string; weight?: number | null; createDate?: string }) => Promise<Ingredient | null>;
+  updateIngredient: (id: string, data: { name?: string; weight?: number | null; createDate?: string; storage?: StorageState }) => Promise<Ingredient | null>;
   deleteIngredient: (id: string) => Promise<boolean>;
   addSeasoning: (name: string, status: SeasoningStatus) => Promise<Seasoning>;
   updateSeasoning: (id: string, data: { name?: string; status?: SeasoningStatus }) => Promise<Seasoning | null>;
@@ -176,7 +176,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return ingredient;
   }, []);
 
-  const updateIngredient = useCallback(async (id: string, data: { name?: string; weight?: number | null; createDate?: string }) => {
+  const updateIngredient = useCallback(async (id: string, data: { name?: string; weight?: number | null; createDate?: string; storage?: StorageState }) => {
     const updated = await ingredientService.update(id, data);
     if (updated) dispatch({ type: 'UPDATE_INGREDIENT', payload: updated });
     return updated;

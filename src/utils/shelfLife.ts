@@ -9,15 +9,19 @@
  * 它要不要因此调整菜单是它的事；这里只负责**提醒用户**，不替它做决定。
  *
  * 边界，很重要：
- * - 我们没有存冷藏/常温，表按**冷藏**给天数，常温的实际更短 —— 所以提示语一律用
- *   "可能"、"放得有点久"，绝不说"还能吃"。
+ * - 用户没设存放方式时按**冷藏**算（表里的天数就是冷藏天数）。
+ * - 提示语一律用"可能"、"放得有点久"，绝不说"还能吃"。
  * - 只提醒，不阻断。判断食物还能不能吃是用户自己的事，也是唯一负责任的分工。
  */
+import type { StorageState } from '../types';
+
 export interface ShelfLifeItem {
   name: string;
   days: number;
   /** 这类食材大致能放多久，用来解释为什么提醒 */
   limit: number;
+  /** 存放方式决定了 limit 是多少，卡片上要写出来，否则用户会觉得表算错了 */
+  storage: StorageState;
 }
 
 /** 冷藏条件下的经验天数（保守取小值）。没列到的按 7 天算，未知食材不该既不提醒也不管 */
@@ -40,11 +44,17 @@ const SHELF_LIFE_DAYS: { match: RegExp; days: number }[] = [
 
 const DEFAULT_DAYS = 7;
 
-export function shelfLifeDays(name: string): number {
-  for (const rule of SHELF_LIFE_DAYS) {
-    if (rule.match.test(name)) return rule.days;
-  }
-  return DEFAULT_DAYS;
+/**
+ * 存放方式相对「冷藏」的倍数。
+ *
+ * 冷冻给 15 倍是**保守值**：真实冻肉能放几个月，这里宁可早提醒也不晚提醒。
+ * 常温 0.6 倍同理 —— 表里是冷藏天数，常温只会更短。
+ */
+const STORAGE_FACTOR: Record<StorageState, number> = { room: 0.6, fridge: 1, freezer: 15 };
+
+export function shelfLifeDays(name: string, storage?: StorageState): number {
+  const base = SHELF_LIFE_DAYS.find((rule) => rule.match.test(name))?.days ?? DEFAULT_DAYS;
+  return Math.max(1, Math.round(base * STORAGE_FACTOR[storage ?? 'fridge']));
 }
 
 /**
@@ -54,7 +64,7 @@ export function shelfLifeDays(name: string): number {
  * @param now 便于测试注入
  */
 export function findAgingIngredients(
-  ingredients: { name: string; createDate: string }[],
+  ingredients: { name: string; createDate: string; storage?: StorageState }[],
   now: Date = new Date(),
 ): ShelfLifeItem[] {
   const items: ShelfLifeItem[] = [];
@@ -64,9 +74,9 @@ export function findAgingIngredients(
     const created = new Date(ing.createDate);
     if (Number.isNaN(created.getTime())) continue;
     const days = Math.floor((now.getTime() - created.getTime()) / 86_400_000);
-    const limit = shelfLifeDays(name);
+    const limit = shelfLifeDays(name, ing.storage);
     // 留一天余量再提醒：刚好到期的当天不必吓人，过一天才算"久了"
-    if (days > limit) items.push({ name, days, limit });
+    if (days > limit) items.push({ name, days, limit, storage: ing.storage ?? 'fridge' });
   }
   return items.sort((a, b) => b.days - b.limit - (a.days - a.limit));
 }

@@ -15,7 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useInventory } from '../../src/contexts/InventoryContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import { Ingredient, Seasoning, SeasoningStatus } from '../../src/types';
-import { COLORS, SEASONING_STATUS_LABEL, SEASONING_STATUS_COLORS } from '../../src/constants/colors';
+import { COLORS, SEASONING_STATUS_LABEL, SEASONING_STATUS_COLORS, STORAGE_LABEL, STORAGE_COLORS, NEXT_STORAGE } from '../../src/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
@@ -198,6 +198,11 @@ export default function InventoryScreen() {
     });
   }, [updateIngredient, showAlert]);
 
+  // 存放方式：点一下换个状态。切换本身不重置入库日期（日期记的是"哪天买的"）
+  const handleCycleStorage = useCallback((item: Ingredient) => {
+    updateIngredient(item.id, { storage: NEXT_STORAGE[item.storage ?? 'fridge'] });
+  }, [updateIngredient]);
+
   const handleDelete = useCallback((id: string, name: string) => {
     showAlert({ title: '确认删除', message: `确定要删除"${name}"吗？此操作不可恢复。`, buttons: [
       { text: '取消', style: 'cancel' },
@@ -232,7 +237,10 @@ export default function InventoryScreen() {
     setShowDatePicker(false);
   }, [pickerYear, pickerMonth, pickerDay]);
 
-  const renderIngredientItem = ({ item }: { item: Ingredient }) => (
+  const renderIngredientItem = ({ item }: { item: Ingredient }) => {
+    const storage = item.storage ?? 'fridge';
+    const next = NEXT_STORAGE[storage];
+    return (
     <TouchableOpacity style={styles.listItem} onPress={() => handleEditIngredient(item)} activeOpacity={0.7}>
       <View style={styles.itemInfo}>
         <Text style={styles.itemName}>{item.name}</Text>
@@ -240,6 +248,17 @@ export default function InventoryScreen() {
           {item.weight !== null ? `${item.weight} 克` : '未称量'} · 已存 {daysSince(item.createDate)} 天
         </Text>
       </View>
+      <TouchableOpacity
+        onPress={() => handleCycleStorage(item)}
+        hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+        style={[styles.storageChip, { backgroundColor: STORAGE_COLORS[storage].bg }]}
+        accessibilityLabel={`${item.name}现在${STORAGE_LABEL[storage]}，点一下切成${STORAGE_LABEL[next]}`}
+        accessibilityRole="button"
+      >
+        <Text style={[styles.storageChipText, { color: STORAGE_COLORS[storage].text }]}>
+          {STORAGE_LABEL[storage]}
+        </Text>
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => handleResetDate(item.id, item.name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 8 }} accessibilityLabel={`重置${item.name}的入库日期`}>
         <Ionicons name="refresh-outline" size={20} color={COLORS.textSecondary} />
       </TouchableOpacity>
@@ -247,7 +266,8 @@ export default function InventoryScreen() {
         <Ionicons name="trash-outline" size={20} color={COLORS.textTertiary} />
       </TouchableOpacity>
     </TouchableOpacity>
-  );
+    );
+  };
 
   const renderSeasoningItem = ({ item }: { item: Seasoning }) => (
     <TouchableOpacity style={styles.listItem} onPress={() => handleEditSeasoning(item)} activeOpacity={0.7}>
@@ -467,6 +487,8 @@ const styles = StyleSheet.create({
   itemInfo: { flex: 1 },
   itemName: { fontSize: TYPOGRAPHY.body, fontWeight: '500', color: COLORS.textPrimary },
   itemMeta: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary, marginTop: 2 },
+  storageChip: { paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs, borderRadius: BORDER_RADIUS.sm, marginRight: SPACING.sm },
+  storageChipText: { fontSize: TYPOGRAPHY.caption, fontWeight: '600' },
   formOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: COLORS.overlay, justifyContent: 'center', padding: SPACING.xxl, zIndex: 200 },
   formCard: { backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.xl, padding: SPACING.xxl },
   formTitle: { fontSize: TYPOGRAPHY.h3, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.lg },

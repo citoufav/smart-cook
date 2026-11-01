@@ -1,4 +1,4 @@
-import type { Ingredient, Seasoning, SavedDish, SeasoningStatus, DishPlan } from '../types';
+import type { Ingredient, Seasoning, SavedDish, SeasoningStatus, StorageState, DishPlan } from '../types';
 import type { CookingProgressRecord } from '../services/cookingProgressService';
 import type { DietEntry } from '../services/dietMemoryService';
 
@@ -57,12 +57,14 @@ const obj = (v: unknown): Record<string, unknown> =>
   (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 const SEASONING_STATUSES: SeasoningStatus[] = ['sufficient', 'low', 'out'];
+const STORAGE_STATES: StorageState[] = ['room', 'fridge', 'freezer'];
 
 function readIngredient(raw: unknown, now: string): Ingredient | null {
   const o = obj(raw);
   const name = str(o.name).trim();
   if (!name) return null;
   const expireDate = str(o.expireDate);
+  const storage = STORAGE_STATES.includes(o.storage as StorageState) ? (o.storage as StorageState) : null;
   return {
     id: str(o.id) || `imp-${name}`,
     name,
@@ -70,6 +72,7 @@ function readIngredient(raw: unknown, now: string): Ingredient | null {
     createDate: str(o.createDate) || now,
     updateDate: str(o.updateDate) || now,
     ...(expireDate ? { expireDate } : {}),
+    ...(storage ? { storage } : {}),
   };
 }
 

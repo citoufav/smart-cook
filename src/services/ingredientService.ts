@@ -37,6 +37,7 @@ export const ingredientService = {
       createDate: createDateVal,
       updateDate: now,
       ...(input.expireDate !== undefined ? { expireDate: input.expireDate } : {}),
+      ...(input.storage !== undefined ? { storage: input.storage } : {}),
     };
     const all = await this.getAll();
     all.push(ingredient);
@@ -55,6 +56,7 @@ export const ingredientService = {
       ...(input.weight !== undefined ? { weight: input.weight } : {}),
       ...(input.createDate !== undefined ? { createDate: input.createDate } : {}),
       ...(input.expireDate !== undefined ? { expireDate: input.expireDate } : {}),
+      ...(input.storage !== undefined ? { storage: input.storage } : {}),
       updateDate: new Date().toISOString(),
     };
     await storageService.set(await currentKey(), sortByCreatedAt(all));

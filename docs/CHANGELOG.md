@@ -8,15 +8,25 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — 存放方式：常温 / 冷藏 / 冷冻
+
+**Added** — every ingredient row on 库存 carries a small pill (常温 / 冷藏 / 冷冻) before the ↻ and 🗑 icons. Tap to cycle; the state is stored per ingredient. Tapping it does not reset 入库日期.
+
+**Why.** It feeds two things at once. Shelf life is now multiplied by storage (常温 ×0.6, 冷藏 ×1, 冷冻 ×15, floored at 1 day), so 猪肉 stored 3 days at 常温 warns while the same age in 冷冻 does not — "everything is refrigerated" was the weakest assumption in the warning. And the AI prompt now reads 「已存放3天，冷冻」, which is the difference between a recipe that says 提前解冻 and one that gives a 20-minute path for a frozen block of meat.
+
+**Deliberately not done** — switching storage does not restart the day counter (the date means "when it was bought", not "how long since it left the freezer"), and the add/edit form has no storage picker; the pill is the only control, one tap per change.
+
+**Unchanged** — the warning warns and stops: never blocks the menu, never says 还能吃. 冷冻 ×15 is an early-warning multiplier, not a claim that meat keeps 45 days.
+
 ## 2026-11-01 — Stale ingredients get a warning, computed locally
 
 **Added** — the recipe page now opens with 「⏳ 这些食材放得有点久了」 listing the ingredients whose stored age has passed a shelf-life limit: 猪肉 5 天、虾仁 9 天 → both listed with how long they usually keep, then a line saying to look and smell before cooking.
 
 **Why not ask the model.** The suggestion was to have the AI "scan the inventory and flag anything that might expire". It already receives 「已存放 N 天」 for every ingredient, so it is not blind to this — but a judgement call inside a language model has three problems here: the same inventory can be judged differently on two runs, the user cannot check the reasoning, and there is no way to unit-test it. Age plus food type is a table lookup, so it is a table lookup. `src/utils/shelfLife.ts` holds the shelf lives and `findAgingIngredients`; `check:meal` pins the boundaries and the sort order.
 
-**Safety boundary** — we do not store 冷藏 vs 常温, so the table assumes refrigeration (the longer case) and every string says 可能 / 放得有点久, never "还能吃". The card warns and stops there; it never blocks the menu, and it never reassures. Deciding whether food is still good is the user's job and the only responsible split.
+**Safety boundary** — the table assumes refrigeration (the longer case) and every string says 可能 / 放得有点久, never "还能吃". The card warns and stops there; it never blocks the menu, and it never reassures. Deciding whether food is still good is the user's job and the only responsible split. (Storage is now a stored field — see the 存放方式 entry above, which replaces the assumption with ×0.6 / ×1 / ×15.)
 
-The AI prompt is unchanged: it decides the menu, this decides whether the user gets a nudge.
+The AI prompt is untouched by this change: it decides the menu, this decides whether the user gets a nudge.
 
 **Removed from the UI** — the 「每次启动都显示引导」 debug switch is gone from 设置 → 数据管理. The preference and the redirect guard stay, so re-testing onboarding is one line in `settingsService` (or flipping the stored flag); a shipped app should not show a toggle whose only purpose is to trap you in the setup flow.
 

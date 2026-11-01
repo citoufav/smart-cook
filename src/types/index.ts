@@ -1,4 +1,7 @@
 // ============ Ingredients & Seasonings ============
+/** 存放方式。undefined 一律按"冷藏"算 —— 老数据没有这个字段 */
+export type StorageState = 'room' | 'fridge' | 'freezer';
+
 export interface Ingredient {
   id: string;
   name: string;
@@ -7,6 +10,7 @@ export interface Ingredient {
   updateDate: string;
   /** 过期日（ISO 字符串）。undefined = 未设置，库存页不提醒。R-5 过期提醒用 */
   expireDate?: string;
+  storage?: StorageState;
 }
 
 export interface IngredientCreateInput {
@@ -14,6 +18,7 @@ export interface IngredientCreateInput {
   weight: number | null;
   createDate?: string;
   expireDate?: string;
+  storage?: StorageState;
 }
 
 export interface Seasoning {

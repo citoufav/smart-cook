@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserPreferences, CookingSkill, DishPlan, SavedDish } from '../types';
+import { UserPreferences, CookingSkill, DishPlan, SavedDish, StorageState } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
@@ -8,6 +8,7 @@ import { generateId } from '../utils/uuid';
 import { pickNumber, readNumber } from '../utils/looseNumber';
 import { MENU_FORMAT_EXAMPLE } from '../constants/menuFormatExample';
 import { formatHealthRules } from '../constants/healthConditions';
+import { STORAGE_LABEL } from '../constants/colors';
 import { aiEndpoint, aiHeaders, aiModel, aiBody, aiProtocol, aiSupportsThinking } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
@@ -297,14 +298,16 @@ export const SKILL_DETAIL_PROMPT: Record<CookingSkill, string> = {
 const STATUS_LABEL: Record<string, string> = { sufficient: '充足', low: '少量', out: '缺少' };
 
 function formatIngredientLines(
-  ingredients: { name: string; weight: number | null; createDate: string }[],
+  ingredients: { name: string; weight: number | null; createDate: string; storage?: StorageState }[],
 ): string {
   if (ingredients.length === 0) return '库存中暂无食材。';
   return [...ingredients]
     .sort((a, b) => new Date(a.createDate).getTime() - new Date(b.createDate).getTime())
     .map((ing, i) => {
       const days = daysSince(ing.createDate);
-      return `${i + 1}. ${ing.name}：${ing.weight !== null ? ing.weight + '克' : '重量未知'}（已存放${days}天）`;
+      // 带上存放方式：冷冻的肉要提前解冻，模型不知道就会给出 20 分钟出锅的方案
+      const storage = `，${STORAGE_LABEL[ing.storage ?? 'fridge']}`;
+      return `${i + 1}. ${ing.name}：${ing.weight !== null ? ing.weight + '克' : '重量未知'}（已存放${days}天${storage}）`;
     })
     .join('\n');
 }
@@ -369,7 +372,7 @@ B. 还要不要再加菜 —— 加几道、加什么，你定。**可以一道�
 }
 
 function buildStage1UserPrompt(
-  ingredients: { name: string; weight: number | null; createDate: string }[],
+  ingredients: { name: string; weight: number | null; createDate: string; storage?: StorageState }[],
   seasonings: { name: string; status: string }[],
   requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
   dietaryRestrictions: string[],
@@ -443,7 +446,7 @@ export interface Stage1AIResult {
  * Uses SSE streaming to receive AI reasoning and results in real time
  */
 export function callAIStage1Stream(
-  ingredients: { name: string; weight: number | null; createDate: string }[],
+  ingredients: { name: string; weight: number | null; createDate: string; storage?: StorageState }[],
   seasonings: { name: string; status: string }[],
   requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string },
   dietaryRestrictions: string[],
@@ -567,7 +570,7 @@ export function generateOneDishStream(
   mode: 'add' | 'replace',
   context: {
     dishNames: string[];
-    ingredients: { name: string; weight: number | null; createDate: string }[];
+    ingredients: { name: string; weight: number | null; createDate: string; storage?: StorageState }[];
     seasonings: { name: string; status: string }[];
     requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string };
     dietaryRestrictions: string[];
@@ -652,7 +655,7 @@ function buildOneDishPrompt(
   mode: 'add' | 'replace',
   context: {
     dishNames: string[];
-    ingredients: { name: string; weight: number | null; createDate: string }[];
+    ingredients: { name: string; weight: number | null; createDate: string; storage?: StorageState }[];
     seasonings: { name: string; status: string }[];
     requirement: { personCount: number; mealType: string; caloriePreference?: number; customRequirement: string };
     dietaryRestrictions: string[];

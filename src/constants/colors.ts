@@ -1,3 +1,5 @@
+import type { StorageState } from '../types';
+
 export const COLORS = {
   primary: '#FF6B35',
   primaryLight: '#FF8C5A',
@@ -46,6 +48,29 @@ export const SEASONING_STATUS_COLORS = {
   low: { bg: '#FFF3CD', text: '#856404' },
   out: { bg: '#F8D7DA', text: '#721C24' },
 } as const;
+
+/**
+ * 存放方式：点一下循环切换。undefined 按冷藏算（老数据没这个字段）。
+ * 三种都是浅底深字，跟调料状态标签同一套写法，不抢列表的注意力。
+ */
+export const STORAGE_LABEL: Record<StorageState, string> = {
+  room: '常温',
+  fridge: '冷藏',
+  freezer: '冷冻',
+};
+
+export const STORAGE_COLORS: Record<StorageState, { bg: string; text: string }> = {
+  room: { bg: '#FFF3CD', text: '#856404' },
+  fridge: { bg: '#E3F2FD', text: '#0D47A1' },
+  freezer: { bg: '#E8EAF6', text: '#283593' },
+};
+
+/** 点一下切到下一个状态：常温 → 冷藏 → 冷冻 → 常温 */
+export const NEXT_STORAGE: Record<StorageState, StorageState> = {
+  room: 'fridge',
+  fridge: 'freezer',
+  freezer: 'room',
+};
 
 /**
  * 食材标签配色。

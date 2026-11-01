@@ -14,7 +14,7 @@ import { findAgingIngredients } from '../../src/utils/shelfLife';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { MenuProposal, DishPlan, NutritionalData } from '../../src/types';
-import { COLORS } from '../../src/constants/colors';
+import { COLORS, STORAGE_LABEL } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Card } from '../../src/components/Card';
@@ -174,7 +174,7 @@ export function Stage1MenuContent() {
             <Text style={styles.agingTitle}>⏳ 这些食材放得有点久了：</Text>
             {agingIngredients.map((item) => (
               <Text key={item.name} style={styles.agingItem}>
-                · {item.name} 已存 {item.days} 天（一般能放 {item.limit} 天左右）
+                · {item.name} 已存 {item.days} 天（{STORAGE_LABEL[item.storage]}，一般能放 {item.limit} 天左右）
               </Text>
             ))}
             <Text style={styles.agingHint}>
