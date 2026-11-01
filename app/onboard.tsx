@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../src/contexts/SettingsContext';
 import { useInventory } from '../src/contexts/InventoryContext';
+import { useSettingsDrawer } from '../src/contexts/SettingsDrawerContext';
 import { SelectableChip } from '../src/components/SelectableChip';
 import { Button } from '../src/components/Button';
 import { useKeyboardAwareScroll } from '../src/hooks/useKeyboardAwareScroll';
@@ -28,7 +29,7 @@ const PANTRY_STAPLES = [
 
 const TITLES = ['先配一个 AI Key', '你爱吃什么？', '你不能吃什么？', '家里现在有什么？'];
 const SUBTITLES = [
-  '这个 App 自己不做 AI，用的是你自己的 DeepSeek 账号',
+  '这个 App 自己不做 AI，用的是你自己的 DeepSeek 账号。全程大约 5 分钟',
   '选几样，AI 推荐菜单时会优先照顾',
   '过敏和忌口会写进每次菜单生成，避免踩雷',
   '点选常备食材直接加入库存，重量以后随时能改',
@@ -72,6 +73,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { state: settingsState, updatePreferences, updateApiKey } = useSettings();
   const { state: invState, addIngredient } = useInventory();
+  const { openSettings } = useSettingsDrawer();
   const { scrollRef, onScroll, captureFocus } = useKeyboardAwareScroll();
   const keyInputRef = useRef<TextInput>(null);
 
@@ -169,17 +171,33 @@ export default function OnboardingScreen() {
           <>
             <View style={styles.steps}>
               <Text style={styles.stepText}>
-                <Text style={styles.stepNum}>1 </Text>点下面的按钮，打开 DeepSeek 官网（手机号注册，不用翻墙）
+                <Text style={styles.stepNum}>1 </Text>
+                <Text style={styles.stepBold}>注册。</Text>
+                点下面的按钮打开 DeepSeek 官网，手机号注册，不用翻墙，也不用注册我们这个应用。
               </Text>
               <Text style={styles.stepText}>
-                <Text style={styles.stepNum}>2 </Text>登录后创建一个 API Key，复制那一串 sk- 开头的字符
+                <Text style={styles.stepNum}>2 </Text>
+                <Text style={styles.stepBold}>充一点钱。</Text>
+                登录后进「充值」页面，按自己的用量充，几块钱就能生成很多次；新账号一般还有赠送额度。
               </Text>
               <Text style={styles.stepText}>
-                <Text style={styles.stepNum}>3 </Text>回到这里粘贴，点「下一步」就配好了
+                <Text style={styles.stepNum}>3 </Text>
+                <Text style={styles.stepBold}>找到 API Key 页面。</Text>
+                在 DeepSeek 平台里点开左上角菜单，选「API keys」（有的地方叫「API 密钥」）。
+              </Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepNum}>4 </Text>
+                <Text style={styles.stepBold}>创建一个 Key。</Text>
+                点「创建 API key」，名字随便填（比如「随煮」），确定。
+              </Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepNum}>5 </Text>
+                <Text style={styles.stepBold}>复制，粘贴。</Text>
+                复制那串 sk- 开头的字符，回到这里粘到下面的框里，点「下一步」。
               </Text>
             </View>
 
-            <Button title="打开 DeepSeek 官网获取 Key" variant="primary" onPress={openDeepSeek} />
+            <Button title="打开 DeepSeek 官网" variant="primary" onPress={openDeepSeek} />
 
             <Text style={styles.fieldLabel}>把 Key 粘贴到这里</Text>
             <TextInput
@@ -200,8 +218,18 @@ export default function OnboardingScreen() {
               <Text style={styles.keyOk}>已经配好了，可以直接下一步。</Text>
             ) : null}
             <Text style={styles.note}>
-              新账号有赠送额度，用完可以充十块钱，够做很久的饭。不填也行，之后随时能在设置里补；但没 Key 的时候 AI 生成会失败。
+              这一步可以跳过，以后在设置里随时能补；但没有 Key 的时候，AI 生成菜单会用不了。
             </Text>
+
+            <View style={styles.proBlock}>
+              <Text style={styles.proTitle}>已经习惯自己配 API？</Text>
+              <Text style={styles.proText}>
+                这一步可以直接跳过。去「设置 → 模型与 API」里选 OpenAI 兼容 / Anthropic 兼容，自己填接口地址和模型名——走代理、换模型、接自建网关都行。
+              </Text>
+              <TouchableOpacity onPress={openSettings} hitSlop={10} style={styles.proLinkWrap}>
+                <Text style={styles.proLink}>打开模型与 API 设置 ›</Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
         {step === 1 && (
@@ -271,8 +299,21 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     gap: SPACING.md,
   },
-  stepText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textBody, lineHeight: 20 },
+  stepText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textBody, lineHeight: 21 },
   stepNum: { fontWeight: '700', color: COLORS.primary },
+  stepBold: { fontWeight: '700', color: COLORS.textPrimary },
+
+  // 给已经会用 API 的人：一句话指路，不占主流程
+  proBlock: {
+    marginTop: SPACING.xxl,
+    paddingTop: SPACING.lg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  proTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.textSecondary },
+  proText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 19, marginTop: SPACING.xs },
+  proLinkWrap: { marginTop: SPACING.sm },
+  proLink: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.primary },
   fieldLabel: {
     fontSize: TYPOGRAPHY.bodySmall,
     fontWeight: '600',
