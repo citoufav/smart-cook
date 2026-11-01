@@ -13,6 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -26,6 +27,7 @@ import { Button } from './Button';
 import { useCustomAlert } from './CustomAlert';
 import { ApiType, CookingSkill, ReasoningEffort, UserPreferences } from '../types';
 import { validateApiKey } from '../utils/validation';
+import { STORAGE_KEYS } from '../constants/storageKeys';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
@@ -54,6 +56,10 @@ const COOKING_SKILL_OPTIONS: { label: string; value: CookingSkill; hint: string 
 function pickCookingSkill(value: string): CookingSkill {
   return COOKING_SKILL_OPTIONS.some((o) => o.value === value) ? (value as CookingSkill) : 'beginner';
 }
+
+/** 抽屉里可折叠的分区。顺序 = 展示顺序 */
+const SECTION_KEYS = ['diet', 'taste', 'skill', 'ai', 'data'] as const;
+const PICKABLE_SECTIONS = new Set<string>(SECTION_KEYS);
 
 // ---- Dropdown selector ----
 function DropdownSelector({
@@ -203,7 +209,8 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const [cookingSkill, setCookingSkill] = useState<CookingSkill>(
     pickCookingSkill(preferences.cookingSkill),
   );
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['diet', 'skill', 'ai', 'data']));
+  // 默认全部展开（不藏东西），用户折叠后记住，下次打开保持原样
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(SECTION_KEYS));
 
   // Sync external state changes
   useEffect(() => {
@@ -216,18 +223,30 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       setDietaryTags([...preferences.dietaryRestrictions]);
       setTasteTags([...preferences.tastePreferences]);
       setCookingSkill(pickCookingSkill(preferences.cookingSkill));
-      setExpandedSections(new Set(['diet', 'skill', 'ai', 'data']));
     }
   }, [visible, preferences]);
 
+  // 折叠状态独立存储：不能跟着 preferences 一起重置，否则内部自动保存一次就全弹开
+  useEffect(() => {
+    if (!visible) return;
+    AsyncStorage.getItem(STORAGE_KEYS.SETTINGS_DRAWER_SECTIONS)
+      .then((raw) => {
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved)) {
+          setExpandedSections(new Set(saved.filter((k) => PICKABLE_SECTIONS.has(k))));
+        }
+      })
+      .catch(() => {});
+  }, [visible]);
+
   const toggleSection = useCallback((key: string) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+    const next = new Set(expandedSections);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setExpandedSections(next);
+    AsyncStorage.setItem(STORAGE_KEYS.SETTINGS_DRAWER_SECTIONS, JSON.stringify([...next])).catch(() => {});
+  }, [expandedSections]);
 
   const slideAnim = useRef(new Animated.Value(-panelWidth)).current;
 

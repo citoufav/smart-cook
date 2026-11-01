@@ -34,7 +34,10 @@ const nutritionSchema = z.object({
 
 const dishSchema = z
   .object({
-    name: z.string().catch('未命名菜品'),
+    // 菜名是菜品的身份：既用于显示，也是对话增删改时定位菜品的主键。
+    // 这里兜底成空串而不是"未命名菜品"——否则模型漏写 name 时会凭空多出一道
+    // 假菜（历史 bug：想加个牛奶，结果多出一个"未命名菜品"）。
+    name: z.string().catch(''),
     ingredients: z
       .array(
         z.object({
@@ -114,6 +117,12 @@ const stage1ResultSchema = z
  */
 export function parseStage1Result(raw: unknown, reasoningContent: string): Stage1AIResult {
   const parsed = stage1ResultSchema.parse(raw);
+  // 没有菜名的菜既显示不了也定位不到，直接丢弃；上层收到空数组会提示"没有给出菜品"，
+  // 比塞一道空壳菜让人以为生成成功要好。
+  const dishes = parsed.dishes.filter((d) => d.name.trim().length > 0);
+  if (dishes.length < parsed.dishes.length) {
+    log.warn('已丢弃缺少菜名的菜品', { dropped: parsed.dishes.length - dishes.length });
+  }
   const prepSteps = parsed.prepSteps.map((s, i) => ({
     ...s,
     id: s.id ?? `prep-${i + 1}`,
@@ -124,7 +133,7 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
   }));
   return {
     summary: parsed.summary,
-    dishes: parsed.dishes,
+    dishes,
     prepSteps,
     cookingSteps,
     preciseNutrition: parsed.preciseNutrition,
@@ -424,6 +433,11 @@ export function callAIStage1Stream(
         try {
           const result = parseStage1Result(JSON.parse(fullContent), fullReasoning);
           const dishCount = result.dishes?.length || 0;
+          if (dishCount === 0) {
+            log.error('AI 未返回任何可用菜品');
+            callbacks.onError(new Error('AI 没有返回任何菜品，请重试'));
+            return;
+          }
           log.info(`流式调用完成`, { dishCount, totalChunks: chunkCount });
           log.debug('输出统计', { dishCount, prepSteps: result.prepSteps?.length, cookingSteps: result.cookingSteps?.length, preciseNutrition: result.preciseNutrition?.length });
           callbacks.onDone(result);
@@ -503,8 +517,12 @@ export function generateOneDishStream(
         try {
           const parsed = parseStage1Result(JSON.parse(fullContent), '');
           const dish = parsed.dishes?.[0];
-          if (!dish || !dish.name) {
+          if (!dish) {
             callbacks.onError(new Error('AI 没有给出菜品，请换个说法再试'));
+            return;
+          }
+          if (!dish.ingredients?.length) {
+            callbacks.onError(new Error('AI 给的菜没有食材，请说得更具体一点'));
             return;
           }
           // 单菜模式：所有步骤都归这一道菜，dishName 统一覆盖，避免模型漏填

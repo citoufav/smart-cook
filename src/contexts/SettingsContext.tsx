@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useRef } from 'react';
 import { SettingsState, UserPreferences } from '../types';
 import { loadFullPreferences, saveApiKey, saveNonSensitiveSettings, DEFAULT_USER_PREFERENCES } from '../services/settingsService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -63,6 +63,17 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(settingsReducer, INITIAL_STATE);
 
+  /**
+   * 最新的 preferences 镜像。
+   * updatePreferences 曾经用 `state.preferences` 合并，闭包里拿到的是"上一次渲染"的值：
+   * 连续点两个开关时，后一次写入会用旧快照覆盖前一次的结果（看似"设置没记住"）。
+   * 用 ref 同步写入，连续调用也能正确叠加。
+   */
+  const prefsRef = useRef(state.preferences);
+  useEffect(() => {
+    prefsRef.current = state.preferences;
+  }, [state.preferences]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -87,10 +98,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const updatePreferences = useCallback(async (prefs: Partial<UserPreferences>) => {
     log.debug('updatePreferences called', Object.keys(prefs));
     dispatch({ type: 'UPDATE_PREFERENCES', payload: prefs });
-    const nonSensitive: any = { ...state.preferences, ...prefs };
-    delete nonSensitive.apiKey;
-    await saveNonSensitiveSettings(nonSensitive);
-  }, [state.preferences]);
+    const merged = { ...prefsRef.current, ...prefs };
+    prefsRef.current = merged;
+    const { apiKey: _apiKey, ...nonSensitive } = merged;
+    void _apiKey;
+    try {
+      await saveNonSensitiveSettings(nonSensitive);
+    } catch (e) {
+      // 写盘失败不能让界面卡住，但必须留痕，否则"设置又变回默认"永远查不到原因
+      log.error('保存设置失败', String(e));
+    }
+  }, []);
 
   const saveLastCookingDefaults = useCallback(async (data: {
     people?: number;

@@ -18,7 +18,9 @@ const CHAT_SYSTEM_PROMPT_WITH_MODIFY = `你是一位专业家庭厨师和营养�
 1. 先一句话说明你要改什么，然后调用 edit_menu 工具
 2. **只下发最小改动**：用户说改盐的克数，就只给一条 set_grams，不要顺手改别的菜、别的食材
 3. dish 必须与当前菜谱里的菜名完全一致；找不到对应菜就不要下发该动作，改为用文字问清楚
-4. 只有用户明确要换掉整道菜或加一道菜时，才用 replace_dish / add_dish，并在 instruction 里写清要什么菜
+4. **分清"加食材"和"加菜"**：用户只是要往已有菜里添/减一样东西（"加个牛奶""不要葱花"），
+   用 add_ingredient / remove_ingredient，dish 填要加进哪道菜；只有用户明确说"再来一道菜""换个菜"，
+   才用 add_dish / replace_dish，并在 instruction 里写清要什么菜。拿不准是哪道菜时，先在文字里问，不要猜。
 5. 一次可以给多条动作，它们会按顺序执行
 
 其他规则：
@@ -42,7 +44,9 @@ const EDIT_MENU_TOOLS = [
         + '可用的 op：set_grams（改某道菜里某食材的克数）、add_ingredient（给某道菜加食材）、'
         + 'remove_ingredient（去掉某道菜的食材）、remove_dish（删掉整道菜）、'
         + 'set_person_count（改用餐人数，用量会按比例缩放）、'
-        + 'replace_dish（整道菜换成新的）、add_dish（新增一道菜）。',
+        + 'replace_dish（整道菜换成新的）、add_dish（新增一道菜）。'
+        + '注意：用户只是要加/减一个食材时用 add_ingredient / remove_ingredient，'
+        + '只有明确要一道新菜时才用 add_dish。',
       parameters: {
         type: 'object',
         properties: {
