@@ -16,7 +16,7 @@ import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Card } from '../../src/components/Card';
-import { applyEdits, hasFullDensity, MenuEdit } from '../../src/services/menuEditService';
+import { applyEdits, hasFullDensity, isAlwaysAvailable, MenuEdit } from '../../src/services/menuEditService';
 import { cookingProgressService } from '../../src/services/cookingProgressService';
 import { DishEditorSheet, AddDishSheet } from '../../src/components/DishSheets';
 
@@ -214,7 +214,7 @@ export function Stage1MenuContent() {
                   <View key={ing.name} style={styles.ingredientRow}>
                     <Text style={styles.ingredientName}>{ing.name}</Text>
                     <Text style={styles.ingredientWeight}>{ing.estimatedWeight}g</Text>
-                    {!ing.isInInventory && (
+                    {!ing.isInInventory && !isAlwaysAvailable(ing.name) && (
                       <View style={styles.needBuyTag}>
                         <Text style={styles.needBuyText}>需购买</Text>
                       </View>

@@ -351,4 +351,30 @@ assert.ok(
   '当前没食用油了，采购清单必须提示买，否则照着做不了',
 );
 
+// 24. 清水不该进采购清单：它天然"不在库存"，但不代表要买
+const withWater = applyEdits(baseMenu(), requirement, [
+  {
+    op: 'add_dish',
+    generated: dish('洋葱土豆炒牛肉', {
+      ingredients: [
+        { name: '清水', estimatedWeight: 30, isInInventory: false, kcalPer100g: 0 },
+        { name: '水淀粉', estimatedWeight: 20, isInInventory: false, kcalPer100g: 30 },
+        { name: '矿泉水', estimatedWeight: 300, isInInventory: false, kcalPer100g: 0 },
+      ],
+    }),
+  },
+]);
+assert.ok(
+  !withWater.missingItems.some((m) => m.name === '清水'),
+  '清水被当成要买的东西了',
+);
+assert.ok(
+  withWater.missingItems.some((m) => m.name === '水淀粉'),
+  '水淀粉是淀粉，该在采购清单里（别按"水"字做包含匹配）',
+);
+assert.ok(
+  withWater.missingItems.some((m) => m.name === '矿泉水'),
+  '矿泉水是要买的，不能跟自来水混为一谈',
+);
+
 console.log('✓ 菜单编辑与格式范例全部通过');

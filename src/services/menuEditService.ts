@@ -176,6 +176,23 @@ function cloneDish(d: DishPlan): DishPlan {
   };
 }
 
+/**
+ * 不用买的东西：清水这类家里自来水管就有的。
+ *
+ * 它们的 `isInInventory` 天然是 false（没人会把水记进库存），
+ * 于是被当成"缺料"顶进采购清单 —— 清水也要买，那就成了笑话。
+ *
+ * 名字白名单精确匹配，不做包含匹配：`水淀粉` 是淀粉，`矿泉水` 是真要买的。
+ */
+const ALWAYS_AVAILABLE = new Set([
+  '水', '清水', '白水', '凉水', '温水', '热水', '开水', '白开水', '凉白开',
+  '冰水', '饮用水', '自来水', '纯净水',
+]);
+
+export function isAlwaysAvailable(name: string): boolean {
+  return ALWAYS_AVAILABLE.has((name ?? '').trim());
+}
+
 function findDish(dishes: DishPlan[], name: string): DishPlan | undefined {
   const target = name.trim();
   return dishes.find((d) => d.name.trim() === target);
@@ -471,7 +488,7 @@ export function applyEdits(
 
   for (const dish of dishes) {
     for (const ing of dish.ingredients) {
-      if (ing.isInInventory) continue;
+      if (ing.isInInventory || isAlwaysAvailable(ing.name)) continue;
       const key = `ingredient|${ing.name.trim()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -485,7 +502,7 @@ export function applyEdits(
       });
     }
     for (const s of dish.seasonings) {
-      if (s.isInInventory) continue;
+      if (s.isInInventory || isAlwaysAvailable(s.name)) continue;
       const key = `seasoning|${s.name.trim()}`;
       if (seen.has(key)) continue;
       seen.add(key);
