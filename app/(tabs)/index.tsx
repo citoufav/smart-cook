@@ -179,12 +179,24 @@ export default function InventoryScreen() {
 
   // Re-buy reminder: reset one ingredient's storage date to now (recount "stored N days")
   const handleResetDate = useCallback((id: string, name: string) => {
-    updateIngredient(id, { createDate: new Date().toISOString() });
-    // ponytail: 用 Android 原生 toast 给误触兜底，iOS 端静默；要上 iOS 时换成自绘 toast
-    if (Platform.OS === 'android') {
-      ToastAndroid.show(`「${name}」的入库日期已重置为今天`, ToastAndroid.SHORT);
-    }
-  }, [updateIngredient]);
+    showAlert({
+      title: '重置入库时间？',
+      message: `「${name}」会记成今天新买的，"已存 N 天"从今天重新算。`,
+      buttons: [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '重置',
+          onPress: () => {
+            updateIngredient(id, { createDate: new Date().toISOString() });
+            // ponytail: 用 Android 原生 toast 给误触兜底，iOS 端静默；要上 iOS 时换成自绘 toast
+            if (Platform.OS === 'android') {
+              ToastAndroid.show(`「${name}」的入库日期已重置为今天`, ToastAndroid.SHORT);
+            }
+          },
+        },
+      ],
+    });
+  }, [updateIngredient, showAlert]);
 
   const handleDelete = useCallback((id: string, name: string) => {
     showAlert({ title: '确认删除', message: `确定要删除"${name}"吗？此操作不可恢复。`, buttons: [

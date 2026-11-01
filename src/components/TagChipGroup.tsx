@@ -4,6 +4,7 @@ import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { SelectableChip } from './SelectableChip';
+import { useCustomAlert } from './CustomAlert';
 import type { Measurable } from '../hooks/useKeyboardAwareScroll';
 
 /**
@@ -44,6 +45,7 @@ export function TagChipGroup({
   onInputFocus?: (node: Measurable | null) => void;
   style?: object;
 }) {
+  const { showAlert } = useCustomAlert();
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
   const inputRef = useRef<TextInput>(null);
@@ -51,8 +53,33 @@ export function TagChipGroup({
   const extras = selected.filter((s) => !items.includes(s));
   const all = onlySelected ? selected : [...items, ...extras];
 
-  const toggle = (item: string) =>
-    onChange(selected.includes(item) ? selected.filter((x) => x !== item) : [...selected, item]);
+  const remove = (item: string) => onChange(selected.filter((x) => x !== item));
+  const add = (item: string) => onChange([...selected, item]);
+
+  /**
+   * 点一下取消很顺手，但设置里那是**删掉已经存下来的东西**，
+   * 手滑一下就没了。所以只有"只显示已保存"的模式（设置抽屉）才弹确认；
+   * 引导页里点掉一个未保存的勾选不需要问。
+   */
+  const handleChipPress = (item: string) => {
+    const isOn = selected.includes(item);
+    if (!isOn) {
+      add(item);
+      return;
+    }
+    if (!onlySelected) {
+      remove(item);
+      return;
+    }
+    showAlert({
+      title: `取消「${item}」？`,
+      message: '这条会从你的偏好里删掉，下次生成菜单就不再考虑它。',
+      buttons: [
+        { text: '保留', style: 'cancel' },
+        { text: '删掉', style: 'destructive', onPress: () => remove(item) },
+      ],
+    });
+  };
 
   const submit = () => {
     const value = text.trim().slice(0, maxLength);
@@ -74,7 +101,7 @@ export function TagChipGroup({
             label={item}
             selected={selected.includes(item)}
             role="checkbox"
-            onPress={() => toggle(item)}
+            onPress={() => handleChipPress(item)}
           />
         ))}
         {!adding && (
