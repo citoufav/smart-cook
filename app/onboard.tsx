@@ -4,9 +4,12 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../src/contexts/SettingsContext';
 import { useInventory } from '../src/contexts/InventoryContext';
-import { SelectableChip } from '../src/components/SelectableChip';
+import { TagChipGroup } from '../src/components/TagChipGroup';
+import {
+  CUISINES, FLAVORS, ALLERGENS, AVOIDANCES, PANTRY_STAPLES, PANTRY_SEASONINGS,
+} from '../src/constants/dietaryOptions';
 import { Button } from '../src/components/Button';
-import { useKeyboardAwareScroll, type Measurable } from '../src/hooks/useKeyboardAwareScroll';
+import { useKeyboardAwareScroll } from '../src/hooks/useKeyboardAwareScroll';
 import { validateApiKey } from '../src/utils/validation';
 import { nextMealFor } from '../src/utils/mealTime';
 import { COLORS } from '../src/constants/colors';
@@ -18,36 +21,6 @@ const DEEPSEEK_KEY_URL = 'https://platform.deepseek.com/api_keys';
 
 // Presets shown on first launch. Tapping a chip writes it into the same fields
 // the AI prompt already reads, so no extra merge/sync logic is needed.
-const CUISINES = [
-  '家常菜', '川菜', '湘菜', '粤菜', '江浙菜', '东北菜', '西北菜', '云南菜',
-  '日式', '韩式', '泰式', '东南亚', '意式', '美式', '地中海',
-];
-const FLAVORS = [
-  '清淡', '少油', '重口', '微辣', '中辣', '特辣', '酸辣', '酸甜',
-  '咸鲜', '香辣', '孜然', '蒜香', '甜口',
-];
-const ALLERGENS = [
-  '花生', '坚果', '海鲜', '虾蟹', '贝类', '鱼类', '乳制品', '鸡蛋',
-  '麸质', '大豆', '芝麻', '芒果',
-];
-const AVOIDANCES = [
-  '不吃辣', '不吃猪肉', '不吃牛肉', '不吃羊肉', '不吃鸡肉', '不吃内脏',
-  '不吃海鲜', '不吃鸡蛋', '不吃香菜', '不吃葱蒜', '不吃姜', '不吃菌菇',
-];
-// 常备食材：按「蔬菜 → 蛋白 → 主食 → 葱姜蒜」排，用户扫一眼就知道自己那几样在哪
-const PANTRY_STAPLES = [
-  '番茄', '土豆', '洋葱', '青椒', '胡萝卜', '白菜', '西兰花', '黄瓜',
-  '茄子', '豆角', '菠菜', '香菇', '南瓜', '豆芽',
-  '鸡蛋', '豆腐', '猪肉', '五花肉', '鸡胸肉', '牛肉', '虾仁', '鱼',
-  '大米', '面条', '馒头', '红薯',
-  '小葱', '大蒜', '姜',
-];
-// 常备调料：选中的直接以「充足」状态进调料库
-const PANTRY_SEASONINGS = [
-  '食用油', '盐', '生抽', '老抽', '醋', '料酒', '白糖', '淀粉',
-  '蚝油', '胡椒粉', '辣椒油', '香油', '花椒', '豆瓣酱',
-];
-
 const TITLES = ['先配一个 AI Key', '你爱吃什么？', '你不能吃什么？', '家里现在有什么？'];
 const SUBTITLES = [
   '这个 App 自己不做 AI，用的是你自己的 DeepSeek 账号。全程大约 5 分钟',
@@ -56,90 +29,6 @@ const SUBTITLES = [
   '点选常备食材和调料直接加入库存，重量以后随时能改',
 ];
 const TOTAL_STEPS = TITLES.length;
-
-function toggleIn(list: string[], item: string): string[] {
-  return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
-}
-
-function ChipGroup({
-  title,
-  items,
-  selected,
-  onChange,
-  addPlaceholder = '自己写一个',
-  onInputFocus,
-}: {
-  title: string;
-  items: string[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-  addPlaceholder?: string;
-  /** 键盘弹起时把输入框滚上来；子组件自己持 ref，所以传节点不给 ref */
-  onInputFocus?: (node: Measurable | null) => void;
-}) {
-  const [adding, setAdding] = useState(false);
-  const [text, setText] = useState('');
-  const inputRef = useRef<TextInput>(null);
-
-  // 预设之外的自己填的，也要显示成 chip（已选中状态），否则加完就看不见了
-  const extras = selected.filter((s) => !items.includes(s));
-  const all = [...items, ...extras];
-
-  const submit = () => {
-    const value = text.trim();
-    if (value && !selected.includes(value)) onChange([...selected, value]);
-    setText('');
-    setAdding(false);
-  };
-
-  return (
-    <View style={styles.group}>
-      <Text style={styles.groupTitle}>{title}</Text>
-      <View style={styles.chipWrap}>
-        {all.map((item) => (
-          <SelectableChip
-            key={item}
-            label={item}
-            selected={selected.includes(item)}
-            role="checkbox"
-            onPress={() => onChange(toggleIn(selected, item))}
-          />
-        ))}
-        {!adding && (
-          <TouchableOpacity
-            style={styles.addChip}
-            onPress={() => setAdding(true)}
-            activeOpacity={0.7}
-            accessibilityLabel={`添加${title}`}
-          >
-            <Text style={styles.addChipText}>＋</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {adding && (
-        <View style={styles.addRow}>
-          <TextInput
-            ref={inputRef}
-            style={styles.addInput}
-            value={text}
-            onChangeText={setText}
-            placeholder={addPlaceholder}
-            placeholderTextColor={COLORS.textTertiary}
-            maxLength={20}
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={submit}
-            onFocus={() => onInputFocus?.(inputRef.current)}
-            accessibilityLabel={`${title}自定义输入`}
-          />
-          <Button title="加上" variant="primary" size="sm" onPress={submit} />
-          <Button title="取消" variant="ghost" size="sm" onPress={() => { setAdding(false); setText(''); }} />
-        </View>
-      )}
-    </View>
-  );
-}
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
@@ -195,10 +84,15 @@ export default function OnboardingScreen() {
     if (pendingKey && !validateApiKey(pendingKey)) {
       await updateApiKey(pendingKey).catch(() => {});
     }
+    // 合并回两个存储字段；用 Set 去重，万一两组里加了同一个自定义项。
+    // **一个都没选就保留原值**：老用户重跑引导（调试开关）或在第 1 步就「跳过」时，
+    // 这里会是空数组，照写就把之前存的偏好清空了 —— 这是真的丢数据。
+    // 想清空请去设置里逐个取消，别指望"不选"等于"清空"。
+    const pickedTaste = [...new Set([...cuisines, ...flavors])];
+    const pickedDiet = [...new Set([...allergens, ...avoidances])];
     await updatePreferences({
-      // 合并回两个存储字段；用 Set 去重，万一两组里加了同一个自定义项
-      tastePreferences: [...new Set([...cuisines, ...flavors])],
-      dietaryRestrictions: [...new Set([...allergens, ...avoidances])],
+      tastePreferences: pickedTaste.length > 0 ? pickedTaste : settingsState.preferences.tastePreferences,
+      dietaryRestrictions: pickedDiet.length > 0 ? pickedDiet : settingsState.preferences.dietaryRestrictions,
       onboardingDone: true,
     });
     const existing = new Set(invState.ingredients.map((i) => i.name));
@@ -234,7 +128,7 @@ export default function OnboardingScreen() {
       return;
     }
     router.replace('/(tabs)');
-  }, [cuisines, flavors, allergens, avoidances, pantry, pantrySeasonings, invState.ingredients, invState.seasonings, updatePreferences, addIngredient, addSeasoning, keyInput, updateApiKey, nextMeal]);
+  }, [cuisines, flavors, allergens, avoidances, pantry, pantrySeasonings, invState.ingredients, invState.seasonings, updatePreferences, addIngredient, addSeasoning, keyInput, updateApiKey, nextMeal, settingsState.preferences.tastePreferences, settingsState.preferences.dietaryRestrictions]);
 
   const goNext = useCallback(async () => {
     if (step === 0 && !(await saveKeyIfAny())) return;
@@ -330,20 +224,20 @@ export default function OnboardingScreen() {
         )}
         {step === 1 && (
           <>
-            <ChipGroup title="偏爱菜系" items={CUISINES} selected={cuisines} onChange={setCuisines} addPlaceholder="其他菜系，如：东北菜" onInputFocus={captureNode} />
-            <ChipGroup title="口味倾向" items={FLAVORS} selected={flavors} onChange={setFlavors} addPlaceholder="其他口味，如：咖喱" onInputFocus={captureNode} />
+            <TagChipGroup style={styles.group} title="偏爱菜系" items={CUISINES} selected={cuisines} onChange={setCuisines} addPlaceholder="其他菜系，如：东北菜" onInputFocus={captureNode} />
+            <TagChipGroup style={styles.group} title="口味倾向" items={FLAVORS} selected={flavors} onChange={setFlavors} addPlaceholder="其他口味，如：咖喱" onInputFocus={captureNode} />
           </>
         )}
         {step === 2 && (
           <>
-            <ChipGroup title="过敏（务必勾选）" items={ALLERGENS} selected={allergens} onChange={setAllergens} addPlaceholder="其他过敏原，如：菠萝" onInputFocus={captureNode} />
-            <ChipGroup title="忌口" items={AVOIDANCES} selected={avoidances} onChange={setAvoidances} addPlaceholder="其他忌口，如：不吃苦瓜" onInputFocus={captureNode} />
+            <TagChipGroup style={styles.group} title="过敏（务必勾选）" items={ALLERGENS} selected={allergens} onChange={setAllergens} addPlaceholder="其他过敏原，如：菠萝" onInputFocus={captureNode} />
+            <TagChipGroup style={styles.group} title="忌口" items={AVOIDANCES} selected={avoidances} onChange={setAvoidances} addPlaceholder="其他忌口，如：不吃苦瓜" onInputFocus={captureNode} />
           </>
         )}
         {step === 3 && (
           <>
-            <ChipGroup title="常备食材" items={PANTRY_STAPLES} selected={pantry} onChange={setPantry} addPlaceholder="其他食材，如：玉米" onInputFocus={captureNode} />
-            <ChipGroup title="常备调料" items={PANTRY_SEASONINGS} selected={pantrySeasonings} onChange={setPantrySeasonings} addPlaceholder="其他调料，如：咖喱块" onInputFocus={captureNode} />
+            <TagChipGroup style={styles.group} title="常备食材" items={PANTRY_STAPLES} selected={pantry} onChange={setPantry} addPlaceholder="其他食材，如：玉米" onInputFocus={captureNode} />
+            <TagChipGroup style={styles.group} title="常备调料" items={PANTRY_SEASONINGS} selected={pantrySeasonings} onChange={setPantrySeasonings} addPlaceholder="其他调料，如：咖喱块" onInputFocus={captureNode} />
           </>
         )}
       </ScrollView>
@@ -387,38 +281,6 @@ const styles = StyleSheet.create({
   title: { fontSize: TYPOGRAPHY.h2, fontWeight: '700', color: COLORS.textPrimary },
   subtitle: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, marginTop: SPACING.sm },
   group: { marginTop: SPACING.xxl },
-  groupTitle: {
-    fontSize: TYPOGRAPHY.body,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.md,
-  },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, alignItems: 'center' },
-  addChip: {
-    width: 36,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: BORDER_RADIUS.full,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: COLORS.textTertiary,
-  },
-  addChipText: { fontSize: 16, color: COLORS.textSecondary, fontWeight: '600' },
-  addRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.sm },
-  addInput: {
-    flex: 1,
-    height: 40,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: BORDER_RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    fontSize: TYPOGRAPHY.bodySmall,
-    color: COLORS.textPrimary,
-    backgroundColor: COLORS.surface,
-  },
-
-  // API Key 那一步
   steps: {
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,

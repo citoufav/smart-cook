@@ -33,6 +33,8 @@ import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
 import { useKeyboardAwareScroll } from '../hooks/useKeyboardAwareScroll';
 import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProviders';
 import { HEALTH_CONDITIONS } from '../constants/healthConditions';
+import { TASTE_TAGS, DIETARY_TAGS } from '../constants/dietaryOptions';
+import { TagChipGroup } from './TagChipGroup';
 import { SelectableChip } from './SelectableChip';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
@@ -48,7 +50,8 @@ function pickCookingSkill(value: string): CookingSkill {
 }
 
 /** 抽屉里可折叠的分区。顺序 = 展示顺序 */
-const SECTION_KEYS = ['diet', 'taste', 'skill', 'ai', 'data'] as const;
+/** 顺序即抽屉里从上到下的顺序：口味在最前（最常改），数据管理垫底 */
+const SECTION_KEYS = ['taste', 'diet', 'skill', 'ai', 'data'] as const;
 const PICKABLE_SECTIONS = new Set<string>(SECTION_KEYS);
 
 // ---- Dropdown selector ----
@@ -114,62 +117,6 @@ function DropdownSelector({
   );
 }
 
-// ---- Dietary tag input ----
-function DietaryTagInput({
-  tags,
-  onTagsChange,
-  placeholder = '输入忌口项，如：不吃辣',
-}: {
-  tags: string[];
-  onTagsChange: (tags: string[]) => void;
-  placeholder?: string;
-}) {
-  const [inputValue, setInputValue] = useState('');
-
-  const handleAdd = useCallback(() => {
-    const trimmed = inputValue.trim();
-    if (trimmed && !tags.includes(trimmed)) {
-      onTagsChange([...tags, trimmed]);
-      setInputValue('');
-    }
-  }, [inputValue, tags, onTagsChange]);
-
-  const handleRemove = useCallback(
-    (index: number) => {
-      onTagsChange(tags.filter((_, i) => i !== index));
-    },
-    [tags, onTagsChange],
-  );
-
-  return (
-    <View>
-      <View style={styles.tagInputRow}>
-        <TextInput
-          style={styles.tagInput}
-          placeholder={placeholder}
-          placeholderTextColor={COLORS.textTertiary}
-          value={inputValue}
-          onChangeText={setInputValue}
-          onSubmitEditing={handleAdd}
-          returnKeyType="done"
-        />
-        <Button title="添加" variant="primary" size="sm" onPress={handleAdd} />
-      </View>
-      {tags.length > 0 && (
-        <View style={styles.tagList}>
-          {tags.map((tag, index) => (
-            <View key={`${tag}-${index}`} style={styles.tagChip}>
-              <Text style={styles.tagText}>{tag}</Text>
-              <TouchableOpacity onPress={() => handleRemove(index)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.tagRemove}>×</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
 
 interface SettingsDrawerProps {
   visible: boolean;
@@ -190,12 +137,14 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const [modelName, setModelName] = useState(preferences.modelName);
   const [apiUrl, setApiUrl] = useState(preferences.apiUrl);
   // 键盘弹起时把输入框滚到键盘上方（edge-to-edge 下系统不会自己滚）
-  const { scrollRef, onScroll, captureFocus, keyboardHeight } = useKeyboardAwareScroll();
+  const { scrollRef, onScroll, captureFocus, captureNode, keyboardHeight } = useKeyboardAwareScroll();
   const apiKeyRef = useRef<TextInput>(null);
   const apiUrlRef = useRef<TextInput>(null);
   const modelRef = useRef<TextInput>(null);
   const [apiType, setApiType] = useState<ApiType>(preferences.apiType);
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
+  // 长期疾病默认收起：平时不占版面，也不把这排字摆在所有人面前
+  const [showConditions, setShowConditions] = useState(false);
   const [tasteTags, setTasteTags] = useState<string[]>([...preferences.tastePreferences]);
   const [cookingSkill, setCookingSkill] = useState<CookingSkill>(
     pickCookingSkill(preferences.cookingSkill),
@@ -367,6 +316,24 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* ---- Taste preferences（放最前：最常改的一项） ---- */}
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('taste')} activeOpacity={0.6}>
+            <Text style={styles.sectionHeaderText}>口味与菜系</Text>
+            <Text style={styles.chevron}>{expandedSections.has('taste') ? '▾' : '▸'}</Text>
+          </TouchableOpacity>
+          {expandedSections.has('taste') && (
+            <>
+              <TagChipGroup
+                items={TASTE_TAGS}
+                selected={tasteTags}
+                onChange={handleTasteChange}
+                addPlaceholder="其他偏好，如：咖喱"
+                onInputFocus={captureNode}
+              />
+              <Text style={styles.itemCount}>{tasteTags.length} 项</Text>
+            </>
+          )}
+
           {/* ---- Dietary restrictions ---- */}
           <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('diet')} activeOpacity={0.6}>
             <Text style={styles.sectionHeaderText}>忌口设置</Text>
@@ -374,44 +341,53 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           </TouchableOpacity>
           {expandedSections.has('diet') && (
             <>
-              <DietaryTagInput tags={dietaryTags} onTagsChange={handleDietaryChange} />
+              <TagChipGroup
+                items={DIETARY_TAGS}
+                selected={dietaryTags}
+                onChange={handleDietaryChange}
+                addPlaceholder="其他忌口，如：不吃苦瓜"
+                onInputFocus={captureNode}
+              />
               <Text style={styles.itemCount}>{dietaryTags.length} 项</Text>
 
-              {/* 长期疾病/饮食习惯：点一下就往忌口里加一条写清楚的约束 */}
-              <Text style={styles.conditionTitle}>长期疾病或饮食方式</Text>
-              <View style={styles.conditionChips}>
-                {HEALTH_CONDITIONS.map((c) => {
-                  const on = dietaryTags.includes(c.rule);
-                  return (
-                    <SelectableChip
-                      key={c.label}
-                      label={c.label}
-                      selected={on}
-                      role="checkbox"
-                      onPress={() =>
-                        handleDietaryChange(
-                          on ? dietaryTags.filter((t) => t !== c.rule) : [...dietaryTags, c.rule],
-                        )
-                      }
-                    />
-                  );
-                })}
-              </View>
-              <Text style={styles.conditionNote}>
-                只是让 AI 避开相应的食材和做法，不能代替医生或营养师的建议。
-              </Text>
-            </>
-          )}
-
-          {/* ---- Taste preferences ---- */}
-          <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('taste')} activeOpacity={0.6}>
-            <Text style={styles.sectionHeaderText}>口味与菜系</Text>
-            <Text style={styles.chevron}>{expandedSections.has('taste') ? '▾' : '▸'}</Text>
-          </TouchableOpacity>
-          {expandedSections.has('taste') && (
-            <>
-              <DietaryTagInput tags={tasteTags} onTagsChange={handleTasteChange} placeholder="输入偏好，如：川菜、清淡" />
-              <Text style={styles.itemCount}>{tasteTags.length} 项</Text>
+              {/*
+                长期疾病折起来：不是给所有人看的，摆在外面既长又忌讳。
+                展开后点一下就往忌口里加一条写清楚的约束（存整句，见 healthConditions）。
+              */}
+              <TouchableOpacity
+                style={styles.conditionToggle}
+                onPress={() => setShowConditions(!showConditions)}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.conditionToggleText}>
+                  {showConditions ? '▾' : '▸'} 有长期疾病或特殊饮食方式？
+                </Text>
+              </TouchableOpacity>
+              {showConditions && (
+                <>
+                  <View style={styles.conditionChips}>
+                    {HEALTH_CONDITIONS.map((c) => {
+                      const on = dietaryTags.includes(c.rule);
+                      return (
+                        <SelectableChip
+                          key={c.label}
+                          label={c.label}
+                          selected={on}
+                          role="checkbox"
+                          onPress={() =>
+                            handleDietaryChange(
+                              on ? dietaryTags.filter((t) => t !== c.rule) : [...dietaryTags, c.rule],
+                            )
+                          }
+                        />
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.conditionNote}>
+                    只是让 AI 避开相应的食材和做法，不能代替医生或营养师的建议。
+                  </Text>
+                </>
+              )}
             </>
           )}
 
@@ -727,13 +703,8 @@ const styles = StyleSheet.create({
   },
 
   // 长期疾病/饮食方式
-  conditionTitle: {
-    fontSize: TYPOGRAPHY.bodySmall,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.sm,
-  },
+  conditionToggle: { paddingVertical: SPACING.sm, marginTop: SPACING.sm },
+  conditionToggleText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary },
   conditionChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   conditionNote: {
     fontSize: TYPOGRAPHY.caption,
