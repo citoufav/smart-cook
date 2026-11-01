@@ -83,7 +83,7 @@ export default function DishesScreen() {
 
   return (
     <View style={styles.container}>
-      <HeaderBar title="我的菜" onOpenDrawer={openSettings} />
+      <HeaderBar title="随煮" onOpenDrawer={openSettings} />
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} />
