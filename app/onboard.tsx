@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../src/contexts/SettingsContext';
 import { useInventory } from '../src/contexts/InventoryContext';
-import { useSettingsDrawer } from '../src/contexts/SettingsDrawerContext';
 import { SelectableChip } from '../src/components/SelectableChip';
 import { Button } from '../src/components/Button';
 import { useKeyboardAwareScroll } from '../src/hooks/useKeyboardAwareScroll';
@@ -73,7 +72,6 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { state: settingsState, updatePreferences, updateApiKey } = useSettings();
   const { state: invState, addIngredient } = useInventory();
-  const { openSettings } = useSettingsDrawer();
   const { scrollRef, onScroll, captureFocus } = useKeyboardAwareScroll();
   const keyInputRef = useRef<TextInput>(null);
 
@@ -220,16 +218,6 @@ export default function OnboardingScreen() {
             <Text style={styles.note}>
               这一步可以跳过，以后在设置里随时能补；但没有 Key 的时候，AI 生成菜单会用不了。
             </Text>
-
-            <View style={styles.proBlock}>
-              <Text style={styles.proTitle}>已经习惯自己配 API？</Text>
-              <Text style={styles.proText}>
-                这一步可以直接跳过。去「设置 → 模型与 API」里选 OpenAI 兼容 / Anthropic 兼容，自己填接口地址和模型名——走代理、换模型、接自建网关都行。
-              </Text>
-              <TouchableOpacity onPress={openSettings} hitSlop={10} style={styles.proLinkWrap}>
-                <Text style={styles.proLink}>打开模型与 API 设置 ›</Text>
-              </TouchableOpacity>
-            </View>
           </>
         )}
         {step === 1 && (
@@ -302,18 +290,6 @@ const styles = StyleSheet.create({
   stepText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textBody, lineHeight: 21 },
   stepNum: { fontWeight: '700', color: COLORS.primary },
   stepBold: { fontWeight: '700', color: COLORS.textPrimary },
-
-  // 给已经会用 API 的人：一句话指路，不占主流程
-  proBlock: {
-    marginTop: SPACING.xxl,
-    paddingTop: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  proTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.textSecondary },
-  proText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 19, marginTop: SPACING.xs },
-  proLinkWrap: { marginTop: SPACING.sm },
-  proLink: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.primary },
   fieldLabel: {
     fontSize: TYPOGRAPHY.bodySmall,
     fontWeight: '600',
