@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+**Debug switch — 每次启动都显示引导.** At the bottom of 设置 → 数据管理 there is now a toggle that makes the app enter onboarding on every launch instead of only the first. Needed because the flow can otherwise only be tested once per install (clear data to see it again), which is a miserable loop when iterating on copy and layout.
+
+  Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
+
 ## 2026-11-01 — First run now asks for the API key, with a button that goes and gets one
 
 **Added — the key step is the first thing onboarding shows.** It used to go straight to 「你爱吃什么？」 and leave the key as an unmentioned prerequisite somewhere in settings. Four steps now: 配 Key → 口味 → 忌口 → 常备食材.
