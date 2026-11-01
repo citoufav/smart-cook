@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DishPlan, SavedDish } from '../types';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { logger } from '../utils/logger';
-import { mergeDishIntoLibrary, normalizeDishName } from '../utils/dishLibrary';
+import { mergeDishIntoLibrary, normalizeDishName, isStapleDish } from '../utils/dishLibrary';
 
 /**
  * 菜品库的读写层。合并规则在 utils/dishLibrary.ts（纯函数，可单测），
@@ -41,9 +41,9 @@ class DishLibraryService {
     }
   }
 
-  /** 按「最近做过」排序的完整列表 */
+  /** 按「最近做过」排序的完整列表（主食不算菜，老数据里的米饭在这里滤掉） */
   async list(): Promise<SavedDish[]> {
-    const items = await this.getAll();
+    const items = (await this.getAll()).filter((d) => !isStapleDish(d.name));
     return items.sort((a, b) => (a.lastCookedAt < b.lastCookedAt ? 1 : -1));
   }
 

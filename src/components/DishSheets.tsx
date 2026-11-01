@@ -20,19 +20,20 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useInventory } from '../contexts/InventoryContext';
 import { useCooking } from '../contexts/CookingContext';
 import { generateOneDishStream } from '../services/aiService';
+import { dishLibraryService } from '../services/dishLibraryService';
 import {
   computeCalories,
   parseGramAmount,
   scaleGramAmount,
   type MenuEdit,
 } from '../services/menuEditService';
-import type { DishPlan } from '../types';
+import type { DishPlan, SavedDish } from '../types';
 
 // ---------------------------------------------------------------------------
 // 共用外壳
 // ---------------------------------------------------------------------------
 
-function SheetShell({
+export function SheetShell({
   visible,
   title,
   subtitle,
@@ -737,6 +738,30 @@ const styles = StyleSheet.create({
   body: { flexGrow: 0, flexShrink: 1 },
   bodyContent: { padding: SPACING.lg, paddingBottom: SPACING.md },
 
+  // 挑菜列表：和 body 一样要 flexShrink，否则长列表把底部按钮顶出屏幕
+  pickerScroll: { flexGrow: 0, flexShrink: 1 },
+  pickerBody: { padding: SPACING.lg, gap: SPACING.sm },
+  pickerEmpty: {
+    fontSize: TYPOGRAPHY.bodySmall,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    paddingVertical: SPACING.xxl,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  pickerRowOn: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryBg },
+  pickerInfo: { flex: 1 },
+  pickerName: { fontSize: TYPOGRAPHY.body, fontWeight: '600', color: COLORS.textPrimary },
+  pickerMeta: { fontSize: TYPOGRAPHY.caption, color: COLORS.textSecondary, marginTop: 2 },
+
   fieldLabel: {
     fontSize: TYPOGRAPHY.bodySmall,
     fontWeight: '600',
@@ -876,3 +901,109 @@ const styles = StyleSheet.create({
   },
   previewChipText: { fontSize: TYPOGRAPHY.caption, color: COLORS.textBody },
 });
+
+// ---------------------------------------------------------------------------
+// 挑做过的菜（生成菜单时复用）
+// ---------------------------------------------------------------------------
+
+/**
+ * 勾旧菜。**不限条数** —— 勾满一桌就是"这次不想要新菜"，
+ * 那是正常诉求，加个上限反而挡住它。
+ */
+export function DishPickerSheet({
+  visible,
+  selected,
+  onClose,
+  onChange,
+}: {
+  visible: boolean;
+  selected: SavedDish[];
+  onClose: () => void;
+  onChange: (next: SavedDish[]) => void;
+}) {
+  const [all, setAll] = useState<SavedDish[]>([]);
+  const [loading, setLoading] = useState(false);
+  const selectedIds = useMemo(() => new Set(selected.map((d) => d.id)), [selected]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let alive = true;
+    setLoading(true);
+    dishLibraryService
+      .list()
+      .then((items) => {
+        if (alive) setAll(items);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [visible]);
+
+  const toggle = useCallback(
+    (dish: SavedDish) => {
+      onChange(
+        selectedIds.has(dish.id)
+          ? selected.filter((d) => d.id !== dish.id)
+          : [...selected, dish],
+      );
+    },
+    [onChange, selected, selectedIds],
+  );
+
+  return (
+    <SheetShell
+      visible={visible}
+      title="挑做过的菜"
+      subtitle="勾中的菜原样沿用，AI 只补差的那部分"
+      onClose={onClose}
+      footer={
+        <View style={styles.footer}>
+          <Button
+            title={selected.length > 0 ? `用这 ${selected.length} 道（${selected.reduce((n, d) => n + (d.estimatedNutrition?.calories ?? 0), 0)} 大卡）` : '一道都还没勾'}
+            onPress={onClose}
+            variant="primary"
+            style={styles.footerBtn}
+            disabled={selected.length === 0}
+          />
+        </View>
+      }
+    >
+      <ScrollView style={styles.pickerScroll} contentContainerStyle={styles.pickerBody}>
+        {loading ? (
+          <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
+        ) : all.length === 0 ? (
+          <Text style={styles.pickerEmpty}>还没有做过的菜，先做完一次饭吧</Text>
+        ) : (
+          all.map((dish) => {
+            const on = selectedIds.has(dish.id);
+            return (
+              <TouchableOpacity
+                key={dish.id}
+                style={[styles.pickerRow, on && styles.pickerRowOn]}
+                onPress={() => toggle(dish)}
+                activeOpacity={0.7}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: on }}
+              >
+                <Ionicons
+                  name={on ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={22}
+                  color={on ? COLORS.primary : COLORS.textTertiary}
+                />
+                <View style={styles.pickerInfo}>
+                  <Text style={styles.pickerName} numberOfLines={1}>{dish.name}</Text>
+                  <Text style={styles.pickerMeta}>
+                    {dish.estimatedNutrition?.calories ?? 0} 大卡 · 当初 {dish.basePersonCount} 人份 · 做过 {dish.timesCooked} 次
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </ScrollView>
+    </SheetShell>
+  );
+}

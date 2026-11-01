@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storageKeys';
+import { isStapleDish } from '../utils/dishLibrary';
 
 interface DietEntry {
   name: string;
@@ -22,10 +23,18 @@ async function saveAll(entries: DietEntry[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEYS.DIET_MEMORY, JSON.stringify(entries));
 }
 
-/** Get the dish names of the most recent N meals (newest first) */
+/**
+ * Get the dish names of the most recent N meals (newest first)
+ *
+ * 主食滤掉：「最近吃过：米饭、胡萝卜洋葱豆腐炒蛋」这种读着很怪，
+ * 而且它会以「请避免推荐与以上重复的菜品」进 AI 提示词 —— 那也不该挡着米饭。
+ */
 export async function getRecentMeals(limit: number = 3): Promise<string[]> {
   const all = await getAll();
-  return all.slice(0, limit).map((e) => e.name);
+  return all
+    .map((e) => e.name)
+    .filter((name) => name && !isStapleDish(name))
+    .slice(0, limit);
 }
 
 /** Record the dish names of one meal (supports multiple names) */

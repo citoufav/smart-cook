@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserPreferences, ReasoningEffort, CookingSkill, DishPlan } from '../types';
+import { UserPreferences, ReasoningEffort, CookingSkill, DishPlan, SavedDish } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
@@ -131,6 +131,9 @@ const stage1ResultSchema = z
     missingItems: z.array(missingItemSchema).catch([]),
     cookingOrderDescription: z.string().catch(''),
     flavorDescription: z.string().catch(''),
+    // 复用旧菜时才有：AI 给每道旧菜定的倍数。不收在这里是因为倍数可能是
+    // "1.5" 这种字符串，交给 sanitizeScale 统一兜底
+    reused: z.array(z.any()).catch([]),
   })
   .passthrough();
 
@@ -147,6 +150,14 @@ const stage1ResultSchema = z
  */
 export function parseStage1Result(raw: unknown, reasoningContent: string): Stage1AIResult {
   const parsed = stage1ResultSchema.parse(raw);
+
+  // 复用旧菜时 AI 会多给一个 reused 数组；没给就是普通生成，空数组自然忽略
+  const reused: ReuseScale[] = (parsed.reused as any[])
+    .map((r) => ({
+      name: String(r?.name ?? '').trim(),
+      scale: pickNumber(r, ['scale', 'multiplier', '倍数']),
+    }))
+    .filter((r) => r.name);
 
   // 模型偶尔把整道菜直接放在根上（没有 dishes 包一层），照单收下
   let rawDishes: any[] = parsed.dishes;
@@ -194,6 +205,7 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
   if (dishes.length === 0) {
     return {
       dishes,
+      reused,
       missingItems: parsed.missingItems,
       reasoningContent,
       summary: parsed.summary,
@@ -211,6 +223,7 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
   // 热量以「克数 × 每100克大卡」为准，模型给的 estimatedNutrition 只当兜底
   return {
     dishes: dishes.map(recomputeNutrition),
+    reused,
     missingItems: parsed.missingItems,
     reasoningContent,
     summary: parsed.summary,
@@ -310,6 +323,60 @@ function formatSeasoningLines(seasonings: { name: string; status: string }[]): s
   return seasonings.map((s) => `- ${s.name}：${STATUS_LABEL[s.status] || s.status}`).join('\n');
 }
 
+/**
+ * 把勾选的旧菜压成几行给它看。
+ *
+ * **刻意不给步骤文案**：决定倍数只需要知道是什么菜、用什么、多少量，
+ * 步骤会白烧几千 token 的输出等价值。代价是模型看不出"这道菜是不是用大锅炖的"，
+ * 只能从菜名和用料猜 —— 这个代价是明知接受的。
+ */
+function formatReusedDishLines(saved: SavedDish[]): string {
+  return saved
+    .map((d) => {
+      const main = d.ingredients.map((i) => `${i.name}${i.estimatedWeight}g`).join('、');
+      const sea = d.seasonings.map((s) => `${s.name}${s.amount ?? ''}`).join('、');
+      return `- ${d.name}｜当初 ${d.basePersonCount} 人份｜${d.estimatedNutrition?.calories ?? 0} 大卡｜${main}${sea ? `｜调料：${sea}` : ''}`;
+    })
+    .join('\n');
+}
+
+/**
+ * 复用旧菜时追加的一段。它要能**推翻**系统提示里"dishes 至少 1 道菜"那条 ——
+ * 勾了 3 道已经是整桌菜的时候，AI 一道新的都不该出。
+ */
+function buildReuseSection(
+  reused: SavedDish[],
+  requirement: { personCount: number; caloriePreference?: number },
+): string {
+  const already = reused.reduce((n, d) => n + (d.estimatedNutrition?.calories ?? 0), 0);
+  const target = requirement.caloriePreference
+    ? requirement.caloriePreference * requirement.personCount
+    : 0;
+  const gapText = target > 0
+    ? `已选这些菜合计 ${already} 大卡（当年的人数份量），本次 ${requirement.personCount} 人目标共 ${target} 大卡，缺口约 ${Math.max(0, target - already)} 大卡。`
+    : `已选这些菜合计 ${already} 大卡（当年的人数份量）。`;
+
+  return `
+【这次有几道菜是复用旧菜谱】
+用户从"做过的菜"里勾了 ${reused.length} 道，菜谱原样沿用，**不要重写它们的配料和步骤**。
+${formatReusedDishLines(reused)}
+${gapText}
+
+你来当主厨，定两件事：
+
+A. 每道旧菜这次做多少 —— 给一个倍数 scale（1 = 原样，1.5 = 一倍半，2 = 两倍）。
+   几个人吃多少你说了算，**没有上下限，也不要求跟人数成正比**。
+   唯一的物理约束是真的：家用炒锅塞不下就翻不开、变成煮菜，这种时候宁可少放大、多加一道菜；
+   炖菜、汤、主食没这个限制，可以按人数放开。
+
+B. 还要不要再加菜 —— 加几道、加什么，你定。**可以一道都不加**（勾的菜已经够一桌了）。
+   只输出新加的菜，「主食=菜品」照旧：米饭这类不在旧菜里，需要就自己加。
+
+返回的 JSON 要多一个 reused 数组，name 必须和上面列出的菜名一字不差：
+"reused": [{"name": "青椒肉丝", "scale": 1.5}, {"name": "番茄蛋花汤", "scale": 2}]
+必须每道旧菜都有一条。如果一道新菜都不加，dishes 返回空数组 [] 即可。`;
+}
+
 function buildStage1UserPrompt(
   ingredients: { name: string; weight: number | null; createDate: string }[],
   seasonings: { name: string; status: string }[],
@@ -318,6 +385,7 @@ function buildStage1UserPrompt(
   recentMeals?: string[],
   tastePreferences: string[] = [],
   cookingSkill: CookingSkill = 'beginner',
+  reused: SavedDish[] = [],
 ): string {
   const ingredientLines = formatIngredientLines(ingredients);
   const seasoningLines = formatSeasoningLines(seasonings);
@@ -351,13 +419,22 @@ ${ingredientLines}
 
 【库存调料】
 ${seasoningLines}
+${reused.length > 0 ? buildReuseSection(reused, requirement) : ''}
+${reused.length > 0
+    ? '其他字段照系统提示里的范例格式返回，每道新菜都要有 name。'
+    : '请照系统提示里的范例格式返回。确保 dishes 数组至少 1 道菜、每道菜都有 name；范例里那两道菜只是格式示范，别照抄。'}`;
+}
 
-请照系统提示里的范例格式返回。确保 dishes 数组至少 1 道菜、每道菜都有 name；
-范例里那两道菜只是格式示范，别照抄。`;
+/** 复用旧菜时，AI 为每道旧菜定的倍数（1 = 原样，1.5 = 一倍半） */
+export interface ReuseScale {
+  name: string;
+  scale: number;
 }
 
 export interface Stage1AIResult {
   dishes: DishPlan[];
+  /** 只有复用旧菜时才非空 */
+  reused: ReuseScale[];
   missingItems: any[];
   reasoningContent: string;
   summary?: any;
@@ -383,8 +460,9 @@ export function callAIStage1Stream(
     onDone: (result: Stage1AIResult) => void;
     onError: (error: Error) => void;
   },
+  reused: SavedDish[] = [],
 ): SSEStreamController {
-  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences, prefs.cookingSkill);
+  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences, prefs.cookingSkill, reused);
   const url = aiEndpoint(prefs);
 
   const body = {
@@ -450,12 +528,14 @@ export function callAIStage1Stream(
         try {
           const result = parseStage1Result(JSON.parse(fullContent), fullReasoning);
           const dishCount = result.dishes?.length || 0;
-          if (dishCount === 0) {
+          // 复用模式下"一道新菜都不加"是合法结果（勾的菜已经够一桌），不能当失败
+          const reusedCount = result.reused?.length || 0;
+          if (dishCount === 0 && reusedCount === 0) {
             log.error('AI 未返回任何可用菜品');
             callbacks.onError(new Error('AI 没有返回任何菜品，请重试'));
             return;
           }
-          log.info(`流式调用完成`, { dishCount, totalChunks: chunkCount });
+          log.info(`流式调用完成`, { dishCount, reusedCount, totalChunks: chunkCount });
           log.debug('输出统计', {
             dishCount,
             prepSteps: result.dishes.reduce((n, d) => n + d.prepSteps.length, 0),

@@ -24,9 +24,11 @@ import { LoadingOverlay } from '../../src/components/LoadingOverlay';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
-import { NutritionalData, InventoryCheckResult } from '../../src/types';
+import { NutritionalData, InventoryCheckResult, SavedDish } from '../../src/types';
 import { callAIStage1Stream } from '../../src/services/aiService';
-import { sumNutrition } from '../../src/services/menuEditService';
+import { prepareReusedDishes, applyEdits } from '../../src/services/menuEditService';
+import { logger } from '../../src/utils/logger';
+import { DishPickerSheet } from '../../src/components/DishSheets';
 import { getRecentMeals } from '../../src/services/dietMemoryService';
 import { cookingProgressService, CookingProgressRecord, STAGE_LABELS } from '../../src/services/cookingProgressService';
 import { SSEStreamController } from '../../src/utils/sseStream';
@@ -37,6 +39,8 @@ const LOOP_REPEAT_COUNT = 5;
 const LOOP_MIN_LEN = 5;
 const LOOP_MAX_LEN = 80;
 const LOOP_WINDOW = 600; // Detection window: last 600 chars
+
+const log = logger('SCREEN:COOKING');
 
 export default function CookingEntryScreen() {
   const [people, setPeople] = useState(1);
@@ -53,6 +57,9 @@ export default function CookingEntryScreen() {
   const [isLooping, setIsLooping] = useState(false);
   const [activeRecords, setActiveRecords] = useState<CookingProgressRecord[]>([]);
   const [completedRecords, setCompletedRecords] = useState<CookingProgressRecord[]>([]);
+  // 从我的菜里勾的旧菜：原样沿用，AI 只决定每道做多少、还缺什么
+  const [reuseSelected, setReuseSelected] = useState<SavedDish[]>([]);
+  const [pickerVisible, setPickerVisible] = useState(false);
   const [recentMeals, setRecentMeals] = useState<string[]>([]);
   const { showAlert } = useCustomAlert();
   const { openSettings } = useSettingsDrawer();
@@ -207,42 +214,62 @@ export default function CookingEntryScreen() {
       customRequirement: customRequest,
     };
 
-    // 总营养在客户端自己加：不信任 AI 给的根级 estimatedNutrition
-    const computedTotalNutrition = sumNutrition(result.dishes || []);
+    // 复用的旧菜 + AI 现补的菜 = 这一桌。
+    // 旧菜按 AI 给的倍数缩放（没给就按人数比兜底），库存标记按当前库存重刷；
+    // 采购清单和总热量交给 applyEdits 重算，因为它俩都得基于最终克数。
+    const reusedDishes = reuseSelected.length > 0
+      ? prepareReusedDishes(
+          reuseSelected,
+          result.reused ?? [],
+          effectivePeople,
+          {
+            ingredients: invState.ingredients.map((i) => i.name),
+            seasonings: invState.seasonings.map((s) => s.name),
+          },
+        )
+      : [];
+    const reusedNames = new Set(reusedDishes.map((d) => d.name.trim()));
+    const aiDishes: any[] = result.dishes || [];
+    const freshDishes = aiDishes.filter((d) => d?.name && !reusedNames.has(String(d.name).trim()));
+    if (freshDishes.length < aiDishes.length) {
+      log.info('AI 补的菜里有和已选旧菜重名的，已丢弃', { dropped: aiDishes.length - freshDishes.length });    }
 
-    const menuProposal = {
-      dishes: result.dishes || [],
-      estimatedNutrition: computedTotalNutrition,
-      missingItems: (result.missingItems || []).map((item: any, idx: number) => ({
-        id: `${item.type}-${item.name}-${item.forDish}-${idx}`,
-        type: item.type,
-        name: item.name,
-        suggestedAmount: item.suggestedAmount,
-        forDish: item.forDish,
-        isPurchased: false,
-      })),
-      cookingOrderDescription: result.cookingOrderDescription || '',
-      flavorDescription: result.flavorDescription || '',
-      summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
-    };
+    const menuProposal = applyEdits(
+      {
+        dishes: reusedDishes,
+        estimatedNutrition: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        missingItems: [],
+        cookingOrderDescription: result.cookingOrderDescription || '',
+        flavorDescription: result.flavorDescription || '',
+        summary: result.summary || { description: '', cookingOrder: '', flavorNotes: '' },
+      },
+      requirementInput,
+      freshDishes.map((d) => ({ op: 'add_dish' as const, generated: d })),
+    );
+
+    if (menuProposal.dishes.length === 0) {
+      setScreenState('error');
+      showAlert({ title: '没有生成出菜单', message: 'AI 没给出可用的菜，请重试。', buttons: [
+        { text: '知道了', onPress: () => setScreenState('idle') },
+      ] });
+      return;
+    }
     const reasoningContent = result.reasoningContent || '';
 
     startSession(requirementInput, sessionId);
     setStage1Result({ menuProposal, requirementInput, reasoningContent });
 
-    if (result.dishes) {
-      const nutritionByDish: Record<string, NutritionalData> = {};
-      for (const dish of result.dishes) {
-        if (dish.estimatedNutrition) {
-          nutritionByDish[dish.name] = {
-            ...dish.estimatedNutrition,
-            source: 'estimated',
-          };
-        }
+    const nutritionByDish: Record<string, NutritionalData> = {};
+    for (const dish of menuProposal.dishes) {
+      if (dish.estimatedNutrition) {
+        nutritionByDish[dish.name] = {
+          ...dish.estimatedNutrition,
+          source: 'estimated',
+        };
       }
-      if (Object.keys(nutritionByDish).length > 0) {
-        setEstimatedNutrition(nutritionByDish, effectivePeople);
-      }
+    }
+    if (Object.keys(nutritionByDish).length > 0) {
+      setEstimatedNutrition(nutritionByDish, effectivePeople);
     }
 
     saveLastCookingDefaults({
@@ -258,7 +285,7 @@ export default function CookingEntryScreen() {
 
     // 只落一份（cookingProgressService）：菜单历史以前还有一份独立副本，
     // 两份之间不会同步，编辑菜谱后历史页显示的是旧版本，所以副本已删。
-    const dishNames = (result.dishes || []).map((d: any) => d.name).join('、') || '菜单';
+    const dishNames = menuProposal.dishes.map((d) => d.name).join('、') || '菜单';
     const sessionName = `${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : mealType === 'dinner' ? '晚餐' : '菜单'}：${dishNames}`;
 
     const progressRecord = await cookingProgressService.save({
@@ -289,7 +316,7 @@ export default function CookingEntryScreen() {
     if (isScreenFocusedRef.current) {
       router.push('/cooking/pager');
     }
-  }, [effectivePeople, mealType, effectiveCalorie, customRequest, customPeople, customMealType, customCalorie, startSession, setStage1Result, setEstimatedNutrition, saveLastCookingDefaults, showAlert]);
+  }, [effectivePeople, mealType, effectiveCalorie, customRequest, customPeople, customMealType, customCalorie, startSession, setStage1Result, setEstimatedNutrition, saveLastCookingDefaults, showAlert, reuseSelected, invState]);
 
   const submitToAI = useCallback(() => {
     setScreenState('loading');
@@ -365,11 +392,12 @@ export default function CookingEntryScreen() {
           ] });
         },
       },
+      reuseSelected,
     );
 
     streamRef.current = stream;
     // Start the first stall detection
-  }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, handleStreamDone, showAlert]);
+  }, [effectivePeople, mealType, effectiveCalorie, customRequest, invState, settingsState, recentMeals, handleStreamDone, showAlert, reuseSelected]);
   // 渲染期同步最新引用，供 submitToAI 内部"重试"按钮自引用
   submitToAIRef.current = submitToAI;
 
@@ -544,6 +572,36 @@ export default function CookingEntryScreen() {
           accessibilityLabel="个性需求输入框"
         />
 
+        <Text style={styles.sectionTitle}>复用做过的菜（可选）</Text>
+        <TouchableOpacity
+          style={styles.reusePickBtn}
+          onPress={() => setPickerVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.reusePickText}>
+            {reuseSelected.length > 0 ? `已选 ${reuseSelected.length} 道 · 再挑几道` : '从我的菜里挑'}
+          </Text>
+          <Text style={styles.reusePickArrow}>›</Text>
+        </TouchableOpacity>
+        {reuseSelected.length > 0 && (
+          <View style={styles.reuseChips}>
+            {reuseSelected.map((dish) => (
+              <TouchableOpacity
+                key={dish.id}
+                style={styles.reuseChip}
+                onPress={() => setReuseSelected(reuseSelected.filter((d) => d.id !== dish.id))}
+                accessibilityLabel={`取消选择 ${dish.name}`}
+              >
+                <Text style={styles.reuseChipText}>{dish.name}</Text>
+                <Text style={styles.reuseChipX}>×</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {reuseSelected.length > 0 && (
+          <Text style={styles.reuseHint}>勾中的菜照旧做，AI 只决定每道做多少、还缺什么；主食每次重新配</Text>
+        )}
+
         {/* History — in progress */}
         <Text style={styles.sectionTitle}>进行中的菜单</Text>
         {activeRecords.length === 0 ? (
@@ -636,6 +694,13 @@ export default function CookingEntryScreen() {
         showThinking={settingsState.preferences.thinkingEnabled}
       />
 
+      <DishPickerSheet
+        visible={pickerVisible}
+        selected={reuseSelected}
+        onChange={setReuseSelected}
+        onClose={() => setPickerVisible(false)}
+      />
+
       {/* Custom input modal */}
       <Modal
         visible={customModal?.visible ?? false}
@@ -691,6 +756,33 @@ const styles = StyleSheet.create({
   bottomBar: { padding: SPACING.lg, paddingBottom: SPACING.xl, backgroundColor: COLORS.surface, borderTopWidth: 1, borderTopColor: COLORS.border },
   // Progress records
   emptyRecords: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textTertiary, textAlign: 'center', paddingVertical: SPACING.xl },
+  // 复用做过的菜
+  reusePickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
+  },
+  reusePickText: { fontSize: TYPOGRAPHY.body, color: COLORS.textBody },
+  reusePickArrow: { fontSize: 20, color: COLORS.textTertiary, marginTop: -2 },
+  reuseChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.sm },
+  reuseChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primaryBg,
+    borderRadius: BORDER_RADIUS.full,
+    paddingVertical: 4,
+    paddingHorizontal: SPACING.sm,
+  },
+  reuseChipText: { fontSize: TYPOGRAPHY.caption, color: COLORS.primaryDark, fontWeight: '600' },
+  reuseChipX: { fontSize: 14, color: COLORS.primary, fontWeight: '700' },
+  reuseHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginTop: SPACING.xs, lineHeight: 17 },
   recordCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -721,7 +813,14 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.sm,
   },
   continueRecordBtnText: { fontSize: 13, color: COLORS.textWhite, fontWeight: '600' },
-  recordCardCompleted: { opacity: 0.7 },
+  // 用浅灰底代替 opacity：opacity 会连按钮一起调暗，看着像禁用，点了却还能用
+  recordCardCompleted: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   recordStageCompleted: {
     fontSize: 11,
     color: '#2D9F4E',
@@ -738,7 +837,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
     borderRadius: BORDER_RADIUS.sm,
   },
-  deleteRecordBtnText: { fontSize: 13, color: COLORS.textTertiary },
+  deleteRecordBtnText: { fontSize: 13, color: COLORS.textSecondary },
   // Custom modal
   modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'center', padding: SPACING.xxl },
   modalCard: { backgroundColor: COLORS.surface, borderRadius: BORDER_RADIUS.xl, padding: SPACING.xxl },

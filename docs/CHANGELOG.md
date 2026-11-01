@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-02 — Reuse: the AI decides each dish's multiplier, not the person ratio
+
+**Added**
+
+- 「复用做过的菜」on the cooking screen: tick any number of saved dishes, and generation sends their recipes to the model instead of asking it to invent the whole menu again. One call returns `reused: [{ name, scale }]` plus only the dishes that are still missing (possibly none).
+
+- `prepareReusedDishes` in `src/services/menuEditService.ts` — scales each saved dish by its own multiplier, and re-checks `isInInventory` against the *current* inventory before the shopping list is rebuilt.
+
+- `scaleDish(dish, factor)` extracted from the person-count path so both callers share one implementation (grams in ingredients, amounts on seasonings, and the gram figures inside step text all move together).
+
+**Why not just multiply by the person ratio.** Three people eating one dish is not one dish made three times larger. A home wok will not hold 450 g of shredded pork — it stops stir-frying and starts boiling. Real cooking answers this by adding *another* dish. So the model is given the chosen recipes as input and asked to decide two things: a per-dish multiplier, and whether anything else is needed. 炒菜 stays near 1.5×, soup can go further, rice scales with people.
+
+**No bounds in the prompt.** The user's instruction was explicit: *"不设置什么区间上限吧，让AI自己决定吧……设置上限反而限制了AI发挥，限制主要是防止输出不合理得意外值，这个单独考虑吧，不要在生成的时候加这种限制了。"* Multipliers and dish counts are unconstrained at generation time. `sanitizeScale` handles only obvious accidents — non-numeric, negative, or above 10× (usually grams pasted into a ratio field) fall back to the person ratio. Likewise the picker has no selection cap: ticking a whole table of dishes is a legitimate "no new dishes today".
+
+**The shopping list does not trust the model.** A saved dish carries the `isInInventory` flags from the day it was cooked; by the time it is reused those are stale, so flags are recomputed from current inventory and `applyEdits` regenerates `missingItems` from the final grams.
+
+**Staples stay out of the library.** `isStapleDish` filters 米饭/馒头/面条/稀粥 and friends out of both 我的菜 and 最近吃过, and out of the AI's "avoid repeating these" hint. Rule 6 of the system prompt still requires staples to be part of a *menu* (they carry calories and a cooking step), but they are not dishes you would want to re-cook from a card. Older entries already saved self-heal on the next write.
+
+**Tests**: `npm run check:edits` gained a reuse group — per-dish multiplier applied, step text scaled with the grams, missing multiplier falling back to the person ratio, a `"1.5"` string being accepted, a `300` multiplier being rejected as an accident, `isCompleted` reset on reused steps, stale inventory flags refreshed, and a merged menu's total calories and shopping list recomputed from final grams. `npm run check:dishes` gained the staple table (24 names) and the self-healing filter.
+
 ## 2026-11-01 — The dish library: a dish is identified by its name, not by an instance id
 
 **Added**

@@ -5,6 +5,7 @@ import type {
   RequirementInput,
   NutritionInfo,
   ShoppingItem,
+  SavedDish,
 } from '../types';
 
 /**
@@ -178,6 +179,37 @@ function cloneDish(d: DishPlan): DishPlan {
 function findDish(dishes: DishPlan[], name: string): DishPlan | undefined {
   const target = name.trim();
   return dishes.find((d) => d.name.trim() === target);
+}
+
+/**
+ * 把一道菜按倍数整体放大/缩小：食材克数、调料用量、步骤文案里的克重一起动。
+ *
+ * 抽出来是因为它有两个调用方：改人数时所有菜按同一个倍数缩，复用旧菜时
+ * AI 会给每道菜不同的倍数（炒菜受锅限制放不大，汤可以）。
+ */
+export function scaleDish(dish: DishPlan, factor: number): DishPlan {
+  if (!Number.isFinite(factor) || factor <= 0 || factor === 1) return dish;
+  return {
+    ...dish,
+    ingredients: dish.ingredients.map((i) => ({
+      ...i,
+      estimatedWeight: Math.max(1, Math.round(i.estimatedWeight * factor)),
+    })),
+    seasonings: dish.seasonings.map((s) => ({
+      ...s,
+      amount: scaleGramAmount(s.amount, factor),
+    })),
+    estimatedNutrition: scaleNutrition(dish.estimatedNutrition ?? ZERO_NUTRITION, factor),
+    prepSteps: dish.prepSteps.map((s) => ({
+      ...s,
+      description: scaleGramsInText(s.description, factor),
+      quantity: scaleGramAmount(s.quantity, factor),
+    })),
+    cookingSteps: dish.cookingSteps.map((s) => ({
+      ...s,
+      instruction: scaleGramsInText(s.instruction, factor),
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -423,27 +455,7 @@ export function applyEdits(
 
   // ---- 人数缩放：菜品用量、步骤文案一起动 ----
   if (scaleFactor !== 1) {
-    dishes = dishes.map((d) => ({
-      ...d,
-      ingredients: d.ingredients.map((i) => ({
-        ...i,
-        estimatedWeight: Math.max(1, Math.round(i.estimatedWeight * scaleFactor)),
-      })),
-      seasonings: d.seasonings.map((s) => ({
-        ...s,
-        amount: scaleGramAmount(s.amount, scaleFactor),
-      })),
-      estimatedNutrition: scaleNutrition(d.estimatedNutrition, scaleFactor),
-      prepSteps: d.prepSteps.map((s) => ({
-        ...s,
-        description: scaleGramsInText(s.description, scaleFactor),
-        quantity: scaleGramAmount(s.quantity, scaleFactor),
-      })),
-      cookingSteps: d.cookingSteps.map((s) => ({
-        ...s,
-        instruction: scaleGramsInText(s.instruction, scaleFactor),
-      })),
-    }));
+    dishes = dishes.map((d) => scaleDish(d, scaleFactor));
   }
 
   // ---- 按最终克数重算每道菜的热量 ----
@@ -497,5 +509,77 @@ export function applyEdits(
     missingItems,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 复用做过的菜
+// ---------------------------------------------------------------------------
+
+/**
+ * 倍率的兜底。**不在提示词里限制 AI 怎么定倍数** —— 想多大就多大，
+ * 这里只拦"明显是意外值"的：非数字、负数、以及 10 倍以上（多半是把克数当倍数）。
+ * 拦下来就退回按人数比的常识值，其他一律照 AI 说的做。
+ */
+function sanitizeScale(raw: unknown, fallback: number): number {
+  const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  if (n > 10) return fallback;
+  return n;
+}
+
+/** 库存是现在的，菜谱是几天前的：用的 `isInInventory` 必须按当前库存重刷 */
+function refreshInventoryFlags(
+  dish: DishPlan,
+  inventory: ReuseInventory,
+): DishPlan {
+  const ing = new Set(inventory.ingredients.map((n) => n.trim()));
+  const sea = new Set(inventory.seasonings.map((n) => n.trim()));
+  return {
+    ...dish,
+    ingredients: dish.ingredients.map((i) => ({ ...i, isInInventory: ing.has(i.name.trim()) })),
+    seasonings: dish.seasonings.map((s) => ({ ...s, isInInventory: sea.has(s.name.trim()) })),
+  };
+}
+
+export interface ReuseInventory {
+  ingredients: string[];
+  seasonings: string[];
+}
+
+/**
+ * 把勾选的旧菜变成这次菜单里的菜。
+ *
+ * AI 会为每道菜单独给一个倍数（炒菜受锅限制放不大，汤和主食可以）；
+ * 没给、给了废值的，按「新人数 ÷ 当初存下的人数」兜底 —— 那总比不放缩强。
+ *
+ * 不在这里算采购清单和总热量：交给 applyEdits，那里会按最终克数重算。
+ */
+export function prepareReusedDishes(
+  saved: SavedDish[],
+  scales: { name?: string; scale?: unknown }[],
+  newPersonCount: number,
+  inventory: ReuseInventory,
+): DishPlan[] {
+  const byName = new Map<string, unknown>();
+  for (const s of scales) {
+    const key = (s?.name ?? '').trim();
+    if (key) byName.set(key, s.scale);
+  }
+
+  return saved.map((d) => {
+    const personRatio = newPersonCount / Math.max(1, d.basePersonCount);
+    const factor = sanitizeScale(byName.get(d.name.trim()), personRatio);
+    const dish: DishPlan = {
+      id: newDishId(),
+      name: d.name.trim(),
+      ingredients: d.ingredients.map((i) => ({ ...i })),
+      seasonings: d.seasonings.map((s) => ({ ...s })),
+      estimatedNutrition: { ...d.estimatedNutrition },
+      prepSteps: d.prepSteps.map((s) => ({ ...s, isCompleted: false })),
+      cookingSteps: d.cookingSteps.map((s) => ({ ...s, isCompleted: false })),
+    };
+    return refreshInventoryFlags(scaleDish(dish, factor), inventory);
+  });
+}
+
 
 

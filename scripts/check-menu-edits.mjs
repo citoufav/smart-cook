@@ -16,6 +16,7 @@ import {
   hasFullDensity,
   scaleGramAmount,
   parseGramAmount,
+  prepareReusedDishes,
 } from '../src/services/menuEditService.ts';
 import { pickNumber, readNumber } from '../src/utils/looseNumber.ts';
 import { MENU_FORMAT_EXAMPLE } from '../src/constants/menuFormatExample.ts';
@@ -281,5 +282,73 @@ assert.equal(parseGramAmount('约 15 克'), 15);
 assert.equal(parseGramAmount('20'), 20);
 assert.equal(parseGramAmount('适量'), 0, '"适量"算不出倍数，必须当 0');
 assert.equal(parseGramAmount('1汤匙'), 0, '"1汤匙"不能当成 1 克');
+
+// 22. 复用旧菜：AI 给每道菜单独定倍数，没给的按人数比兜底，废值退回人数比
+const savedDish = (name, calories, personCount, extra = {}) => ({
+  id: name,
+  name,
+  ingredients: [{ name: '猪里脊', estimatedWeight: 150, isInInventory: true, kcalPer100g: 143 }],
+  seasonings: [{ name: '食用油', amount: '10g', isInInventory: true, kcalPer100g: 900 }],
+  estimatedNutrition: { calories, protein: 30, fat: 10, carbs: 5 },
+  prepSteps: [{ id: 'p1', ingredientName: '猪里脊', quantity: '150g', description: '取[猪里脊(150g)]切丝', isCompleted: true, order: 1 }],
+  cookingSteps: [{ stepNumber: 1, instruction: '下[猪里脊(150g)]，加[食用油(10g)]炒', isCompleted: true }],
+  basePersonCount: personCount,
+  timesCooked: 1,
+  lastCookedAt: '2026-11-01T10:00:00.000Z',
+  createdAt: '2026-11-01T10:00:00.000Z',
+  ...extra,
+});
+
+const inv = { ingredients: ['猪里脊', '鸡蛋'], seasonings: [] };
+const saved = [savedDish('青椒肉丝', 305, 2), savedDish('番茄蛋花汤', 90, 2)];
+
+let reused = prepareReusedDishes(saved, [{ name: '青椒肉丝', scale: 1.5 }], 4, inv);
+assert.equal(reused.length, 2, '勾了 2 道就要出 2 道');
+const qingjiao = reused.find((d) => d.name === '青椒肉丝');
+const soupDish = reused.find((d) => d.name === '番茄蛋花汤');
+assert.equal(qingjiao.ingredients[0].estimatedWeight, 225, 'AI 说 1.5 倍就要 1.5 倍');
+assert.ok(
+  qingjiao.cookingSteps[0].instruction.includes('[猪里脊(225g)]'),
+  `克数放大了但步骤文案没跟着改：${qingjiao.cookingSteps[0].instruction}`,
+);
+assert.equal(soupDish.ingredients[0].estimatedWeight, 300, 'AI 没给倍数时按 4/2 人兜底');
+assert.ok(reused.every((d) => d.cookingSteps[0].isCompleted === false), '复用旧菜时炒制步骤要回到未完成');
+
+// 明显是意外值的倍率（10 倍以上）不让它生效，退回人数比
+reused = prepareReusedDishes([savedDish('青椒肉丝', 500, 2)], [{ name: '青椒肉丝', scale: 300 }], 4, inv);
+assert.equal(reused[0].ingredients[0].estimatedWeight, 300, '300 这种废值必须退回按人数比（150×2）');
+reused = prepareReusedDishes([savedDish('青椒肉丝', 500, 2)], [{ name: '青椒肉丝', scale: '1.5' }], 4, inv);
+assert.equal(reused[0].ingredients[0].estimatedWeight, 225, '倍数写成字符串 "1.5" 也要认');
+
+// 库里的 isInInventory 是几天前的，必须按当前库存重刷，否则采购清单会漏买
+reused = prepareReusedDishes([savedDish('青椒肉丝', 500, 2)], [], 2, { ingredients: [], seasonings: [] });
+assert.equal(reused[0].ingredients[0].isInInventory, false, '现在没这个食材了，不能还说在库');
+reused = prepareReusedDishes([savedDish('青椒肉丝', 500, 2)], [], 2, inv);
+assert.equal(reused[0].seasonings[0].isInInventory, false, '现在没这个调料了，不能还说在库');
+
+// 23. 旧菜 + AI 补的菜合成一桌：总热量和采购清单都按最终克数重算
+const merged = applyEdits(
+  {
+    dishes: prepareReusedDishes([savedDish('青椒肉丝', 305, 2)], [{ name: '青椒肉丝', scale: 2 }], 4, {
+      ingredients: ['猪里脊'],
+      // 当初在库、现在没了：必须重新出现在采购清单里
+      seasonings: [],
+    }),
+    estimatedNutrition: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+    missingItems: [],
+    cookingOrderDescription: '',
+    flavorDescription: '',
+    summary: { description: '', cookingOrder: '', flavorNotes: '' },
+  },
+  { ...requirement, personCount: 4 },
+  [{ op: 'add_dish', generated: dish('米饭', { estimatedNutrition: { calories: 300, protein: 6, fat: 0, carbs: 66 } }) }],
+);
+assert.equal(merged.dishes.length, 2);
+// 旧菜按克数实算：300g 里脊 429 + 20g 油 180 = 609；再加快餐米饭 300
+assert.equal(merged.estimatedNutrition.calories, 909, '总热量没按最终克数把旧菜和补的菜加起来');
+assert.ok(
+  merged.missingItems.some((m) => m.name === '食用油' && m.type === 'seasoning'),
+  '当前没食用油了，采购清单必须提示买，否则照着做不了',
+);
 
 console.log('✓ 菜单编辑与格式范例全部通过');
