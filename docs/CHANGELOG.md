@@ -8,6 +8,18 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Onboarding ends by cooking, not by a settings screen
+
+**Changed** — the last onboarding step's button no longer says 完成. With an API key configured it says 「立即生成午餐（1 人份 · 700 大卡）」 and actually starts a generation: the preferences are written, the pantry is saved, and the app routes to the cooking tab with `autoGenerate=1&people=1&meal=lunch&calorie=700`, where the screen waits for its saved defaults to load, applies the overrides, and submits once (guarded by a ref so it cannot loop).
+
+  The whole point of the onboarding is that the user has just told the app what they like and what is in their kitchen. Asking them to then walk to another tab and press a similar-looking button is where a first session dies.
+
+  Without a key the button stays 完成 and goes to the inventory tab — offering 立即生成 when generation is certain to fail would be worse than not offering it.
+
+**Meal inference**: 05–10 早餐 300 / 10–15 午餐 700 / 15–21 晚餐 500 / 21–05 早餐 300. Note this deliberately does *not* follow the "after 17:00 it's breakfast" rule from the request — recommending breakfast at 6pm is the kind of thing that makes an app feel broken. The boundary is one table in `src/utils/mealTime.ts` if it needs moving.
+
+**Tests**: `npm run check:meal` pins 12 instants, one either side of each boundary (9:59 breakfast, 10:00 lunch, 14:59 lunch, 15:00 dinner, 20:59 dinner, 21:00 breakfast), plus the calorie assigned to each.
+
 ## 2026-11-01 — The pantry step gains seasonings, and the ingredient list nearly doubles
 
 **Added** — 家里现在有什么 used to be 16 ingredients only. It is now 29 ingredients plus a second group of 14 common seasonings (食用油 / 盐 / 生抽 / 白糖 / 淀粉 …). Selected seasonings are written straight into the seasoning inventory with status 充足, since ticking one means "I have this in the cupboard" — quantity can come later. Both groups get the same **＋** as the earlier steps.
