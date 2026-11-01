@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Ingredient tags take the colour the ingredient actually has
+
+**Changed**
+
+- Tags are coloured by what the ingredient **is**, not by hashing its name. 番茄 is red, 小葱 is green, 胡萝卜 is orange, 豆腐 is that pale bean-green, 大米 and 盐 are neutral. Hashing produced 小葱 in pink and 豆腐 in purple — technically distinct, but it reads as "this app doesn't recognise the food".
+
+  A keyword table maps ingredient names to eleven hue families (longest keyword wins, so 咸蛋黄 is orange rather than yellow), and each colour is generated as `hsl(h, s%, l%)` with **fixed lightness for background and text**. That means contrast is guaranteed by construction rather than hoped for, and the only thing that moves is the hue — which is what makes the palette look deliberate.
+
+- Tags are now pills (`borderRadius: 999`) with more horizontal padding, so they read as chips and stop touching the surrounding characters.
+
+**Rejected — asking the model for the colour.** Three reasons, in order of weight: (1) generated hex values are unstable, so redoing a dish would recolour it for no reason; (2) a model-chosen hex gives no guarantee that dark text on it is legible, and the current design deliberately renders dark text on a light background; (3) it costs output tokens and the model does not guarantee two ingredients get different colours either. A lookup table is deterministic and covers the overwhelming majority of what a Chinese home kitchen actually uses; anything unknown falls back to a golden-angle hue, which still spreads out and still never collides.
+
+**Tests**: `npm run check:tags` asserts the semantic hues (番茄 0°, 小葱 120°, 胡萝卜 28°, 豆腐 85°, 大米 210°), that the longer keyword wins (咸蛋黄 → 28°, not 鸡蛋's 48°), that three green ingredients get three different hues, and that an ingredient missing from the table still returns a valid `hsl()` pair.
+
 ## 2026-11-01 — Ingredient tags are soft chips that never collide
 
 **Changed**

@@ -53,9 +53,10 @@ const tagStyles = StyleSheet.create({
   },
   ingredientTag: {
     fontWeight: '700',
-    borderRadius: 10,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    // 胶囊形状 + 左右留白，让标签和前后文字之间透开一点气
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     overflow: 'hidden',
     fontSize: 13,
   },

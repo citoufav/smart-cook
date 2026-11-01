@@ -88,4 +88,29 @@ assert.deepEqual(buildMenuIngredientColorMap([]), {});
 // 13. 没有整份菜单上下文时，单个名字也要能取到颜色
 assert.ok(getTagColor('番茄').bg && getTagColor('番茄').text);
 
-console.log('✓ 食材标签解析与配色 13 项全部通过');
+// 14. 颜色要跟着食材走，不是按名字乱散列 —— 散列出来的"小葱变粉、豆腐变紫"就是不认识这道菜
+const hueOf = (name) => {
+  const m = /hsl\((\d+)/.exec(getTagColor(name).bg);
+  return m ? Number(m[1]) : -1;
+};
+assert.equal(hueOf('番茄'), 0, '番茄应该是红的');
+assert.equal(hueOf('小葱'), 120, '小葱应该是绿的');
+assert.equal(hueOf('胡萝卜'), 28, '胡萝卜应该是橙的');
+assert.equal(hueOf('豆腐'), 85, '豆腐应该是豆制品那一档');
+assert.equal(hueOf('大米'), 210, '大米应该是中性色');
+assert.equal(hueOf('猪肉'), 24, '猪肉应该是偏棕色');
+
+// 15. 关键词取最长匹配：咸蛋黄按"咸蛋黄"算（橙），不是按"蛋"算（黄）
+assert.equal(hueOf('咸蛋黄'), 28, '长关键词没优先命中');
+assert.equal(hueOf('鸡蛋'), 48, '鸡蛋应该是黄的');
+
+// 16. 同一色系的多样食材也要错开色相，不能撞成一片
+const twoGreens = buildMenuIngredientColorMap([dish(['小葱', '菠菜', '青椒'])]);
+const greenBgs = ['小葱', '菠菜', '青椒'].map((n) => twoGreens[n].bg);
+assert.equal(new Set(greenBgs).size, 3, `三种绿色食材撞色了：${JSON.stringify(greenBgs)}`);
+
+// 17. 表里没有的食材也要有颜色，且合法
+assert.ok(/hsl\(/.test(getTagColor('迷迭香').bg));
+assert.ok(/hsl\(/.test(getTagColor('迷迭香').text));
+
+console.log('✓ 食材标签解析与配色 17 项全部通过');

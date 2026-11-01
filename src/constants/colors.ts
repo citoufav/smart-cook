@@ -53,33 +53,76 @@ export const SEASONING_STATUS_COLORS = {
  * 浅底 + 深字的「软标签」写法，而不是深底白字的实色块：备菜/炒制页是长段正文，
  * 实色块会把注意力从读步骤上抢走，而且深色块彼此之间本来就难分辨。
  *
- * 刻意不用模型返回的颜色：跨次生成不稳定，还容易给出对比度不足的浅色。
+ * **颜色按食材该有的色系来取**（番茄红、小葱绿、胡萝卜橙），不是按名字散列。
+ * 散列的毛病是"小葱变粉、豆腐变紫"，看着就是不认识这道菜。
+ *
+ * 刻意不让模型给颜色：跨次生成不稳定（同一道菜重做一次颜色就变）、
+ * 给十六进制值无法保证深字读得清，还要多花输出 token，而且它也不保证不同食材不撞色。
+ * 查表是确定的，而且覆盖了中式家常菜里绝大多数的常见食材。
  */
 export interface TagColor {
   bg: string;
   text: string;
 }
 
-export const TAG_PALETTE: TagColor[] = [
-  { bg: '#BBDEFB', text: '#0D47A1' }, // 蓝
-  { bg: '#B3E5FC', text: '#01579B' }, // 天蓝
-  { bg: '#B2EBF2', text: '#006064' }, // 青
-  { bg: '#B2DFDB', text: '#004D40' }, // 青绿
-  { bg: '#C8E6C9', text: '#1B5E20' }, // 绿
-  { bg: '#DCEDC8', text: '#33691E' }, // 草绿
-  { bg: '#F0F4C3', text: '#5D6B0F' }, // 黄绿
-  { bg: '#FFF9C4', text: '#7A5F00' }, // 黄
-  { bg: '#FFECB3', text: '#8A5300' }, // 琥珀
-  { bg: '#FFCCBC', text: '#BF360C' }, // 橙
-  { bg: '#FFCDD2', text: '#B71C1C' }, // 红
-  { bg: '#F8BBD0', text: '#880E4F' }, // 粉
-  { bg: '#E1BEE7', text: '#4A148C' }, // 紫
-  { bg: '#D1C4E9', text: '#311B92' }, // 深紫
-  { bg: '#C5CAE9', text: '#1A237E' }, // 靛
-  { bg: '#CFD8DC', text: '#263238' }, // 蓝灰
-  { bg: '#D7CCC8', text: '#3E2723' }, // 棕
-  { bg: '#E0E0E0', text: '#37474F' }, // 灰
+/** 色系：bg/text 的明度固定，只有色相跟着食材走，所以对比度永远够 */
+interface HueFamily {
+  h: number;
+  s: number;
+  l: number;
+}
+
+const FAMILIES: Record<string, HueFamily> = {
+  red: { h: 0, s: 70, l: 86 },
+  orange: { h: 28, s: 85, l: 84 },
+  yellow: { h: 48, s: 80, l: 84 },
+  green: { h: 120, s: 55, l: 84 },
+  lime: { h: 85, s: 55, l: 84 },
+  teal: { h: 175, s: 45, l: 82 },
+  blue: { h: 210, s: 70, l: 86 },
+  purple: { h: 275, s: 55, l: 87 },
+  pink: { h: 335, s: 70, l: 87 },
+  brown: { h: 24, s: 32, l: 82 },
+  neutral: { h: 210, s: 10, l: 88 },
+};
+
+/** 食材 → 色系。子串匹配，先命中先算，所以更具体的放前面 */
+const HUE_KEYWORDS: { family: keyof typeof FAMILIES; words: string[] }[] = [
+  { family: 'red', words: ['番茄', '西红柿', '辣椒', '红椒', '小米辣', '干辣椒', '辣椒油', '枸杞', '红枣', '草莓', '西瓜', '番茄酱'] },
+  { family: 'pink', words: ['虾', '蟹', '蟹棒', '三文鱼', '火腿', '培根'] },
+  { family: 'orange', words: ['胡萝卜', '南瓜', '红薯', '橙', '咖喱', '咸蛋黄'] },
+  { family: 'yellow', words: ['鸡蛋', '蛋', '玉米', '姜', '柠檬', '芒果', '菠萝', '黄豆', '豆芽'] },
+  { family: 'green', words: ['葱', '蒜', '香菜', '韭菜', '青菜', '菠菜', '西兰花', '黄瓜', '冬瓜', '苦瓜', '青椒', '青豆', '豌豆', '芹菜', '莴笋', '芦笋', '生菜', '白菜', '油菜', '茼蒿', '空心菜', '豆角', '四季豆', '毛豆', '豆瓣'] },
+  { family: 'lime', words: ['豆腐', '豆干', '腐竹', '豆皮'] },
+  { family: 'brown', words: ['猪肉', '牛肉', '羊肉', '五花肉', '肉', '排骨', '木耳', '香菇', '蘑菇', '酱油', '生抽', '老抽', '醋', '料酒', '淀粉'] },
+  { family: 'teal', words: ['紫菜', '海带', '虾皮', '鱼'] },
+  { family: 'purple', words: ['茄子', '紫甘蓝', '洋葱'] },
+  { family: 'blue', words: ['牛奶', '酸奶', '奶酪', '黄油'] },
+  { family: 'neutral', words: ['大米', '米饭', '面粉', '面条', '馒头', '花卷', '年糕', '清水', '水', '盐', '糖', '白糖', '冰糖', '白胡椒', '味精', '鸡精'] },
 ];
+
+function familyOf(name: string): keyof typeof FAMILIES | null {
+  const key = name.trim();
+  if (!key) return null;
+  // 先找更长的关键词，"番茄酱"要优先于"番茄"，"鸡蛋"优先于"蛋"
+  let best: { family: keyof typeof FAMILIES; len: number } | null = null;
+  for (const { family, words } of HUE_KEYWORDS) {
+    for (const w of words) {
+      if (key.includes(w) && (!best || w.length > best.len)) {
+        best = { family, len: w.length };
+      }
+    }
+  }
+  return best?.family ?? null;
+}
+
+function colorFromHue(h: number, family: { s: number; l: number }): TagColor {
+  const hue = Math.round(h) % 360;
+  return {
+    bg: `hsl(${hue}, ${family.s}%, ${family.l}%)`,
+    text: `hsl(${hue}, ${Math.max(family.s, 45)}%, ${family.s < 20 ? 26 : 30}%)`,
+  };
+}
 
 function hashName(name: string): number {
   let hash = 0;
@@ -91,15 +134,17 @@ function hashName(name: string): number {
 
 /** 单个食材的配色（没有整份菜单上下文时用） */
 export function getTagColor(name: string): TagColor {
-  return TAG_PALETTE[hashName(name) % TAG_PALETTE.length];
+  const family = familyOf(name);
+  if (family) return colorFromHue(FAMILIES[family].h, FAMILIES[family]);
+  // 认不出来的，用黄金角散开，至少不会挤在一起
+  return colorFromHue(hashName(name) % 360, { s: 55, l: 85 });
 }
 
 /**
  * 给一份菜单里出现的所有食材分配**互不相同**的颜色。
  *
- * 光按名字散列取色是躲不开撞色的：18 个颜色里装 10 种食材，不撞的概率只有几个百分点。
- * 所以先用名字定一个基准位（同一食材大体稳定），被占了就顺延到下一个空位。
- * 代价是同一个食材在不同菜单里可能换个颜色，换来的是同一屏内永远不撞色。
+ * 同一色系里有多样食材时（比如小葱、青椒、菠菜都是绿），把色相依次错开 10°，
+ * 保证同屏不撞色；认不出色系的食材用黄金角往后排，避免都挤在一个位置。
  */
 export function buildMenuIngredientColorMap(
   dishes: { ingredients: { name: string }[]; seasonings: { name: string }[] }[],
@@ -110,16 +155,30 @@ export function buildMenuIngredientColorMap(
   ]);
 
   const map: Record<string, TagColor> = {};
-  const used = new Set<number>();
+  const usedHues = new Set<number>();
+  const unknownCount = { n: 0 };
   const unique = Array.from(new Set(names.map((n) => n.trim()).filter(Boolean)));
 
-  for (const name of unique) {
-    let idx = hashName(name) % TAG_PALETTE.length;
-    for (let tries = 0; tries < TAG_PALETTE.length && used.has(idx); tries++) {
-      idx = (idx + 1) % TAG_PALETTE.length;
+  const takeHue = (base: number): number => {
+    let h = ((base % 360) + 360) % 360;
+    for (let tries = 0; tries < 36 && usedHues.has(Math.round(h / 10) * 10); tries++) {
+      h = (h + 10) % 360;
     }
-    used.add(idx);
-    map[name] = TAG_PALETTE[idx];
+    const bucket = Math.round(h / 10) * 10;
+    usedHues.add(bucket % 360);
+    return bucket;
+  };
+
+  for (const name of unique) {
+    const family = familyOf(name);
+    if (family) {
+      const f = FAMILIES[family];
+      map[name] = colorFromHue(takeHue(f.h), f);
+    } else {
+      const h = (unknownCount.n * 137.508) % 360;
+      unknownCount.n += 1;
+      map[name] = colorFromHue(takeHue(h), { s: 55, l: 85 });
+    }
   }
   return map;
 }
