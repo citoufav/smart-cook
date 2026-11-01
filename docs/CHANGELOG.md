@@ -8,6 +8,18 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Stale ingredients get a warning, computed locally
+
+**Added** — the recipe page now opens with 「⏳ 这些食材放得有点久了」 listing the ingredients whose stored age has passed a shelf-life limit: 猪肉 5 天、虾仁 9 天 → both listed with how long they usually keep, then a line saying to look and smell before cooking.
+
+**Why not ask the model.** The suggestion was to have the AI "scan the inventory and flag anything that might expire". It already receives 「已存放 N 天」 for every ingredient, so it is not blind to this — but a judgement call inside a language model has three problems here: the same inventory can be judged differently on two runs, the user cannot check the reasoning, and there is no way to unit-test it. Age plus food type is a table lookup, so it is a table lookup. `src/utils/shelfLife.ts` holds the shelf lives and `findAgingIngredients`; `check:meal` pins the boundaries and the sort order.
+
+**Safety boundary** — we do not store 冷藏 vs 常温, so the table assumes refrigeration (the longer case) and every string says 可能 / 放得有点久, never "还能吃". The card warns and stops there; it never blocks the menu, and it never reassures. Deciding whether food is still good is the user's job and the only responsible split.
+
+The AI prompt is unchanged: it decides the menu, this decides whether the user gets a nudge.
+
+**Removed from the UI** — the 「每次启动都显示引导」 debug switch is gone from 设置 → 数据管理. The preference and the redirect guard stay, so re-testing onboarding is one line in `settingsService` (or flipping the stored flag); a shipped app should not show a toggle whose only purpose is to trap you in the setup flow.
+
 ## 2026-11-01 — Two taps that deleted data now ask first
 
 **Added — confirmation before un-ticking a saved tag.** The drawer's chip rows remove on tap, which was fine as an interaction but wrong as a consequence: one stray tap deletes a saved preference, and nothing on screen tells you it happened. Only in 只显示已保存 mode (`onlySelected`) does it ask — in onboarding, tapping a chip is just turning off an unsaved choice, and interrogating people mid-selection would be obnoxious.
