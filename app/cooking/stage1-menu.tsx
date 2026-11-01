@@ -181,9 +181,7 @@ export function Stage1MenuContent() {
         {/* Dish list — 每道菜一张卡片，改和删都在卡片上 */}
         <Card title={`菜品清单（${menuProposal.dishes.length} 道）`}>
           {menuProposal.dishes.length === 0 && (
-            <Text style={styles.emptyDishesText}>
-              还没有菜品。点下面的「加一道菜」让 AI 想一道，或查看采购清单补齐食材。
-            </Text>
+            <Text style={styles.emptyDishesText}>还没有菜品，点下面的「加一道菜」。</Text>
           )}
 
           {menuProposal.dishes.map((dish, index) => (

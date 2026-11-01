@@ -419,7 +419,7 @@ export function DishEditorSheet({
     <SheetShell
       visible={visible}
       title="编辑这道菜"
-      subtitle="改数字会自动同步备菜和炒制步骤里的用法"
+      subtitle="改用量会同步到步骤"
       onClose={onClose}
       footer={
         <View style={styles.footer}>
@@ -453,11 +453,9 @@ export function DishEditorSheet({
 
         <View style={styles.switchRow}>
           <View style={styles.switchLabelWrap}>
-            <Text style={styles.switchLabel}>按比例跟着变</Text>
+            <Text style={styles.switchLabel}>按比例</Text>
             <Text style={styles.switchHint}>
-              {proportional
-                ? '改任意一个用量，其余食材和调料按同样倍数走（改食材带动调料，改调料也带动食材）'
-                : '只改你动的这一项，其余不动'}
+              {proportional ? '改一个，其余按同倍数跟着变' : '只改这一项'}
             </Text>
           </View>
           <Switch
@@ -475,18 +473,16 @@ export function DishEditorSheet({
               约 {liveCalories.kcal} 大卡{liveCalories.partial ? '（部分食材缺热量密度）' : ''}
             </Text>
           ) : (
-            <Text style={styles.liveCaloriesStale}>改克数不会重算热量</Text>
+            <Text style={styles.liveCaloriesStale}>热量不会重算</Text>
           )}
         </View>
 
         {!liveCalories && (
-          <Text style={styles.staleHint}>
-            这道菜是旧版本存的，AI 没给每种食材的热量密度，所以热量没法按克数算。用下面的「重做」可以拿到新数据。
-          </Text>
+          <Text style={styles.staleHint}>旧数据没有热量密度，用下面的「重做」可修复。</Text>
         )}
 
         <View style={styles.scaleRow}>
-          <Text style={styles.scaleHint}>整道菜按比例：</Text>
+          <Text style={styles.scaleHint}>整道菜</Text>
           {SCALE_STEPS.map((s) => (
             <TouchableOpacity
               key={s.label}
@@ -500,7 +496,7 @@ export function DishEditorSheet({
         </View>
 
         {rows.length === 0 ? (
-          <Text style={styles.emptyHint}>这道菜已经没有食材了，用下面的「重做」重新生成。</Text>
+          <Text style={styles.emptyHint}>没有食材了，用下面的「重做」重新生成。</Text>
         ) : (
           rows.map((row) => (
             <View key={row.name} style={styles.ingredientRow}>
@@ -548,9 +544,7 @@ export function DishEditorSheet({
                 />
               </View>
             ))}
-            <Text style={styles.readonlyHint}>
-              写「10g」这类能算出克数的用量会一起计入热量；「适量」只做显示，也不会参与按比例缩放。
-            </Text>
+            <Text style={styles.readonlyHint}>写「10g」计入热量，「适量」不计。</Text>
           </>
         )}
 
@@ -558,11 +552,8 @@ export function DishEditorSheet({
 
         {/* 换配料、换做法走 AI —— 这是本地改不出来的那部分 */}
         <View style={styles.redoBox}>
-          <Text style={styles.redoTitle}>整个做法都要改？</Text>
-          <Text style={styles.redoHint}>
-            改克数、改调料上面就够了。想换配料、换切法、换火候，说一句让 AI 重写这道菜。
-            重做是整道菜替换，上面改的数字不算数。
-          </Text>
+          <Text style={styles.redoTitle}>换配料或做法？</Text>
+          <Text style={styles.redoHint}>交给 AI 重写。整道菜替换，上面改的不生效。</Text>
           <TextInput
             style={[styles.input, styles.multiline, styles.redoInput]}
             value={redoPrompt}
@@ -570,14 +561,14 @@ export function DishEditorSheet({
               setRedoPrompt(v);
               setRedoError(null);
             }}
-            placeholder="例如：改成先焯水再炒，少放油；或者加蘑菇"
+            placeholder="例如：先焯水再炒，少放油"
             placeholderTextColor={COLORS.textTertiary}
             multiline
             editable={!redoing}
             maxLength={120}
           />
           <Button
-            title="让 AI 重做这道菜"
+            title="让 AI 重做"
             variant="secondary"
             onPress={handleRedo}
             loading={redoing}
@@ -643,7 +634,7 @@ export function AddDishSheet({
     <SheetShell
       visible={visible}
       title="加一道菜"
-      subtitle="描述你想要什么，AI 会结合库存和人数生成"
+      subtitle="AI 结合库存和人数生成"
       onClose={onClose}
       footer={
         draft ? (
@@ -683,7 +674,7 @@ export function AddDishSheet({
               style={[styles.input, styles.multiline]}
               value={instruction}
               onChangeText={setInstruction}
-              placeholder="例如：来个清淡的汤、想吃点辣的、用掉冰箱的鸡胸肉"
+              placeholder="例如：清淡的汤 / 想吃辣的"
               placeholderTextColor={COLORS.textTertiary}
               multiline
               editable={!generating}
