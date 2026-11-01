@@ -592,6 +592,11 @@ export function generateOneDishStream(
             callbacks.onError(new Error('AI 给的菜没有食材，请说得更具体一点'));
             return;
           }
+          // 全是 0 克的"菜"没有意义：采买清单会建议买 0g，热量也永远是 0
+          if (!dish.ingredients.some((i) => i.estimatedWeight > 0)) {
+            callbacks.onError(new Error('AI 给的食材没有克数，请换个说法再试'));
+            return;
+          }
           log.info('单菜生成完成', {
             dish: dish.name,
             prepSteps: dish.prepSteps.length,
