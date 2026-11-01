@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
+import { SelectableChip } from './SelectableChip';
 import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
@@ -757,6 +758,17 @@ const styles = StyleSheet.create({
   bodyContent: { padding: SPACING.lg, paddingBottom: SPACING.md },
 
   // 挑菜列表：和 body 一样要 flexShrink，否则长列表把底部按钮顶出屏幕
+  pickerToolbar: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, gap: SPACING.sm },
+  pickerSearch: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    height: 40,
+    paddingHorizontal: SPACING.md,
+    fontSize: TYPOGRAPHY.bodySmall,
+    color: COLORS.textPrimary,
+  },
+  pickerSortRow: { flexDirection: 'row', gap: SPACING.sm },
   pickerScroll: { flexGrow: 0, flexShrink: 1 },
   pickerBody: { padding: SPACING.lg, gap: SPACING.sm },
   pickerEmpty: {
@@ -941,12 +953,16 @@ export function DishPickerSheet({
 }) {
   const [all, setAll] = useState<SavedDish[]>([]);
   const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState('');
+  /** 默认「最近做过」——今天要挑菜，先看上次那批，别老重复同一道 */
+  const [sortBy, setSortBy] = useState<'recent' | 'times'>('recent');
   const selectedIds = useMemo(() => new Set(selected.map((d) => d.id)), [selected]);
 
   useEffect(() => {
     if (!visible) return;
     let alive = true;
     setLoading(true);
+    setQuery('');
     dishLibraryService
       .list()
       .then((items) => {
@@ -959,6 +975,13 @@ export function DishPickerSheet({
       alive = false;
     };
   }, [visible]);
+
+  const shown = useMemo(() => {
+    const q = query.trim();
+    const hit = q ? all.filter((d) => d.name.includes(q)) : all;
+    if (sortBy === 'recent') return hit;
+    return [...hit].sort((a, b) => b.timesCooked - a.timesCooked);
+  }, [all, query, sortBy]);
 
   const toggle = useCallback(
     (dish: SavedDish) => {
@@ -989,13 +1012,44 @@ export function DishPickerSheet({
         </View>
       }
     >
-      <ScrollView style={styles.pickerScroll} contentContainerStyle={styles.pickerBody}>
+      <View style={styles.pickerToolbar}>
+        <TextInput
+          style={styles.pickerSearch}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="搜菜名…"
+          placeholderTextColor={COLORS.textTertiary}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          accessibilityLabel="搜索做过的菜"
+        />
+        <View style={styles.pickerSortRow}>
+          <SelectableChip
+            label="最近做过"
+            selected={sortBy === 'recent'}
+            onPress={() => setSortBy('recent')}
+          />
+          <SelectableChip
+            label="做得多"
+            selected={sortBy === 'times'}
+            onPress={() => setSortBy('times')}
+          />
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.pickerScroll}
+        contentContainerStyle={styles.pickerBody}
+        keyboardShouldPersistTaps="handled"
+      >
         {loading ? (
           <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
         ) : all.length === 0 ? (
           <Text style={styles.pickerEmpty}>还没有做过的菜，先做完一次饭吧</Text>
+        ) : shown.length === 0 ? (
+          <Text style={styles.pickerEmpty}>没有名字带「{query.trim()}」的菜</Text>
         ) : (
-          all.map((dish) => {
+          shown.map((dish) => {
             const on = selectedIds.has(dish.id);
             return (
               <TouchableOpacity
