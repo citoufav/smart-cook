@@ -8,6 +8,14 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — 口味与菜系 split back into two visible groups
+
+**Changed** — the saved-tag row was a single blob: 家常菜 sat next to 香辣 with no way to tell which was which. 口味与菜系 now renders 菜系 / 口味 as separate labelled groups, plus 「其他」 when a custom tag does not belong to either.
+
+  Storage did not change: `tastePreferences` is still one array, and the prompt still reads it as one line. The split is a display concern, resolved by looking each saved tag up in the preset tables (`classifyTasteTag`). Custom tags deliberately do **not** get pushed into one side — guessing wrong puts 咖喱 under 菜系 and the user has no way to fix it; a third group is honest about not knowing.
+
+  Adding from either group appends to the shared array and re-classifies on the next render; the other group's tags are carried through untouched, so one group's edit cannot delete another's entries.
+
 ## 2026-11-01 — Two layout fixes from looking at the actual screens
 
 **Fixed — section headers were touching their content.** In the settings drawer the header's `borderBottom` is the divider, and the expanded content began immediately below it, so the first line of every section was pinned against the rule. `marginBottom` on the header is the fix — padding alone cannot do it, because the border is drawn at the padding edge.
