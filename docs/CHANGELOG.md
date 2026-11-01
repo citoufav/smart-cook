@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Editing one amount rescales the whole dish, seasonings included
+
+**Fixed**
+
+- **Changing one ingredient's grams left the rest of the dish alone.** Editing rice from 50 g to 100 g kept water at 80 g and kept oil and salt untouched — the ingredients of one dish are locked in proportion (rice to water, dish to oil and salt), so this was plainly wrong. The `×½ / ×1.5 / ×2` chips did scale, but only ingredients, never seasonings, and they required the user to reach for them instead of just typing the number they wanted.
+
+  The editor now has a 「按比例跟着变」 switch, **on by default**: editing one gram value scales every other ingredient and every seasoning by the same ratio. Turning it off restricts the edit to the item you touched, for "more tomato, same egg".
+
+- Proportional scaling is applied when the field loses focus, not on each keystroke — typing `500` over `50` passes through `5`, which would have shrunk the whole dish to a tenth on the way. `handleSave` re-runs the same reconciliation before building edits, because tapping 保存 blurs the input and the state update from `onBlur` is not guaranteed to land before the save reads state.
+
+**Added**
+
+- Seasoning amounts are editable, and `set_seasoning_amount` rewrites the matching `[调料(Ng)]` tags in prep and cooking steps (and therefore the calories, since seasonings with a parseable gram amount count). Previously seasonings were read-only text, so salt could not be changed at all.
+
+**Tests**: `set_seasoning_amount` (amount, step text, resulting calories) and `scaleGramAmount` (`80g`→`160g`, `10 克`→`15克`, `适量` and `1汤匙` returned unchanged) are covered by `npm run check:edits`.
+
 ## 2026-11-01 — One worked example instead of three scattered format rules
 
 **Changed**

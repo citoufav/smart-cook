@@ -32,6 +32,7 @@ export type MenuEdit =
   | { op: 'set_grams'; dish: string; ingredient: string; grams: number }
   | { op: 'add_ingredient'; dish: string; ingredient: string; grams: number }
   | { op: 'remove_ingredient'; dish: string; ingredient: string }
+  | { op: 'set_seasoning_amount'; dish: string; seasoning: string; amount: string }
   | { op: 'rename_dish'; dish: string; newName: string }
   | { op: 'remove_dish'; dish: string }
   | { op: 'set_person_count'; personCount: number }
@@ -74,12 +75,13 @@ function scaleGramsInText(text: string, factor: number): string {
   });
 }
 
-/** prepSteps.quantity 形如 "200g"，按比例缩放 */
-function scaleQuantity(quantity: string, factor: number): string {
-  const m = /^(\d+(?:\.\d+)?)\s*(g|克)?$/.exec((quantity || '').trim());
-  if (!m) return quantity;
+/** prepSteps.quantity / 调料 amount 形如 "200g"，按比例缩放；"适量" 这类原样返回 */
+export function scaleGramAmount(amount: string, factor: number): string {
+  if (factor === 1) return amount;
+  const m = /^约?\s*(\d+(?:\.\d+)?)\s*(g|克|ml|毫升)?\s*(左右)?$/.exec((amount || '').trim());
+  if (!m) return amount;
   const scaled = Math.max(1, Math.round(parseFloat(m[1]) * factor));
-  return `${scaled}${m[2] || 'g'}`;
+  return `${scaled}${m[2] || 'g'}${m[3] || ''}`;
 }
 
 function scaleNutrition(n: DishNutrition | undefined, factor: number): DishNutrition {
@@ -400,6 +402,29 @@ export function applyEdits(
         break;
       }
 
+      case 'set_seasoning_amount': {
+        const dish = findDish(dishes, edit.dish);
+        if (!dish) break;
+        const seasoning = dish.seasonings.find((s) => s.name.trim() === edit.seasoning.trim());
+        if (!seasoning) break;
+        const next = edit.amount.trim();
+        if (!next || next === seasoning.amount) break;
+        seasoning.amount = next;
+        // 步骤文案里出现这个调料时，标签里的克数也要跟着改，否则界面写 3g、步骤写 2g
+        const grams = parseGramAmount(next);
+        if (grams > 0) {
+          dish.prepSteps = dish.prepSteps.map((s) => ({
+            ...s,
+            description: setGramsInText(s.description, seasoning.name, grams),
+          }));
+          dish.cookingSteps = dish.cookingSteps.map((s) => ({
+            ...s,
+            instruction: setGramsInText(s.instruction, seasoning.name, grams),
+          }));
+        }
+        break;
+      }
+
       case 'rename_dish': {
         const dish = findDish(dishes, edit.dish);
         const next = edit.newName.trim();
@@ -448,13 +473,13 @@ export function applyEdits(
       })),
       seasonings: d.seasonings.map((s) => ({
         ...s,
-        amount: scaleQuantity(s.amount, scaleFactor),
+        amount: scaleGramAmount(s.amount, scaleFactor),
       })),
       estimatedNutrition: scaleNutrition(d.estimatedNutrition, scaleFactor),
       prepSteps: d.prepSteps.map((s) => ({
         ...s,
         description: scaleGramsInText(s.description, scaleFactor),
-        quantity: scaleQuantity(s.quantity, scaleFactor),
+        quantity: scaleGramAmount(s.quantity, scaleFactor),
       })),
       cookingSteps: d.cookingSteps.map((s) => ({
         ...s,
@@ -514,4 +539,5 @@ export function applyEdits(
     missingItems,
   };
 }
+
 

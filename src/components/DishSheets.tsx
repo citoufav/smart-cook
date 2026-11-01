@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   ActivityIndicator,
+  Switch,
   StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +20,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useInventory } from '../contexts/InventoryContext';
 import { useCooking } from '../contexts/CookingContext';
 import { generateOneDishStream } from '../services/aiService';
-import { computeCalories, type MenuEdit } from '../services/menuEditService';
+import { computeCalories, scaleGramAmount, type MenuEdit } from '../services/menuEditService';
 import type { DishPlan } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,12 @@ interface IngredientDraft {
   kcalPer100g?: number;
 }
 
+interface SeasoningDraft {
+  name: string;
+  amount: string;
+  kcalPer100g?: number;
+}
+
 /** 一键把整道菜的用量按比例放大/缩小 */
 const SCALE_STEPS: { label: string; factor: number }[] = [
   { label: '×½', factor: 0.5 },
@@ -85,9 +92,12 @@ const SCALE_STEPS: { label: string; factor: number }[] = [
 /**
  * 编辑一道菜的抽屉。
  *
- * 能改的只有「菜名 + 食材克数 + 增删食材」——刻意不做步骤文案的手工编辑：
- * 步骤里的 [食材(Ng)] 标签必须和食材克数一致，手工改文本必然改出不一致，
- * 而克数改动由 applyEdits 自动同步到步骤文案里。
+ * 能改的是「菜名 + 食材克数 + 调料用量 + 增删食材」——刻意不做步骤文案的手工编辑：
+ * 步骤里的 [食材(Ng)] 标签必须和克数一致，手工改文本必然改出不一致，
+ * 而克数/调料用量改动由 applyEdits 自动同步到步骤文案里。
+ *
+ * 「按比例」默认开着：米饭的米和水、菜的料和调料本来就是锁比例的，
+ * 改一个别的没跟上是明显的错。想单独调某一样就把它关掉。
  */
 export function DishEditorSheet({
   visible,
@@ -102,9 +112,14 @@ export function DishEditorSheet({
 }) {
   const [name, setName] = useState('');
   const [rows, setRows] = useState<IngredientDraft[]>([]);
+  const [seasonings, setSeasonings] = useState<SeasoningDraft[]>([]);
+  const [proportional, setProportional] = useState(true);
   const [newName, setNewName] = useState('');
   const [newGrams, setNewGrams] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  /** 聚焦时那一刻的克数。失焦时用它算倍数，避免边打字边缩放把数字带飞 */
+  const focusAnchorRef = useRef<{ name: string; grams: string } | null>(null);
 
   // 每次打开都用当前这道菜重置草稿，避免上一次编辑的残留
   useEffect(() => {
@@ -117,27 +132,66 @@ export function DishEditorSheet({
         kcalPer100g: i.kcalPer100g,
       })),
     );
+    setSeasonings(
+      dish.seasonings.map((s) => ({ name: s.name, amount: s.amount, kcalPer100g: s.kcalPer100g })),
+    );
+    setProportional(true);
+    focusAnchorRef.current = null;
     setNewName('');
     setNewGrams('');
     setError(null);
   }, [visible, dish]);
 
+  /** 整道菜按倍数走：食材和调料一起，否则米饭的水、菜的油盐会留在原地 */
+  const applyFactor = useCallback((factor: number, skipIngredient?: string) => {
+    if (factor === 1) return;
+    setRows((prev) =>
+      prev.map((r) =>
+        r.name === skipIngredient
+          ? r
+          : { ...r, grams: String(Math.max(1, Math.round((Number(r.grams) || 0) * factor))) },
+      ),
+    );
+    setSeasonings((prev) =>
+      prev.map((s) => ({ ...s, amount: scaleGramAmount(s.amount, factor) })),
+    );
+  }, []);
+
   const setGrams = useCallback((name: string, value: string) => {
     setRows((prev) => prev.map((r) => (r.name === name ? { ...r, grams: value } : r)));
+    setError(null);
   }, []);
+
+  const onGramsFocus = useCallback((name: string, grams: string) => {
+    focusAnchorRef.current = { name, grams };
+  }, []);
+
+  /**
+   * 失焦时才按比例调整其余项。
+   * 不能边打字边调：把 50 改成 500 的过程中会先经过 5，那一下会把整道菜缩成 1/10。
+   */
+  const onGramsBlur = useCallback(
+    (name: string) => {
+      const anchor = focusAnchorRef.current;
+      focusAnchorRef.current = null;
+      if (!proportional || !anchor || anchor.name !== name) return;
+      const row = rows.find((r) => r.name === name);
+      if (!row) return;
+      const oldG = Number(anchor.grams) || 0;
+      const newG = Number(row.grams) || 0;
+      if (oldG <= 0 || newG <= 0 || oldG === newG) return;
+      applyFactor(newG / oldG, name);
+    },
+    [proportional, rows, applyFactor],
+  );
 
   const removeRow = useCallback((name: string) => {
     setRows((prev) => prev.filter((r) => r.name !== name));
   }, []);
 
-  /** 量不够时不用一个个改：整道菜的食材一起按比例走 */
-  const scaleAll = useCallback((factor: number) => {
-    setRows((prev) =>
-      prev.map((r) => ({
-        ...r,
-        grams: String(Math.max(1, Math.round((Number(r.grams) || 0) * factor))),
-      })),
-    );
+  const setSeasoningAmount = useCallback((name: string, amount: string) => {
+    setSeasonings((prev) => prev.map((s) => (s.name === name ? { ...s, amount } : s)));
+    setError(null);
   }, []);
 
   // 边改边算热量：改完立刻看得到，不用保存后才知道
@@ -151,11 +205,17 @@ export function DishEditorSheet({
         isInInventory: false,
         kcalPer100g: r.kcalPer100g,
       })),
+      seasonings: seasonings.map((s) => ({
+        name: s.name,
+        amount: s.amount,
+        isInInventory: false,
+        kcalPer100g: s.kcalPer100g,
+      })),
     };
     const { kcal, covered } = computeCalories(draftDish);
     if (covered === 0) return null;
     return { kcal: Math.round(kcal), partial: covered < rows.length };
-  }, [dish, rows]);
+  }, [dish, rows, seasonings]);
 
   const addRow = useCallback(() => {
     const n = newName.trim();
@@ -179,6 +239,33 @@ export function DishEditorSheet({
     setError(null);
   }, [newName, newGrams, rows]);
 
+  /**
+   * 把"正在编辑、还没来得及失焦"的那一项的倍数补算进来。
+   *
+   * 点保存会先让输入框失焦，`onGramsBlur` 里的 setState 不一定赶在 handleSave 读 state 之前生效，
+   * 只靠 blur 会静默丢掉这次按比例调整。这里按同样的规则再算一遍，blur 先跑过就自然跳过
+   * （它会把 anchor 清掉）。
+   */
+  const reconcilePendingScale = useCallback(() => {
+    const anchor = focusAnchorRef.current;
+    focusAnchorRef.current = null;
+    if (!proportional || !anchor) return { finalRows: rows, finalSeasonings: seasonings };
+    const row = rows.find((r) => r.name === anchor.name);
+    if (!row) return { finalRows: rows, finalSeasonings: seasonings };
+    const oldG = Number(anchor.grams) || 0;
+    const newG = Number(row.grams) || 0;
+    if (oldG <= 0 || newG <= 0 || oldG === newG) return { finalRows: rows, finalSeasonings: seasonings };
+    const f = newG / oldG;
+    return {
+      finalRows: rows.map((r) =>
+        r.name === row.name
+          ? r
+          : { ...r, grams: String(Math.max(1, Math.round((Number(r.grams) || 0) * f))) },
+      ),
+      finalSeasonings: seasonings.map((s) => ({ ...s, amount: scaleGramAmount(s.amount, f) })),
+    };
+  }, [proportional, rows, seasonings]);
+
   const handleSave = useCallback(() => {
     if (!dish) return;
     const finalName = name.trim();
@@ -187,7 +274,9 @@ export function DishEditorSheet({
       return;
     }
 
-    const badGrams = rows.find((r) => !/^\d+$/.test(r.grams.trim()) || Number(r.grams) <= 0);
+    const { finalRows, finalSeasonings } = reconcilePendingScale();
+
+    const badGrams = finalRows.find((r) => !/^\d+$/.test(r.grams.trim()) || Number(r.grams) <= 0);
     if (badGrams) {
       setError(`「${badGrams.name}」的克数要填一个大于 0 的整数`);
       return;
@@ -197,7 +286,7 @@ export function DishEditorSheet({
 
     // 先处理食材，最后再改菜名：applyEdits 按顺序执行，改名之后旧名字就找不到了
     for (const original of dish.ingredients) {
-      const row = rows.find((r) => r.name === original.name);
+      const row = finalRows.find((r) => r.name === original.name);
       if (!row) {
         edits.push({ op: 'remove_ingredient', dish: dish.name, ingredient: original.name });
         continue;
@@ -207,7 +296,7 @@ export function DishEditorSheet({
         edits.push({ op: 'set_grams', dish: dish.name, ingredient: original.name, grams });
       }
     }
-    for (const row of rows) {
+    for (const row of finalRows) {
       if (dish.ingredients.some((i) => i.name === row.name)) continue;
       edits.push({
         op: 'add_ingredient',
@@ -216,22 +305,42 @@ export function DishEditorSheet({
         grams: Number(row.grams),
       });
     }
+
+    // 调料用量：编辑器里不增删调料，只改用量
+    for (const original of dish.seasonings) {
+      const draft = finalSeasonings.find((s) => s.name === original.name);
+      const next = draft?.amount.trim();
+      if (!next || next === original.amount) continue;
+      edits.push({
+        op: 'set_seasoning_amount',
+        dish: dish.name,
+        seasoning: original.name,
+        amount: next,
+      });
+    }
+
     if (finalName !== dish.name) {
       edits.push({ op: 'rename_dish', dish: dish.name, newName: finalName });
     }
 
     onSave(edits);
-  }, [dish, name, rows, onSave]);
+  }, [dish, name, reconcilePendingScale, onSave]);
 
   const dirty = useMemo(() => {
     if (!dish) return false;
     if (name.trim() !== dish.name) return true;
     if (rows.length !== dish.ingredients.length) return true;
-    return rows.some((r) => {
+    if (rows.some((r) => {
       const original = dish.ingredients.find((i) => i.name === r.name);
       return !original || String(original.estimatedWeight) !== r.grams.trim();
+    })) {
+      return true;
+    }
+    return seasonings.some((s) => {
+      const original = dish.seasonings.find((x) => x.name === s.name);
+      return !original || original.amount !== s.amount.trim();
     });
-  }, [dish, name, rows]);
+  }, [dish, name, rows, seasonings]);
 
   if (!dish) return null;
 
@@ -267,6 +376,23 @@ export function DishEditorSheet({
           placeholderTextColor={COLORS.textTertiary}
         />
 
+        <View style={styles.switchRow}>
+          <View style={styles.switchLabelWrap}>
+            <Text style={styles.switchLabel}>按比例跟着变</Text>
+            <Text style={styles.switchHint}>
+              {proportional
+                ? '改一个克数，其余食材和调料按同样倍数走（米饭的水、菜的油盐不会脱节）'
+                : '只改你动的这一项，其余不动'}
+            </Text>
+          </View>
+          <Switch
+            value={proportional}
+            onValueChange={setProportional}
+            trackColor={{ false: COLORS.border, true: COLORS.primary }}
+            thumbColor={COLORS.textWhite}
+          />
+        </View>
+
         <View style={styles.labelRow}>
           <Text style={styles.fieldLabel}>食材</Text>
           {liveCalories ? (
@@ -287,7 +413,7 @@ export function DishEditorSheet({
         <View style={styles.scaleRow}>
           <Text style={styles.scaleHint}>整道菜按比例：</Text>
           {SCALE_STEPS.map((s) => (
-            <TouchableOpacity key={s.label} style={styles.scaleChip} onPress={() => scaleAll(s.factor)} activeOpacity={0.7}>
+            <TouchableOpacity key={s.label} style={styles.scaleChip} onPress={() => applyFactor(s.factor)} activeOpacity={0.7}>
               <Text style={styles.scaleChipText}>{s.label}</Text>
             </TouchableOpacity>
           ))}
@@ -303,10 +429,9 @@ export function DishEditorSheet({
               <TextInput
                 style={styles.gramsInput}
                 value={row.grams}
-                onChangeText={(v) => {
-                  setGrams(row.name, v.replace(/[^0-9]/g, ''));
-                  setError(null);
-                }}
+                onChangeText={(v) => setGrams(row.name, v.replace(/[^0-9]/g, ''))}
+                onFocus={() => onGramsFocus(row.name, row.grams)}
+                onBlur={() => onGramsBlur(row.name)}
                 keyboardType="number-pad"
                 maxLength={5}
               />
@@ -346,12 +471,25 @@ export function DishEditorSheet({
           </TouchableOpacity>
         </View>
 
-        {dish.seasonings.length > 0 && (
+        {seasonings.length > 0 && (
           <>
             <Text style={styles.fieldLabel}>调料</Text>
-            <Text style={styles.readonlyHint}>
-              {dish.seasonings.map((s) => `${s.name}${s.amount}`).join('、')}
-            </Text>
+            {seasonings.map((s) => (
+              <View key={s.name} style={styles.ingredientRow}>
+                <Text style={styles.ingredientName} numberOfLines={1}>
+                  {s.name}
+                </Text>
+                <TextInput
+                  style={styles.amountInput}
+                  value={s.amount}
+                  onChangeText={(v) => setSeasoningAmount(s.name, v)}
+                  placeholder="用量"
+                  placeholderTextColor={COLORS.textTertiary}
+                  maxLength={12}
+                />
+              </View>
+            ))}
+            <Text style={styles.readonlyHint}>调料用量写「10g」这类能算热量的写法，就会一起计入热量；「适量」只做显示。</Text>
           </>
         )}
 
@@ -573,6 +711,29 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryBg,
   },
   scaleChipText: { fontSize: TYPOGRAPHY.caption, color: COLORS.primary, fontWeight: '600' },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  switchLabelWrap: { flex: 1, marginRight: SPACING.md },
+  switchLabel: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.textPrimary },
+  switchHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginTop: 2, lineHeight: 16 },
+  amountInput: {
+    width: 92,
+    textAlign: 'right',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingVertical: 4,
+    paddingHorizontal: SPACING.sm,
+    fontSize: TYPOGRAPHY.bodySmall,
+    color: COLORS.primary,
+    fontWeight: '600',
+    backgroundColor: COLORS.surface,
+  },
   input: {
     borderWidth: 1.5,
     borderColor: COLORS.border,

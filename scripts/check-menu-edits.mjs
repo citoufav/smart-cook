@@ -14,6 +14,7 @@ import {
   computeCalories,
   recomputeNutrition,
   hasFullDensity,
+  scaleGramAmount,
 } from '../src/services/menuEditService.ts';
 import { pickNumber, readNumber } from '../src/utils/looseNumber.ts';
 import { MENU_FORMAT_EXAMPLE } from '../src/constants/menuFormatExample.ts';
@@ -262,5 +263,23 @@ assert.equal(
     );
   }
 }
+
+// 19. 调料用量可以单独改：步骤文案里的同一个数字也要跟着改，热量跟着重算
+menu = applyEdits(baseMenu(), requirement, [
+  { op: 'set_seasoning_amount', dish: '番茄炒蛋', seasoning: '食用油', amount: '15g' },
+]);
+assert.equal(menu.dishes[0].seasonings[0].amount, '15g');
+assert.ok(
+  menu.dishes[0].cookingSteps[0].instruction.includes('[食用油(15g)]'),
+  `调料改了但步骤文案没跟着改：${menu.dishes[0].cookingSteps[0].instruction}`,
+);
+assert.equal(menu.dishes[0].estimatedNutrition.calories, 335, '油从10g变15g热量没跟着变');
+
+// 20. 按比例缩放用量的工具函数：能解析成克数的才缩放，"适量/1汤匙"原样返回
+assert.equal(scaleGramAmount('80g', 2), '160g');
+assert.equal(scaleGramAmount('10 克', 1.5), '15克');
+assert.equal(scaleGramAmount('适量', 2), '适量');
+assert.equal(scaleGramAmount('1汤匙', 2), '1汤匙');
+assert.equal(scaleGramAmount('80g', 1), '80g');
 
 console.log('✓ 菜单编辑与格式范例全部通过');
