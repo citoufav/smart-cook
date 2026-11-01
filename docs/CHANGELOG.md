@@ -8,6 +8,14 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — "完成做菜" only exists on the last page
+
+**Fixed** — all three pager pages shared one green 完成做菜 button, so the recipe overview offered to finish a cook that had not started. A user who pressed it there never discovered that 备菜 and 炒制 existed at all: the app happily filed the menu away as done, every time.
+
+  The footer now follows the page: 菜谱 and 备菜 show an orange 下一步 that advances one page, and only 炒制 shows 完成做菜. Same height, so the floating balls keep their offset.
+
+**Also fixed while wiring it**: `goToPage` sets `currentPage` and dispatches the stage itself instead of relying on `onMomentumScrollEnd` to notice the programmatic scroll. Pressing 下一步 twice in quick succession would otherwise leave the state behind the scroll position — the second press would move the same single page again.
+
 ## 2026-11-01 — Onboarding ends by cooking, not by a settings screen
 
 **Changed** — the last onboarding step's button no longer says 完成. With an API key configured it says 「立即生成午餐（1 人份 · 700 大卡）」 and actually starts a generation: the preferences are written, the pantry is saved, and the app routes to the cooking tab with `autoGenerate=1&people=1&meal=lunch&calorie=700`, where the screen waits for its saved defaults to load, applies the overrides, and submits once (guarded by a ref so it cannot loop).
