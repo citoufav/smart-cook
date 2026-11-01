@@ -34,7 +34,6 @@ import { useKeyboardAwareScroll } from '../hooks/useKeyboardAwareScroll';
 import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProviders';
 import { HEALTH_CONDITIONS } from '../constants/healthConditions';
 import { TagChipGroup } from './TagChipGroup';
-import { SelectableChip } from './SelectableChip';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
@@ -144,6 +143,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const [dietaryTags, setDietaryTags] = useState<string[]>([...preferences.dietaryRestrictions]);
   // 长期疾病默认收起：平时不占版面，也不把这排字摆在所有人面前
   const [showConditions, setShowConditions] = useState(false);
+  const [healthTags, setHealthTags] = useState<string[]>([...(preferences.healthConditions ?? [])]);
   const [tasteTags, setTasteTags] = useState<string[]>([...preferences.tastePreferences]);
   const [cookingSkill, setCookingSkill] = useState<CookingSkill>(
     pickCookingSkill(preferences.cookingSkill),
@@ -158,6 +158,7 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
       setApiUrl(preferences.apiUrl);
       setApiType(preferences.apiType);
       setDietaryTags([...preferences.dietaryRestrictions]);
+      setHealthTags([...(preferences.healthConditions ?? [])]);
       setTasteTags([...preferences.tastePreferences]);
       setCookingSkill(pickCookingSkill(preferences.cookingSkill));
     }
@@ -210,6 +211,11 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
   const handleDietaryChange = useCallback(async (newTags: string[]) => {
     setDietaryTags(newTags);
     await updatePreferences({ dietaryRestrictions: newTags });
+  }, [updatePreferences]);
+
+  const handleHealthChange = useCallback(async (newTags: string[]) => {
+    setHealthTags(newTags);
+    await updatePreferences({ healthConditions: newTags });
   }, [updatePreferences]);
 
   const handleTasteChange = useCallback(async (newTags: string[]) => {
@@ -370,24 +376,13 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
               </TouchableOpacity>
               {showConditions && (
                 <>
-                  <View style={styles.conditionChips}>
-                    {HEALTH_CONDITIONS.map((c) => {
-                      const on = dietaryTags.includes(c.rule);
-                      return (
-                        <SelectableChip
-                          key={c.label}
-                          label={c.label}
-                          selected={on}
-                          role="checkbox"
-                          onPress={() =>
-                            handleDietaryChange(
-                              on ? dietaryTags.filter((t) => t !== c.rule) : [...dietaryTags, c.rule],
-                            )
-                          }
-                        />
-                      );
-                    })}
-                  </View>
+                  <TagChipGroup
+                    items={HEALTH_CONDITIONS.map((c) => c.label)}
+                    selected={healthTags}
+                    onChange={handleHealthChange}
+                    addPlaceholder="其他情况，如：肾病"
+                    onInputFocus={captureNode}
+                  />
                   <Text style={styles.conditionNote}>
                     只是让 AI 避开相应的食材和做法，不能代替医生或营养师的建议。
                   </Text>
@@ -710,7 +705,6 @@ const styles = StyleSheet.create({
   // 长期疾病/饮食方式
   conditionToggle: { paddingVertical: SPACING.sm, marginTop: SPACING.sm },
   conditionToggleText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary },
-  conditionChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   conditionNote: {
     fontSize: TYPOGRAPHY.caption,
     color: COLORS.textTertiary,

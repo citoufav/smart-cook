@@ -89,6 +89,12 @@ export interface UserPreferences {
    * 用来反复检查首启流程，测完记得关掉。
    */
   forceOnboarding?: boolean;
+  /**
+   * 长期疾病 / 特殊饮食方式（存名称：糖尿病、痛风…）。
+   * 和忌口分开存：忌口是「不吃X」，这里是「有X病，所以要避开什么」，
+   * 混在一个数组里会让预设名和自填项都变味。
+   */
+  healthConditions?: string[];
   /** 烹饪熟练度，喂给 AI 决定步骤描述的详细程度 */
   cookingSkill: CookingSkill;
 }

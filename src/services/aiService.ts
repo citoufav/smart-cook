@@ -7,6 +7,7 @@ import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
 import { pickNumber, readNumber } from '../utils/looseNumber';
 import { MENU_FORMAT_EXAMPLE } from '../constants/menuFormatExample';
+import { formatHealthRules } from '../constants/healthConditions';
 import { aiEndpoint, aiHeaders, aiModel, aiBody, aiProtocol, aiSupportsThinking } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
@@ -376,6 +377,7 @@ function buildStage1UserPrompt(
   tastePreferences: string[] = [],
   cookingSkill: CookingSkill = 'beginner',
   reused: SavedDish[] = [],
+  healthConditions: string[] = [],
 ): string {
   const ingredientLines = formatIngredientLines(ingredients);
   const seasoningLines = formatSeasoningLines(seasonings);
@@ -386,6 +388,9 @@ function buildStage1UserPrompt(
 
   const customText = requirement.customRequirement ? `特殊需求：${requirement.customRequirement}` : '';
   const restrictionText = dietaryRestrictions.length > 0 ? `忌口：${dietaryRestrictions.join(', ')}` : '';
+  const healthText = healthConditions.length > 0
+    ? `健康约束：${formatHealthRules(healthConditions)}\n这些是长期状况，不是"这次不想吃"，每一顿都要照顾。`
+    : '';
   const tasteText = tastePreferences.length > 0 ? `口味与菜系偏好：${tastePreferences.join(', ')}` : '';
 
   const dietMemoryText = recentMeals && recentMeals.length > 0
@@ -398,6 +403,7 @@ function buildStage1UserPrompt(
 ${calorieText}
 ${customText}
 ${restrictionText}
+${healthText}
 ${tasteText}
 ${dietMemoryText}
 
@@ -452,7 +458,7 @@ export function callAIStage1Stream(
   },
   reused: SavedDish[] = [],
 ): SSEStreamController {
-  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences, prefs.cookingSkill, reused);
+  const userPrompt = buildStage1UserPrompt(ingredients, seasonings, requirement, dietaryRestrictions, recentMeals, prefs.tastePreferences, prefs.cookingSkill, reused, prefs.healthConditions ?? []);
   const url = aiEndpoint(prefs);
 
   const body = aiBody(prefs, {
@@ -567,6 +573,7 @@ export function generateOneDishStream(
     dietaryRestrictions: string[];
     tastePreferences: string[];
     cookingSkill: CookingSkill;
+    healthConditions?: string[];
   },
   prefs: UserPreferences,
   callbacks: { onDone: (dish: DishPlan) => void; onError: (error: Error) => void },
@@ -651,6 +658,7 @@ function buildOneDishPrompt(
     dietaryRestrictions: string[];
     tastePreferences: string[];
     cookingSkill: CookingSkill;
+    healthConditions?: string[];
   },
 ): string {
   const r = context.requirement;
@@ -659,6 +667,9 @@ function buildOneDishPrompt(
     : '热量目标：不限';
   const customText = r.customRequirement ? `特殊需求：${r.customRequirement}` : '';
   const restrictionText = context.dietaryRestrictions.length > 0 ? `忌口：${context.dietaryRestrictions.join(', ')}` : '';
+  const healthText = (context.healthConditions ?? []).length > 0
+    ? `健康约束：${formatHealthRules(context.healthConditions ?? [])}`
+    : '';
   const tasteText = context.tastePreferences.length > 0 ? `口味与菜系偏好：${context.tastePreferences.join(', ')}` : '';
 
   return `【本次任务】${mode === 'add' ? '新增' : '替换'}一道菜：${instruction}
@@ -672,6 +683,7 @@ ${context.dishNames.join('、') || '无'}
 ${calorieText}
 ${customText}
 ${restrictionText}
+${healthText}
 ${tasteText}
 
 【烹饪熟练度】

@@ -138,6 +138,7 @@ function useDishGeneration() {
             seasonings: inventoryState.seasonings.map((s) => ({ name: s.name, status: s.status })),
             requirement,
             dietaryRestrictions: settingsState.preferences.dietaryRestrictions,
+            healthConditions: settingsState.preferences.healthConditions ?? [],
             tastePreferences: settingsState.preferences.tastePreferences,
             cookingSkill: settingsState.preferences.cookingSkill,
           },

@@ -29,3 +29,14 @@ export const HEALTH_CONDITIONS: HealthConditionPreset[] = [
 export function findConditionByRule(rule: string): HealthConditionPreset | undefined {
   return HEALTH_CONDITIONS.find((c) => c.rule === rule);
 }
+
+/**
+ * 把选中的情况（存的是**名称**，比如「糖尿病」）展开成给模型看的一句话。
+ * 预设的用表里那句写清的规则；自己加的（肾病等）原样带上 —— 用户知道自己该避什么，
+ * 我们能做的是别把它塞进「忌口：不吃X」那种句式里让它变形。
+ */
+export function formatHealthRules(labels: string[]): string {
+  return labels
+    .map((label) => HEALTH_CONDITIONS.find((c) => c.label === label)?.rule ?? label)
+    .join('；');
+}

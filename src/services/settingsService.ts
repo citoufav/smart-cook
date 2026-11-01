@@ -22,6 +22,7 @@ export const DEFAULT_USER_PREFERENCES: Omit<UserPreferences, 'apiKey'> = {
   cookingSkill: 'beginner',
   // 调试用：true = 每次启动都进引导页。发布前确认这里是 false
   forceOnboarding: false,
+  healthConditions: [],
 };
 
 export async function saveApiKey(apiKey: string): Promise<void> {
