@@ -172,28 +172,28 @@ export default function OnboardingScreen() {
             <View style={styles.steps}>
               <Text style={styles.stepText}>
                 <Text style={styles.stepNum}>1 </Text>
-                <Text style={styles.stepBold}>注册。</Text>
-                点下面的按钮打开 DeepSeek 官网，手机号注册，不用翻墙，也不用注册我们这个应用。
+                <Text style={styles.stepBold}>登录或注册。</Text>
+                点下面的按钮打开 DeepSeek 官网，登录或注册一个 DeepSeek 账户 —— 注意不是我们这个应用的账户。
               </Text>
               <Text style={styles.stepText}>
                 <Text style={styles.stepNum}>2 </Text>
-                <Text style={styles.stepBold}>充一点钱。</Text>
-                登录后进「充值」页面，按自己的用量充，几块钱就能生成很多次；新账号一般还有赠送额度。
+                <Text style={styles.stepBold}>充值。</Text>
+                登录后进「充值」页面，按自己的用量充，几块钱就能生成很多次。
               </Text>
               <Text style={styles.stepText}>
                 <Text style={styles.stepNum}>3 </Text>
-                <Text style={styles.stepBold}>找到 API Key 页面。</Text>
-                在 DeepSeek 平台里点开左上角菜单，选「API keys」（有的地方叫「API 密钥」）。
+                <Text style={styles.stepBold}>找到 API keys。</Text>
+                在 DeepSeek 平台里点开左上角菜单，选「API keys」。
               </Text>
               <Text style={styles.stepText}>
                 <Text style={styles.stepNum}>4 </Text>
                 <Text style={styles.stepBold}>创建一个 Key。</Text>
-                点「创建 API key」，名字随便填（比如「随煮」），确定。
+                点「创建 API key」，名字随便填（比如 cook、做饭）。
               </Text>
               <Text style={styles.stepText}>
                 <Text style={styles.stepNum}>5 </Text>
                 <Text style={styles.stepBold}>复制，粘贴。</Text>
-                复制那串 sk- 开头的字符，回到这里粘到下面的框里，点「下一步」。
+                复制那串 sk- 开头的字符，粘到下面的框里，点「下一步」。
               </Text>
             </View>
 
