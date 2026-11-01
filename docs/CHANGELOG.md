@@ -8,6 +8,12 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Two layout fixes from looking at the actual screens
+
+**Fixed — section headers were touching their content.** In the settings drawer the header's `borderBottom` is the divider, and the expanded content began immediately below it, so the first line of every section was pinned against the rule. `marginBottom` on the header is the fix — padding alone cannot do it, because the border is drawn at the padding edge.
+
+**Fixed — a lone card in the last row stretched to full width.** 我的菜 uses a two-column `FlatList` and the card had `flex: 1`, so an odd number of dishes made the final card fill the whole row — same height, double width, looking like a rendering bug. The card width is now computed once from the screen width minus the list padding and the column gap, so every card is exactly half. Fixed width beats letting items negotiate, here specifically because there is nothing to negotiate with in a row of one.
+
 ## 2026-11-01 — Health conditions become their own list, with a "+" of their own
 
 **Changed — `healthConditions` is a separate preference.** They used to be written into `dietaryRestrictions` as pre-formatted sentences. That worked, but it made every condition a 忌口 entry: 「有没有别的忌口」的标签行里会出现一条「糖尿病：控糖、少精制碳水、低GI」，而这一行本来是回答「不吃什么」的。
