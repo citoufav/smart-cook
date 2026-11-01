@@ -17,6 +17,7 @@ import {
   scaleGramAmount,
   parseGramAmount,
   prepareReusedDishes,
+  scaleDish,
 } from '../src/services/menuEditService.ts';
 import { pickNumber, readNumber } from '../src/utils/looseNumber.ts';
 import { MENU_FORMAT_EXAMPLE } from '../src/constants/menuFormatExample.ts';
@@ -313,6 +314,14 @@ assert.ok(
 );
 assert.equal(soupDish.ingredients[0].estimatedWeight, 300, 'AI 没给倍数时按 4/2 人兜底');
 assert.ok(reused.every((d) => d.cookingSteps[0].isCompleted === false), '复用旧菜时炒制步骤要回到未完成');
+
+// 复用的反向也测一下：缩小、以及"适量"这类没有克重的用量原样留着
+const half = scaleDish(savedDish('青椒肉丝', 305, 2), 0.5);
+assert.equal(half.ingredients[0].estimatedWeight, 75);
+assert.ok(half.cookingSteps[0].instruction.includes('[猪里脊(75g)]'), '缩小后步骤文案没跟着改');
+assert.equal(half.seasonings[0].amount, '5g', '10g 的一半要是 5g');
+const keepAny = scaleDish({ ...savedDish('青椒肉丝', 305, 2), seasonings: [{ name: '盐', amount: '适量', isInInventory: true }] }, 2);
+assert.equal(keepAny.seasonings[0].amount, '适量', '"适量"算不出克数，缩放时要原样留着');
 
 // 明显是意外值的倍率（10 倍以上）不让它生效，退回人数比
 reused = prepareReusedDishes([savedDish('青椒肉丝', 500, 2)], [{ name: '青椒肉丝', scale: 300 }], 4, inv);

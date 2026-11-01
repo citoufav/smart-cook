@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
-## 2026-11-02 — Reuse: the AI decides each dish's multiplier, not the person ratio
+## 2026-11-01 — Reuse: the AI decides each dish's multiplier, not the person ratio
 
 **Added**
 
@@ -23,6 +23,12 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 **Staples stay out of the library.** `isStapleDish` filters 米饭/馒头/面条/稀粥 and friends out of both 我的菜 and 最近吃过, and out of the AI's "avoid repeating these" hint. Rule 6 of the system prompt still requires staples to be part of a *menu* (they carry calories and a cooking step), but they are not dishes you would want to re-cook from a card. Older entries already saved self-heal on the next write.
 
 **Tests**: `npm run check:edits` gained a reuse group — per-dish multiplier applied, step text scaled with the grams, missing multiplier falling back to the person ratio, a `"1.5"` string being accepted, a `300` multiplier being rejected as an accident, `isCompleted` reset on reused steps, stale inventory flags refreshed, and a merged menu's total calories and shopping list recomputed from final grams. `npm run check:dishes` gained the staple table (24 names) and the self-healing filter.
+
+**Also added — a multiplier on the dish card.** Opening a saved dish now has 「这次做多少」 (×0.5 / 原份量 / ×1.5 / ×2 / ×3). The grams, the seasoning amounts, the gram figures inside the prep and cooking steps, and the calorie figure all rescale together, purely locally via `scaleDish`.
+
+  It deliberately does **not** write back. Wanting to cook one dish at 1.5× tonight does not mean your saved recipe is now 1.5× — the library stays the recipe, the multiplier is a view. Scaling always starts from the stored dish, never from the previous scaled result, or every tap would compound.
+
+**Also fixed — 清水 was on the shopping list.** The local check treated `isInInventory === false` as "you need to buy this", and water is never in anyone's ingredient inventory, so it was always flagged. `isAlwaysAvailable` is now an exact-name whitelist for tap water and its synonyms (水/清水/开水/凉白开/纯净水…), skipped when the shopping list is rebuilt and when the 需购买 tag is drawn. It is exact-match on purpose: 水淀粉 is starch and 矿泉水 is a product, and both must still be listed.
 
 ## 2026-11-01 — The dish library: a dish is identified by its name, not by an instance id
 

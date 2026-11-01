@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,22 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { dishLibraryService } from '../../src/services/dishLibraryService';
+import { scaleDish } from '../../src/services/menuEditService';
 import { useCustomAlert } from '../../src/components/CustomAlert';
+import { SelectableChip } from '../../src/components/SelectableChip';
 import { IngredientTagText } from '../../src/components/IngredientTagText';
 import { COLORS, buildMenuIngredientColorMap } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import type { SavedDish } from '../../src/types';
+
+/**
+ * 份量倍数。
+ *
+ * 只做「这次做多少」，**不写回菜品库** —— 想按 1.5 倍做一顿，不代表你的配方变成了 1.5 倍。
+ * 纯本地缩放：食材克数、调料用量、步骤文案里的克重、热量一起动。
+ */
+const SCALE_OPTIONS = [0.5, 1, 1.5, 2, 3];
 
 export default function DishDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +35,7 @@ export default function DishDetailScreen() {
 
   const [dish, setDish] = useState<SavedDish | null>(null);
   const [loading, setLoading] = useState(true);
+  const [factor, setFactor] = useState(1);
 
   useEffect(() => {
     let alive = true;
@@ -65,6 +76,13 @@ export default function DishDetailScreen() {
     ? buildMenuIngredientColorMap([dish])
     : {};
 
+  // 永远从原配方缩放，不在缩放结果上再缩放（否则每点一次都乘一遍）
+  const shown = useMemo(() => (dish ? scaleDish(dish, factor) : null), [dish, factor]);
+  const totalGrams = useMemo(
+    () => (shown ? shown.ingredients.reduce((n, i) => n + i.estimatedWeight, 0) : 0),
+    [shown],
+  );
+
   return (
     <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
@@ -83,31 +101,50 @@ export default function DishDetailScreen() {
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} />
         </View>
-      ) : !dish ? (
+      ) : !dish || !shown ? (
         <View style={styles.center}>
           <Text style={styles.emptyText}>这道菜已经不在了</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACING.xl }]}>
           <View style={styles.metaCard}>
-            <Text style={styles.metaCalories}>{dish.estimatedNutrition.calories} 大卡</Text>
+            <Text style={styles.metaCalories}>{shown.estimatedNutrition.calories} 大卡</Text>
             <Text style={styles.metaLine}>
-              {dish.basePersonCount} 人份 · 做过 {dish.timesCooked} 次
+              {dish.basePersonCount} 人份 · 食材共 {totalGrams}g · 做过 {dish.timesCooked} 次
+            </Text>
+          </View>
+
+          <Text style={styles.sectionTitle}>这次做多少</Text>
+          <View style={styles.panel}>
+            <View style={styles.scaleRow}>
+              {SCALE_OPTIONS.map((opt) => (
+                <SelectableChip
+                  key={opt}
+                  label={opt === 1 ? '原份量' : `×${opt}`}
+                  selected={factor === opt}
+                  onPress={() => setFactor(opt)}
+                />
+              ))}
+            </View>
+            <Text style={styles.scaleHint}>
+              {factor === 1
+                ? '想多做或少做就选倍数，下面的克数和步骤会一起变'
+                : '下面的克数和步骤已按倍数换算；只影响这次查看，不改你存的配方'}
             </Text>
           </View>
 
           <Text style={styles.sectionTitle}>食材</Text>
           <View style={styles.panel}>
-            {dish.ingredients.map((ing) => (
+            {shown.ingredients.map((ing) => (
               <View key={ing.name} style={styles.row}>
                 <Text style={styles.rowName}>{ing.name}</Text>
                 <Text style={styles.rowValue}>{ing.estimatedWeight}g</Text>
               </View>
             ))}
-            {dish.seasonings.length > 0 && (
+            {shown.seasonings.length > 0 && (
               <>
                 <View style={styles.divider} />
-                {dish.seasonings.map((s) => (
+                {shown.seasonings.map((s) => (
                   <View key={s.name} style={styles.row}>
                     <Text style={styles.rowMuted}>{s.name}</Text>
                     <Text style={styles.rowMuted}>{s.amount}</Text>
@@ -119,10 +156,10 @@ export default function DishDetailScreen() {
 
           <Text style={styles.sectionTitle}>备菜</Text>
           <View style={styles.panel}>
-            {dish.prepSteps.length === 0 ? (
+            {shown.prepSteps.length === 0 ? (
               <Text style={styles.rowMuted}>这道菜没有单独的备菜步骤</Text>
             ) : (
-              dish.prepSteps.map((step) => (
+              shown.prepSteps.map((step) => (
                 <View key={step.id} style={styles.stepRow}>
                   <IngredientTagText text={step.description} colorMap={colorMap} />
                 </View>
@@ -132,10 +169,10 @@ export default function DishDetailScreen() {
 
           <Text style={styles.sectionTitle}>炒制</Text>
           <View style={styles.panel}>
-            {dish.cookingSteps.length === 0 ? (
+            {shown.cookingSteps.length === 0 ? (
               <Text style={styles.rowMuted}>这道菜没有单独的炒制步骤</Text>
             ) : (
-              dish.cookingSteps.map((step, i) => (
+              shown.cookingSteps.map((step, i) => (
                 <View key={step.stepNumber} style={styles.stepRow}>
                   <Text style={styles.stepIndex}>{i + 1}</Text>
                   <View style={styles.stepBody}>
@@ -175,6 +212,9 @@ const styles = StyleSheet.create({
   },
   metaCalories: { fontSize: TYPOGRAPHY.h2, fontWeight: '800', color: COLORS.primary },
   metaLine: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, marginTop: SPACING.xs },
+
+  scaleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  scaleHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 17, marginTop: SPACING.sm },
 
   sectionTitle: {
     fontSize: TYPOGRAPHY.body,
