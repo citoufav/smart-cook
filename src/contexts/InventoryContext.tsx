@@ -108,6 +108,8 @@ interface InventoryContextValue {
   currentProfileId: string;
   switchProfile: (id: string) => Promise<boolean>;
   createProfile: (name: string) => Promise<InventoryProfile | null>;
+  /** 删档案连库存一起删；只剩一个时不允许 */
+  deleteProfile: (id: string) => Promise<boolean>;
   refreshProfiles: () => Promise<void>;
 }
 
@@ -169,6 +171,15 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return profile;
   }, [loadProfiles, loadData]);
 
+  const deleteProfile = useCallback(async (id: string) => {
+    const nextCurrent = await inventoryProfileService.remove(id);
+    if (!nextCurrent) return false;
+    // 删的可能是当前档案，库存得按新的当前档案重读一遍
+    await loadProfiles();
+    await loadData();
+    return true;
+  }, [loadProfiles, loadData]);
+
   const addIngredient = useCallback(async (name: string, weight: number | null, createDate?: string) => {
     log.info('addIngredient called', { name, weight });
     const ingredient = await ingredientService.add({ name, weight, createDate });
@@ -228,12 +239,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       currentProfileId,
       switchProfile,
       createProfile,
+      deleteProfile,
       refreshProfiles: loadProfiles,
     }),
     [
       state, dispatch, addIngredient, updateIngredient, deleteIngredient,
       addSeasoning, updateSeasoning, deleteSeasoning, refreshFromStorage,
-      profiles, currentProfileId, switchProfile, createProfile, loadProfiles,
+      profiles, currentProfileId, switchProfile, createProfile, deleteProfile, loadProfiles,
     ],
   );
 

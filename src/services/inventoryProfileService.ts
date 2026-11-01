@@ -190,6 +190,31 @@ class InventoryProfileService {
     return profile;
   }
 
+  /**
+   * 删掉一个档案，连同它那一套库存数据。
+   * @returns 删完之后该用哪个档案；删失败（只剩一个 / 不存在 / 写盘失败）返回 null
+   *
+   * 顺序是刻意的：先改清单指针，再删数据。反过来的话万一写盘失败，
+   * 清单里还挂着这个档案，但里面的库存已经是空的。
+   */
+  async remove(id: string): Promise<string | null> {
+    const blob = await this.load();
+    // 只剩一个就不给删：清单必须至少指向一个档案，否则整套库存读不出来
+    if (blob.items.length <= 1) return null;
+    const target = blob.items.find((p) => p.id === id);
+    if (!target) return null;
+
+    const items = blob.items.filter((p) => p.id !== id);
+    // 删的正好是当前档案时，顺手切到剩下第一个，不然指针悬空
+    const currentId = blob.currentId === id ? items[0].id : blob.currentId;
+    if (!(await this.persist({ ...blob, items, currentId }))) return null;
+
+    await storageService.remove(inventoryIngredientsKey(id));
+    await storageService.remove(inventorySeasoningsKey(id));
+    log.info('删除库存档案', { id, name: target.name, currentId });
+    return currentId;
+  }
+
   /** 供测试/调试：清掉内存缓存，下次读取重新从存储加载 */
   invalidateCache(): void {
     this.blob = null;

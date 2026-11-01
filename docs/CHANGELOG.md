@@ -8,6 +8,12 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — 库存档案可以删了
+
+**Added** — each profile row in 库存档案 carries a 🗑 when there is more than one profile. Deleting asks first, because it takes that profile's inventory with it.
+
+**Deliberately not done** — the last profile cannot be deleted: the profile list has to point at something, and an empty pointer means the whole inventory reads back blank. Deleting the current profile switches to the first one left rather than landing the user in a broken screen.
+
 ## 2026-11-01 — Dead code removal
 
 **Removed** — `src/hooks/useSafeJsonParam.ts` (whole file), `findConditionByRule` from `healthConditions.ts`, and five unused validators from `src/utils/validation.ts` (only `validateApiKey` survives; the rest of the file's checks are inlined in the sheets that use them).

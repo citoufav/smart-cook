@@ -5,6 +5,7 @@ import { COLORS } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { SPACING, BORDER_RADIUS } from '../constants/spacing';
 import { useInventory } from '../contexts/InventoryContext';
+import { useCustomAlert } from './CustomAlert';
 import { MAX_PROFILE_NAME, MAX_PROFILES } from '../services/inventoryProfileService';
 import { SheetShell } from './DishSheets';
 
@@ -15,7 +16,8 @@ import { SheetShell } from './DishSheets';
  * 所以这里的措辞一律是「库存」，别让用户以为整个应用换了。
  */
 export function InventoryProfileSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { profiles, currentProfileId, switchProfile, createProfile } = useInventory();
+  const { profiles, currentProfileId, switchProfile, createProfile, deleteProfile } = useInventory();
+  const { showAlert } = useCustomAlert();
   const [newName, setNewName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,6 +36,27 @@ export function InventoryProfileSheet({ visible, onClose }: { visible: boolean; 
     },
     [currentProfileId, onClose, switchProfile],
   );
+
+  // 删档案 = 连里面的库存一起删，所以必过二次确认（和删食材一个规矩）
+  const handleDelete = useCallback((id: string, name: string) => {
+    showAlert({
+      title: '删除档案',
+      message: `「${name}」里的库存会一起删掉，不能恢复。`,
+      buttons: [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            const ok = await deleteProfile(id);
+            setBusy(false);
+            if (!ok) setError('删除失败，请重试');
+          },
+        },
+      ],
+    });
+  }, [deleteProfile, showAlert]);
 
   const handleCreate = useCallback(async () => {
     const name = newName.trim();
@@ -90,6 +113,17 @@ export function InventoryProfileSheet({ visible, onClose }: { visible: boolean; 
                 {profile.name}
               </Text>
               {current && <Text style={styles.currentTag}>当前</Text>}
+              {profiles.length > 1 && (
+                <TouchableOpacity
+                  onPress={() => handleDelete(profile.id, profile.name)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.rowDelete}
+                  disabled={busy}
+                  accessibilityLabel={`删除${profile.name}档案`}
+                >
+                  <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -117,7 +151,7 @@ export function InventoryProfileSheet({ visible, onClose }: { visible: boolean; 
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Text style={styles.hint}>
-            新建的档案是空的，库存要重新录；切回来还是原来那套。
+            新建的档案是空的，库存要重新录；切回来还是原来那套。至少留一个档案。
           </Text>
         </View>
       </ScrollView>
@@ -156,6 +190,7 @@ const styles = StyleSheet.create({
   name: { flex: 1, fontSize: TYPOGRAPHY.body, fontWeight: '600', color: COLORS.textPrimary },
   nameCurrent: { color: COLORS.primaryDark },
   currentTag: { fontSize: TYPOGRAPHY.caption, color: COLORS.primary, fontWeight: '600' },
+  rowDelete: { padding: 2 },
 
   addBlock: { marginTop: SPACING.md, paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border },
   addLabel: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.textPrimary, marginBottom: SPACING.sm },
