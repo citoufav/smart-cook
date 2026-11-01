@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Two protocols instead of a vendor list
+
+**Changed — one DeepSeek, one OpenAI-compatible, one Anthropic-compatible.** The dropdown had grown to seven vendors, which meant maintaining seven sets of base URLs and default model names that drift out of date. Almost every provider offers one of two compatibility endpoints, so the list shrank to: DeepSeek (official), OpenAI 兼容, Anthropic 兼容.
+
+  Both non-DeepSeek entries are really "a protocol plus a base URL plus a model name". Point 通义/Kimi/智谱/Ollama at the OpenAI 兼容 slot; point anything Anthropic-shaped (including DeepSeek's own `/anthropic` endpoint) at the other.
+
+**Added — an actual Anthropic adapter.** Offering the option without the protocol would have been a broken menu item, so it is implemented rather than listed.
+
+  - `POST /v1/messages` instead of `/chat/completions`; `x-api-key` + `anthropic-version: 2023-06-01` instead of `Authorization: Bearer`.
+  - `system` moves to the top level and is stripped out of `messages` (Anthropic rejects a system role inside the array; multiple system messages are joined).
+  - No `response_format: json_object` — Anthropic has no such parameter, and sending it is a 400. JSON is enforced by the prompt instead, which the prompts already did.
+  - Thinking is `thinking.budget_tokens` (mapped from the effort setting, clamped below `max_tokens`), not `thinking.type`.
+  - The SSE parser gained a second branch: `content_block_delta` with `text_delta`/`thinking_delta`, and `message_delta.stop_reason === 'max_tokens'` mapped to our `'length'` so truncation is still reported.
+
+**Fixed — `thinking` was being sent to every provider.** Both `thinking` and `reasoning_effort` are DeepSeek fields. They were going out regardless of which vendor was selected, and an unknown parameter is a 400 on some services. Now only DeepSeek (and Anthropic, in its own shape) receives them.
+
+**Structure**: `src/utils/aiRequest.ts` holds the protocol difference as a pure function, `services/aiClient.ts` resolves protocol/endpoint/headers/model and delegates, and the three call sites just pass messages + limits + a `thinking: 'auto' | 'off'` intent. Adding a vendor is one line in `constants/aiProviders.ts`.
+
+**Tests**: `npm run check:ai` asserts the body shapes for both protocols — system placement, `response_format` present/absent, thinking fields only where they belong, and the Anthropic budget staying under `max_tokens`. This is the one part that cannot be verified against a live API from here.
+
+**Still unverified**: no real Anthropic request has been made (no key on this machine). The request shape and stream parsing follow the documented protocol, but the first live call should be watched closely.
+
 ## 2026-11-01 — Inventory profiles, and a backup that carries everything
 
 **Added — 库存档案**
