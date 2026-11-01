@@ -8,6 +8,20 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Health conditions store a sentence, not a diagnosis
+
+**Added** — 设置 → 忌口设置 grew a row of presets: 糖尿病 / 高血压 / 高血脂 / 痛风 / 胃病 / 孕期 / 素食. Tapping one appends a line to the existing 忌口 tags; tapping again removes it.
+
+**The decision that matters is what gets stored.** Not `糖尿病`, but `糖尿病：控糖、少精制碳水、低GI`. If only the disease name reached the prompt, the model would do the obvious thing (put less sugar in) and miss the point (control total carbohydrate). A one-word diagnosis is an invitation to improvise; a written constraint is not.
+
+  This also kept the change small: 忌口 already flows into both the menu prompt and the single-dish prompt, so nothing downstream had to change — no new preference field, no new prompt section, no extra plumbing. What the user sees in the tag list is exactly what the AI reads, and they can edit or delete it like any other tag.
+
+**Safety boundary**: the row carries 「只是让 AI 避开相应的食材和做法，不能代替医生或营养师的建议。」 A cooking app that implies medical authority is worse than one that does not list the feature at all. The rules stay conservative on purpose — no doses, no claims; 肾病 was left out because a wrong rule there is genuinely harmful.
+
+**Not in onboarding.** It is a set-once setting, and the first-run flow is already the longest part of the app. If it ever moves there, it is one more `ChipGroup`.
+
+**Tests**: `npm run check:ai` asserts the preset shape — every rule is written as 「标签：做法」, the diabetes rule actually says 控糖, and a user's own tag like 不吃香菜 is not mistaken for a preset.
+
 ## 2026-11-01 — The key page now serves two kinds of user instead of half-serving one
 
 **Rewritten — the first-run key step.** It had three bullet points that skipped the two hardest parts (where to top up, where the API key page even is). It now spells out the actual five steps a person has to do, in order, each with a bold lead-in: 注册 → 充值 → 找到 API keys（左上角菜单） → 创建 → 复制粘贴. "全程大约 5 分钟" is stated up front so the page does not feel open-ended.
