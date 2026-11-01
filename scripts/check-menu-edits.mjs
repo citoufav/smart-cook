@@ -15,6 +15,7 @@ import {
   recomputeNutrition,
   hasFullDensity,
   scaleGramAmount,
+  parseGramAmount,
 } from '../src/services/menuEditService.ts';
 import { pickNumber, readNumber } from '../src/utils/looseNumber.ts';
 import { MENU_FORMAT_EXAMPLE } from '../src/constants/menuFormatExample.ts';
@@ -105,12 +106,7 @@ assert.ok(salt, '盐应仍在缺料清单里（isInInventory=false）');
 assert.equal(salt.isPurchased, true, '已购入状态丢了');
 assert.ok(salt.suggestedAmount.includes('3g'), '采购量没跟着用量更新');
 
-// 5. 加食材：带密度就立刻计入热量
-menu = applyEdits(baseMenu(), requirement, [
-  { op: 'add_ingredient', dish: '凉拌黄瓜', ingredient: '蒜', grams: 10 },
-]);
-assert.ok(menu.dishes[1].ingredients.some((i) => i.name === '蒜'));
-assert.equal(menu.dishes[1].estimatedNutrition.calories, 150, '新食材没有密度，热量不该凭空变');
+// 5. 加食材不再提供（加了步骤不会跟着变，菜谱会自相矛盾），只保留删食材
 
 // 6. 删菜：步骤跟着这道菜一起走，别的菜不受影响，采购清单不留残渣
 menu = applyEdits(baseMenu(), requirement, [{ op: 'remove_dish', dish: '凉拌黄瓜' }]);
@@ -281,5 +277,12 @@ assert.equal(scaleGramAmount('10 克', 1.5), '15克');
 assert.equal(scaleGramAmount('适量', 2), '适量');
 assert.equal(scaleGramAmount('1汤匙', 2), '1汤匙');
 assert.equal(scaleGramAmount('80g', 1), '80g');
+
+// 21. 调料改用量时靠它算倍数，反过来带动食材；解析不出克数就不缩放
+assert.equal(parseGramAmount('10g'), 10);
+assert.equal(parseGramAmount('约 15 克'), 15);
+assert.equal(parseGramAmount('20'), 20);
+assert.equal(parseGramAmount('适量'), 0, '"适量"算不出倍数，必须当 0');
+assert.equal(parseGramAmount('1汤匙'), 0, '"1汤匙"不能当成 1 克');
 
 console.log('✓ 菜单编辑与格式范例全部通过');

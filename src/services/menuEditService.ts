@@ -30,7 +30,6 @@ function newDishId(): string {
  */
 export type MenuEdit =
   | { op: 'set_grams'; dish: string; ingredient: string; grams: number }
-  | { op: 'add_ingredient'; dish: string; ingredient: string; grams: number }
   | { op: 'remove_ingredient'; dish: string; ingredient: string }
   | { op: 'set_seasoning_amount'; dish: string; seasoning: string; amount: string }
   | { op: 'rename_dish'; dish: string; newName: string }
@@ -95,7 +94,7 @@ function scaleNutrition(n: DishNutrition | undefined, factor: number): DishNutri
 }
 
 /** 把「10g」「10 克」「约10ml」这类用量解析成克数；解析不出（适量/1汤匙）就返回 0 */
-function parseGramAmount(amount: string): number {
+export function parseGramAmount(amount: string): number {
   const m = /^约?\s*(\d+(?:\.\d+)?)\s*(g|克|ml|毫升)?\s*(左右)?$/.exec((amount || '').trim());
   return m ? parseFloat(m[1]) : 0;
 }
@@ -341,14 +340,11 @@ export function applyEdits(
   menu: MenuProposal,
   requirement: RequirementInput,
   edits: MenuEdit[],
-  opts: { inventoryNames?: string[] } = {},
 ): MenuProposal {
   let dishes: DishPlan[] = (menu.dishes ?? []).map(cloneDish);
 
   let scaleFactor = 1;
   const oldCount = requirement.personCount || 1;
-  const inventoryNames = (opts.inventoryNames ?? []).map((n) => n.trim());
-  const isInInventory = (name: string) => inventoryNames.includes(name.trim());
 
   for (const edit of edits) {
     switch (edit.op) {
@@ -368,19 +364,6 @@ export function applyEdits(
           ...s,
           instruction: setGramsInText(s.instruction, ing.name, grams),
         }));
-        break;
-      }
-
-      case 'add_ingredient': {
-        const dish = findDish(dishes, edit.dish);
-        if (!dish) break;
-        const name = edit.ingredient.trim();
-        if (!name || dish.ingredients.some((i) => i.name.trim() === name)) break;
-        dish.ingredients.push({
-          name,
-          estimatedWeight: Math.max(1, Math.round(edit.grams)),
-          isInInventory: isInInventory(name),
-        });
         break;
       }
 

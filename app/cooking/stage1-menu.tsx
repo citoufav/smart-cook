@@ -10,7 +10,6 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
-import { useInventory } from '../../src/contexts/InventoryContext';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { MenuProposal, DishPlan, NutritionalData } from '../../src/types';
 import { COLORS } from '../../src/constants/colors';
@@ -24,7 +23,6 @@ import { DishEditorSheet, AddDishSheet } from '../../src/components/DishSheets';
 export function Stage1MenuContent() {
   const { state, dispatch } = useCooking();
   const { setPreciseNutrition, setEstimatedNutrition } = useNutrition();
-  const inventoryState = useInventory().state;
   const { showAlert } = useCustomAlert();
   const [showReasoning, setShowReasoning] = useState(false);
   const [editingDish, setEditingDish] = useState<DishPlan | null>(null);
@@ -71,12 +69,9 @@ export function Stage1MenuContent() {
   const runEdits = useCallback(
     (edits: MenuEdit[]) => {
       if (!menuProposal || !requirement || edits.length === 0) return;
-      const nextMenu = applyEdits(menuProposal, requirement, edits, {
-        inventoryNames: inventoryState.ingredients.map((i) => i.name),
-      });
-      commitMenu(nextMenu);
+      commitMenu(applyEdits(menuProposal, requirement, edits));
     },
-    [menuProposal, requirement, inventoryState.ingredients, commitMenu],
+    [menuProposal, requirement, commitMenu],
   );
 
   const handleSaveDish = useCallback(
