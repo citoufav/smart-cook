@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Inventory profiles, and a backup that carries everything
+
+**Added — 库存档案**
+
+- 「家里」「单位」各存一套库存。The switcher lives top-right on all three tabs; the default install has exactly one profile called 家里, and new ones are created from the bottom of that sheet. Everything else — 我的菜, completed menus, 最近吃过, taste settings — stays shared, because a recipe is a memory that belongs to *you*, not to a kitchen.
+
+-  Storage moved from one global pair of keys to per-profile ones (`@v1:inventory:<profileId>:ingredients`). The profile list and the current id live in a single key so they can never disagree with each other.
+
+-  **The migration order is deliberate**: write the new per-profile keys, read them back to verify, and only then write the pointer. If anything fails in between, the pointer is never written and the next launch retries; the old keys are read once and never deleted. If verification fails, the pointer is still written (the app would otherwise be unusable) but not one byte of the old data is touched.
+
+-  `HeaderBar` gained a `right` slot. The title became absolutely positioned and centred so a chip on the right can't shove 随煮 off-centre.
+
+**Changed — 备份 v2**
+
+- 导出/导入现在一次带走**所有档案的库存 + 我的菜 + 菜单记录 + 最近吃过**，文件格式升到 v2（`format: "suizhu-backup"`）。API Key 永不导出，口味设置不导出（重设三下点击，而导入覆盖当前设置会让人莫名其妙）。老 v1 文件（顶层直接是 `ingredients`/`seasonings`）继续认，按老规则并进当前档案 —— 不能让别人手上的旧备份变成废纸。
+
+- **导入只增不改**：同名库存跳过、同 id 菜品跳过、同 id 菜单记录跳过。误选一个旧文件、或者别人发来一个乱七八糟的包，最坏结果是多几条没用的数据，而不是把你现在的配方冲掉。
+
+**Security, such as it is.** There is no remote attacker here — no backend, no account, and the file has to be picked by hand in the system picker. The three things that actually matter:
+
+  1. **Every imported object is rebuilt field by field from a whitelist**, never spread into state. `JSON.parse` alone won't pollute a prototype, but one deep merge later will, and this is the only real defence.
+  2. **Size cap** (20 MB, plus a 5000-item cap per array). A 500 MB JSON would take the app down through sheer length; the read now refuses before parsing.
+  3. **Prompt injection** is the interesting one: imported dish and ingredient names end up inside AI prompts. Someone can name an ingredient "ignore all previous instructions". Today the worst case is odd output from *your own* AI call — no data leaves the device — but the rule to keep is that strings from a file are data, never instructions.
+
+Not doing: encryption or signatures. A password on a backup you might forget is a way to destroy your own data, and this isn't key material.
+
+**Tests**: `npm run check:backup` covers the format (whitelist rebuild dropping unknown fields, bad JSON, foreign files, future versions, the size cap), v1 compatibility, a `__proto__` payload not polluting `Object.prototype`, and all four merge rules (skip-same-name, skip-same-id, newest-first ordering, the 10-entry diet-memory cap).
+
 ## 2026-11-01 — Reuse: the AI decides each dish's multiplier, not the person ratio
 
 **Added**
