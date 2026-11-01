@@ -148,12 +148,9 @@ menu = applyEdits(baseMenu(), requirement, [{ op: 'rename_dish', dish: '凉拌�
 assert.equal(menu.dishes[1].name, '拍黄瓜');
 assert.equal(menu.dishes[1].cookingSteps[0].instruction, '把[黄瓜(150g)]拌好');
 
-// 11. 去掉食材：菜品、步骤文案、热量一起减
-menu = applyEdits(baseMenu(), requirement, [
-  { op: 'remove_ingredient', dish: '番茄炒蛋', ingredient: '鸡蛋' },
-]);
-assert.ok(!menu.dishes[0].ingredients.some((i) => i.name === '鸡蛋'));
-assert.equal(menu.dishes[0].estimatedNutrition.calories, 130, `去掉鸡蛋后应只剩番茄40+油90：${menu.dishes[0].estimatedNutrition.calories}`);
+// 11. 编辑只调数字：增删食材不提供本地操作，一律走「让 AI 重做这道菜」
+//     （曾经有 add_ingredient / remove_ingredient，但它们改不动备菜和炒制步骤，
+//      会让菜谱自相矛盾，用户拍板删掉）
 
 // 12. 空编辑等于原样
 menu = applyEdits(baseMenu(), requirement, []);

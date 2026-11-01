@@ -30,7 +30,6 @@ function newDishId(): string {
  */
 export type MenuEdit =
   | { op: 'set_grams'; dish: string; ingredient: string; grams: number }
-  | { op: 'remove_ingredient'; dish: string; ingredient: string }
   | { op: 'set_seasoning_amount'; dish: string; seasoning: string; amount: string }
   | { op: 'rename_dish'; dish: string; newName: string }
   | { op: 'remove_dish'; dish: string }
@@ -57,12 +56,6 @@ function setGramsInText(text: string, ingredient: string, grams: number): string
     'g',
   );
   return text.replace(re, `[${ingredient}(${grams}g)]`);
-}
-
-/** 删掉文本里指定食材的整个标签 */
-function removeTagFromText(text: string, ingredient: string): string {
-  const re = new RegExp(`\\[${escapeRegExp(ingredient)}[（(][^）)]*[）)]\\]`, 'g');
-  return text.replace(re, ingredient);
 }
 
 /** 按比例缩放文本里所有 [食材(Ng)]，人数变化时用 */
@@ -363,24 +356,6 @@ export function applyEdits(
         dish.cookingSteps = dish.cookingSteps.map((s) => ({
           ...s,
           instruction: setGramsInText(s.instruction, ing.name, grams),
-        }));
-        break;
-      }
-
-      case 'remove_ingredient': {
-        const dish = findDish(dishes, edit.dish);
-        if (!dish) break;
-        const name = edit.ingredient.trim();
-        const before = dish.ingredients.length;
-        dish.ingredients = dish.ingredients.filter((i) => i.name.trim() !== name);
-        if (dish.ingredients.length === before) break;
-        dish.prepSteps = dish.prepSteps.map((s) => ({
-          ...s,
-          description: removeTagFromText(s.description, name),
-        }));
-        dish.cookingSteps = dish.cookingSteps.map((s) => ({
-          ...s,
-          instruction: removeTagFromText(s.instruction, name),
         }));
         break;
       }

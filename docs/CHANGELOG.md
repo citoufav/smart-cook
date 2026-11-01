@@ -4,25 +4,28 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
-## 2026-11-01 — The editor only offers edits it can keep consistent
+## 2026-11-01 — The editor only adjusts numbers; anything else is a redo
 
 **Removed**
 
-- 「加食材」 in the dish editor, and the `add_ingredient` edit operation with it.
+- 加食材 / 删食材 in the dish editor, and the `add_ingredient` / `remove_ingredient` edit operations with them.
 
-  An ingredient added there went into the ingredient list and the shopping list, but nothing wrote it into the prep or cooking steps — so the dish listed an ingredient it never told you to use. A recipe that contradicts itself is worse than one you cannot edit, and this capability was never free: keeping it would mean generating step text for the new ingredient, which is exactly what the AI path already does properly.
+  An ingredient added there went into the ingredient list and the shopping list, but nothing wrote it into the prep or cooking steps — so the dish listed an ingredient it never told you to use. Removing one had the mirror problem: the tag disappeared from the step text but the step's method still assumed it. A recipe that contradicts itself is worse than one you cannot edit.
 
-- The `inventoryNames` option on `applyEdits`; it only existed to compute `isInInventory` for added ingredients.
+  The editor now changes only gram values, seasoning amounts, and the dish name. Adding or removing an ingredient means rewriting the dish, which is the 「让 AI 重做」 path — that one produces ingredients and steps together, so they cannot drift apart.
+
+- The `inventoryNames` option on `applyEdits`; it only existed to compute `isInInventory` for added ingredients. `removeTagFromText` went with the removal path.
 
 **Added**
 
-- 「让 AI 重做这道菜」 inside the editor: describe the change ("改成先焯水再炒，少放油" / "加蘑菇"), and the dish is regenerated as a whole via `generateOneDishStream` and swapped in with a `replace_dish` edit. This is the answer to "how do I change the method, not just the numbers" — local edits can rewrite an existing number inside a step, but they cannot invent new steps. The UI says plainly that a redo replaces the dish and discards the numbers typed above.
+- 「让 AI 重做这道菜」 inside the editor: describe the change ("改成先焯水再炒，少放油" / "加蘑菇"), and the dish is regenerated as a whole via `generateOneDishStream` and swapped in with a `replace_dish` edit. This is the answer to "how do I change the method, not just the numbers" — local edits can rewrite an existing number inside a step, but they cannot invent a new step. The UI states plainly that a redo replaces the dish and discards the numbers typed above.
 - `useDishGeneration` shares the generation context between 加菜 and 重做菜 instead of each building it separately.
 
 **Fixed**
 
 - **Proportional scaling was one-directional**: editing an ingredient rescaled the seasonings, but editing a seasoning left every ingredient where it was. Both directions now work; a seasoning's ratio is derived from its gram amount, and `"适量"` / `"1汤匙"` cannot yield a ratio so nothing is rescaled (rather than guessing).
 - The editor sheet's footer was pushed past the bottom of the screen once the content grew, letting the page behind show through underneath. The scroll area is now allowed to shrink (`flexShrink: 1`) and the bottom padding respects the safe-area inset with a floor, so the buttons stay on screen.
+- Editor copy trimmed to state the consequence in one clause instead of explaining the reasoning: 「改用量会同步到步骤」, 「改一个，其余按同倍数跟着变」, 「写「10g」计入热量，「适量」不计」. The one explanation kept is 「整道菜替换，上面改的不生效」, because it prevents silently losing work.
 
 **Tests**: `parseGramAmount` (`10g`, `约 15 克`, `20`, and the zeros for `适量` / `1汤匙`) added; the `add_ingredient` case removed.
 

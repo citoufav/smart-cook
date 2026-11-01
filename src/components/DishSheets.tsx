@@ -300,10 +300,6 @@ export function DishEditorSheet({
     setError(null);
   }, []);
 
-  const removeRow = useCallback((name: string) => {
-    setRows((prev) => prev.filter((r) => r.name !== name));
-  }, []);
-
   // 边改边算热量：改完立刻看得到，不用保存后才知道
   const liveCalories = useMemo(() => {
     if (!dish) return null;
@@ -350,10 +346,7 @@ export function DishEditorSheet({
     // 先处理食材和调料，最后再改菜名：applyEdits 按顺序执行，改名之后旧名字就找不到了
     for (const original of dish.ingredients) {
       const row = finalRows.find((r) => r.name === original.name);
-      if (!row) {
-        edits.push({ op: 'remove_ingredient', dish: dish.name, ingredient: original.name });
-        continue;
-      }
+      if (!row) continue;
       const grams = Number(row.grams);
       if (grams !== original.estimatedWeight) {
         edits.push({ op: 'set_grams', dish: dish.name, ingredient: original.name, grams });
@@ -398,7 +391,6 @@ export function DishEditorSheet({
   const dirty = useMemo(() => {
     if (!dish) return false;
     if (name.trim() !== dish.name) return true;
-    if (rows.length !== dish.ingredients.length) return true;
     if (
       rows.some((r) => {
         const original = dish.ingredients.find((i) => i.name === r.name);
@@ -513,13 +505,6 @@ export function DishEditorSheet({
                 maxLength={5}
               />
               <Text style={styles.gramsUnit}>g</Text>
-              <TouchableOpacity
-                onPress={() => removeRow(row.name)}
-                hitSlop={10}
-                style={styles.removeBtn}
-              >
-                <Ionicons name="close-circle" size={20} color={COLORS.textTertiary} />
-              </TouchableOpacity>
             </View>
           ))
         )}
@@ -817,7 +802,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   gramsUnit: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textTertiary, marginLeft: 4, width: 12 },
-  removeBtn: { marginLeft: SPACING.sm },
   amountInput: {
     width: 92,
     textAlign: 'right',
