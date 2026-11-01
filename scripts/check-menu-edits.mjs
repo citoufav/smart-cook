@@ -16,6 +16,7 @@ import {
   hasFullDensity,
 } from '../src/services/menuEditService.ts';
 import { pickNumber, readNumber } from '../src/utils/looseNumber.ts';
+import { MENU_FORMAT_EXAMPLE } from '../src/constants/menuFormatExample.ts';
 
 const requirement = { personCount: 2, mealType: 'dinner', caloriePreference: undefined, customRequirement: '' };
 
@@ -230,4 +231,36 @@ assert.equal(
   '前一个键是 0 不该挡住后面的同义键',
 );
 
-console.log('✓ 菜单编辑 17 项全部通过');
+// 18. 给模型看的格式范例本身必须是合法 JSON、且真的演示了那几条最容易漏的规范。
+//     范例就是事实上的规范：它写错了，生成质量会悄悄变差，界面上看不出来。
+{
+  const ex = JSON.parse(MENU_FORMAT_EXAMPLE);
+  assert.equal(ex.dishes.length, 2, '范例应该是两道菜（才能演示"同一食材分属两道菜"）');
+  assert.ok(ex.dishes.every((d) => typeof d.name === 'string' && d.name.trim()), '范例里有菜没写 name');
+  assert.ok(
+    ex.dishes.every((d) => d.ingredients.every((i) => i.estimatedWeight > 0 && i.kcalPer100g !== undefined)),
+    '范例里有食材缺 estimatedWeight 或 kcalPer100g',
+  );
+  assert.ok(ex.prepSteps.every((s) => s.dishName), '范例的备菜步骤没填 dishName');
+
+  // 同一食材（番茄）必须在两道菜里各写各的用量，而不是合成一条
+  const tomatoSteps = ex.prepSteps.filter((s) => s.ingredientName === '番茄');
+  assert.equal(new Set(tomatoSteps.map((s) => s.dishName)).size, 2, '范例没演示"同一食材分属两道菜要各写各的"');
+
+  // 步骤里的 dishName 必须都是真实存在的菜
+  const names = new Set(ex.dishes.map((d) => d.name));
+  assert.ok(ex.prepSteps.every((s) => names.has(s.dishName)), '范例的备菜步骤挂到了不存在的菜上');
+  assert.ok(ex.cookingSteps.every((s) => names.has(s.dishName)), '范例的炒制步骤挂到了不存在的菜上');
+
+  // 范例里的 estimatedNutrition 必须和"克数×密度"对得上，否则等于教模型两套数字
+  for (const d of ex.dishes) {
+    const { kcal } = computeCalories({ ...d, id: d.name, prepSteps: [], cookingSteps: [] });
+    const stated = d.estimatedNutrition.calories;
+    assert.ok(
+      Math.abs(kcal - stated) <= Math.max(1, stated * 0.05),
+      `范例里「${d.name}」的热量和密度对不上：算出 ${Math.round(kcal)}，写的 ${stated}`,
+    );
+  }
+}
+
+console.log('✓ 菜单编辑与格式范例全部通过');

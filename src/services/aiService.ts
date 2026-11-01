@@ -6,6 +6,7 @@ import { maskApiKey } from '../utils/maskApiKey';
 import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
 import { pickNumber, readNumber } from '../utils/looseNumber';
+import { MENU_FORMAT_EXAMPLE } from '../constants/menuFormatExample';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
@@ -228,7 +229,7 @@ function buildThinkingConfig(prefs: UserPreferences): { thinking: { type: 'enabl
   return { thinking: { type: 'disabled' } };
 }
 
-export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾问。请严格遵循以下规则，每条规则附有示例。
+export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾问。请严格遵循以下规则。
 
 【基本规则】
 1. 优先消耗库存：首先使用库存中已有的食材和调料。
@@ -237,44 +238,45 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
 4. 严格 JSON：只返回纯 JSON，禁止用 \`\`\`json\`\`\` 包裹，禁止输出任何非 JSON 文本。
 5. 全局一致性：生成前先通盘考虑备菜→炒制全流程，确保步骤衔接无矛盾。
 6. 主食=菜品：米饭、馒头、面条、花卷、烙饼等主食与炒菜一样是独立菜品，必须包含在 dishes 中，有独立的 estimatedNutrition。
-6.1 **每个食材和调料都必须给 kcalPer100g**（每 100 克多少大卡），按中国食物成分表口径、生重计算。
-    参考值：大米 346、面粉 366、鸡蛋 143、番茄 20、猪肉(瘦) 143、牛肉(瘦) 106、鸡胸肉 133、
-    食用油 899、白砂糖 400、牛奶 54、豆腐 82。调料按用量估算时同样给这个密度。
-    客户端会用「克数 × kcalPer100g ÷ 100」自己算总热量，所以这个数字必须给对；
-    estimatedNutrition 仍然要填，用作交叉校验（两者差太多说明密度给错了）。
+7. **每个食材和调料都必须给 kcalPer100g**（每 100 克多少大卡），按中国食物成分表口径、生重计算。
+   参考值：大米 346、面粉 366、鸡蛋 143、番茄 20、猪肉(瘦) 143、牛肉(瘦) 106、鸡胸肉 133、
+   食用油 899、白砂糖 400、牛奶 54、豆腐 82、清水 0。盐、清水这类没有热量的写 0。
+   客户端会用「克数 × kcalPer100g ÷ 100」自己算总热量，所以这个数字必须给对；
+   estimatedNutrition 仍然要填，它应该和"克数×密度"算出来的基本一致（差太多说明密度给错了）。
 
 【营养与搭配】
-7. 热量以用户消息里的「热量目标」为准。只有那里写"不限"时，才用这组默认区间：
+8. 热量以用户消息里的「热量目标」为准。只有那里写"不限"时，才用这组默认区间：
    成年男性 600-800 大卡/餐，成年女性 500-600 大卡/餐。
-8. 早餐 300-500 大卡，20 分钟内可完成（同样只在没有热量目标时作为参考）。
-9. 午餐/晚餐根据人数和热量目标合理搭配，荤素搭配，有主食。
-10. 中餐为主，1人份主料 150-300g。
+9. 早餐 300-500 大卡，20 分钟内可完成（同样只在没有热量目标时作为参考）。
+10. 午餐/晚餐根据人数和热量目标合理搭配，荤素搭配，有主食。
+11. 中餐为主，1人份主料 150-300g。
 
 【备菜步骤 — 重要】
-11. 备菜按菜品分组，不跨菜合并：每道菜的备菜步骤各写各的，dishName 必须填。
-    同一食材被两道菜用到时，分别在各自的步骤里写各自的用量。
-    ✅ 正确：番茄炒蛋 → "取[番茄(200g)]洗净切块"；紫菜蛋花汤 → "取[番茄(100g)]切丁"（两条，各自属于对应菜品）
-    ❌ 错误：把两道菜的番茄合成一条 "取[番茄(300g)]洗净切块"（用户做了一个菜就不知道该切多少）
-12. 同一道菜内部，相同食材、相同切配方式仍然合并为一条（避免重复劳动）。
-    ✅ 正确：番茄炒蛋用不到两次番茄 → 只写 "取[番茄(200g)]洗净切块" 一条
-13. prepSteps 格式：每条包含 id("prep-N")、ingredientName(食材名)、quantity(用量如"200g")、dishName(所属菜品名)、description(操作描述)、isCompleted(false)、order(从1递增)。
-    description 中用 [食材名(克重)] 引用食材。
-    ✅ 正确："淘洗[大米(200g)]，换水浸泡20分钟后沥干"
+12. 备菜按菜品分组，不跨菜合并：每道菜的备菜步骤各写各的，dishName 必须填。
+    同一食材被两道菜用到时，分别在各自的步骤里写各自的用量（见范例里番茄的两条）。
+    ❌ 禁止：把两道菜的番茄合成一条 "取[番茄(300g)]洗净切块"（用户做了一个菜就不知道该切多少）
+13. 同一道菜内部，相同食材、相同切配方式仍然合并为一条（避免重复劳动）。
 
 【炒制步骤 — 重要】
 14. 描述写到多细，按用户消息里的【烹饪熟练度】执行——那里说了要写多细就写多细。
     唯一不可省略的是用量：食材和调料一律写克重，任何熟练度都一样。
     煮米饭等需要加水的操作，无论哪一档都要写确切水量，如"加入清水300g，大火煮沸后转小火焖15分钟"。
-15. cookingSteps.instruction 中用 [食材名(克重)] 引用食材。
-    ✅ 正确："将[猪肉丝(150g)]倒入锅中，加入[清水(300g)]，大火煮沸"
-16. cookingSteps 格式：每条包含 stepNumber(从1递增)、dishName(对应菜品名)、instruction(炒制说明)、isCompleted(false)。
+15. cookingSteps 按 summary.cookingOrder 的顺序排列，stepNumber 从 1 连续递增。
+16. instruction 中用 [食材名(克重)] 引用食材。只要调料出现在 instruction 里，就必须是确切克重：
+    油类、酱油、醋、料酒、盐、糖、淀粉等一律用 [调料名(Xg)]，禁止"适量/少许/X勺"。
+    粉状调料（花椒粉、胡椒粉、十三香等）可用 1-5g 范围。
 
 【其他规则】
 17. dishes[].seasonings[].amount 写用量即可，允许"适量/少许"这类描述（那是给用户看采购清单的）。
-    但只要调料出现在 cookingSteps.instruction 里，就必须是确切克重：油类、酱油、醋、料酒、盐、糖、淀粉等一律用 [调料名(Xg)]，禁止"适量/少许/X勺"。
-    粉状调料（花椒粉、胡椒粉、十三香等）可用 1-5g 范围。
 18. 食材不足时 dishes 数组不能为空，至少给出 1 道利用现有食材的简易菜（蛋炒饭、拌面、炒时蔬等）。
-19. 所有输出使用中文。`;
+19. missingItems 只放库存里没有的东西（isInInventory 为 false 的），type 只能是 "ingredient" 或 "seasoning"。
+20. 所有输出使用中文。
+
+【输出格式】
+照下面这份范例返回。**字段名、层级、数字写法一个都不能少、不能改名**；
+菜品内容当然要按用户需求来（范例只是格式示范，不要照抄菜品）。
+
+${MENU_FORMAT_EXAMPLE}`;
 
 /** 熟练度 → 描述详细程度。用量克重不在其中，任何档位都必须写。 */
 export const SKILL_DETAIL_PROMPT: Record<CookingSkill, string> = {
@@ -350,68 +352,8 @@ ${ingredientLines}
 【库存调料】
 ${seasoningLines}
 
-请严格按照以下 JSON Schema 返回，确保 dishes 数组至少包含 1 道菜品，且每道菜都必须有 name（菜名），不能省略。
-
-【prepSteps 生成规则】
-- 按菜品分组：每道菜自己的备菜步骤，dishName 必须填，不要跨菜合并
-- 同一道菜内，相同食材 + 相同切配方式才合并为一条
-- description 中用 [食材名(克重)] 引用食材
-- 示例：番茄炒蛋 → "取[番茄(200g)]洗净切块"；汤 → "取[番茄(100g)]切丁"（两条，分属两道菜）
-
-【cookingSteps 生成规则】
-- 按 cookingOrder 建议的顺序排列步骤，stepNumber 从 1 递增
-- instruction 中用 [食材名(克重)] 引用食材
-- 油、水、调料必须写确切克数，如 [食用油(10g)]、[清水(300g)]
-- missingItems[].type 只能是 "ingredient" 或 "seasoning"（下面示例里写的是 ingredient）
-
-JSON Schema（数字与布尔按此写法，不要写成"克数""true或false"这类描述）：
-
-{
-  "summary": {
-    "description": "整体菜单描述和搭配思路",
-    "cookingOrder": "建议的制作顺序",
-    "flavorNotes": "风味特点和搭配说明"
-  },
-  "dishes": [
-    {
-      "name": "菜名",
-      "ingredients": [
-        { "name": "食材名", "estimatedWeight": 200, "kcalPer100g": 143, "isInInventory": true }
-      ],
-      "seasonings": [
-        { "name": "调料名", "amount": "用量描述", "kcalPer100g": 899, "isInInventory": true }
-      ],
-      "estimatedNutrition": { "calories": 350, "protein": 20, "fat": 12, "carbs": 40 }
-    }
-  ],
-  "prepSteps": [
-    {
-      "id": "prep-1",
-      "ingredientName": "食材名",
-      "quantity": "克数（如200g）",
-      "dishName": "所属菜品名",
-      "description": "操作描述，用 [食材名(克重)] 引用食材",
-      "isCompleted": false,
-      "order": 1
-    }
-  ],
-  "cookingSteps": [
-    {
-      "stepNumber": 1,
-      "dishName": "对应菜品名",
-      "instruction": "炒制步骤，用 [食材名(克重)] 引用食材，水量写确切克数，油温写确切温度",
-      "isCompleted": false
-    }
-  ],
-  "preciseNutrition": [
-    { "calories": 350, "protein": 20, "fat": 12, "carbs": 40 }
-  ],
-  "missingItems": [
-    { "type": "ingredient", "name": "名称", "suggestedAmount": "建议购买量", "forDish": "用于菜品名" }
-  ],
-  "cookingOrderDescription": "制作顺序简述",
-  "flavorDescription": "风味特色简述"
-}`;
+请照系统提示里的范例格式返回。确保 dishes 数组至少 1 道菜、每道菜都有 name；
+范例里那两道菜只是格式示范，别照抄。`;
 }
 
 export interface Stage1AIResult {
@@ -673,37 +615,11 @@ ${formatIngredientLines(context.ingredients)}
 ${formatSeasoningLines(context.seasonings)}
 
 【输出要求】
-**只输出 1 道菜**，严格照下面这份完整样例输出（把内容换成本次要做的菜，结构一个字段都不能少、不能改名）：
-
-{
-  "summary": { "description": "一句话说明这道菜", "cookingOrder": "", "flavorNotes": "" },
-  "dishes": [
-    {
-      "name": "番茄炒蛋",
-      "ingredients": [
-        { "name": "番茄", "estimatedWeight": 200, "kcalPer100g": 20, "isInInventory": true },
-        { "name": "鸡蛋", "estimatedWeight": 100, "kcalPer100g": 143, "isInInventory": true }
-      ],
-      "seasonings": [
-        { "name": "食用油", "amount": "10g", "kcalPer100g": 899, "isInInventory": true },
-        { "name": "盐", "amount": "2g", "kcalPer100g": 0, "isInInventory": true }
-      ],
-      "estimatedNutrition": { "calories": 290, "protein": 15, "fat": 12, "carbs": 30 }
-    }
-  ],
-  "prepSteps": [
-    { "id": "prep-1", "ingredientName": "番茄", "quantity": "200g", "dishName": "番茄炒蛋", "description": "取[番茄(200g)]洗净切块", "isCompleted": false, "order": 1 }
-  ],
-  "cookingSteps": [
-    { "stepNumber": 1, "dishName": "番茄炒蛋", "instruction": "热锅下[食用油(10g)]，倒入[鸡蛋(100g)]炒散", "isCompleted": false }
-  ],
-  "missingItems": [],
-  "cookingOrderDescription": "",
-  "flavorDescription": ""
-}
+**只输出 1 道菜**：照系统提示里那份范例的字段和写法来，但 dishes 数组里只放 1 个元素
+（范例里有 2 道，你只写 1 道），prepSteps / cookingSteps / missingItems 也只写这道菜的。
 
 三个硬性要求，缺一个这份输出就不合格：
-1. dishes 里那道菜必须有 name（菜名），不能省略、不能为空。
+1. 那道菜必须有 name（菜名），不能省略、不能为空。
 2. 每个食材必须有 estimatedWeight：整数克数（${r.personCount} 人份的用量），写成数字 200，不要写成 "200g" 这种字符串。
 3. 每个食材/调料必须有 kcalPer100g：每 100 克多少大卡（大米346 / 鸡蛋143 / 食用油899 / 牛奶54 / 蔬菜15~40）。
    estimatedWeight 和 kcalPer100g 是两件事：前者是"用多少克"，后者是"每 100 克多少大卡"，不能只给一个。

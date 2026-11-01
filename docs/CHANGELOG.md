@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — One worked example instead of three scattered format rules
+
+**Changed**
+
+- The output format is now specified by **a single complete example menu** (`src/constants/menuFormatExample.ts`), shared by whole-menu and single-dish generation. Format rules used to be spread across the system prompt's field-format rules, the user prompt's schema skeleton, and two separate generation-rule blocks — the model had to synthesise the shape from three places, and the skeleton's `prepSteps` showed only one entry, so the most important convention (同一食材分属两道菜要各写各的) was never demonstrated.
+
+  The example deliberately reuses 番茄 and 鸡蛋 across both dishes with different weights, which is exactly the case models collapse into one shared prep step. Placeholder skeletons (`"quantity": "克数（如200g）"`) were also teaching the model to write prose inside string fields; a filled-in example cannot be misread that way.
+
+- Single-dish generation no longer carries a second, near-identical example. It references the shared one and restates only the three requirements that matter there: `name`, integer `estimatedWeight`, and `kcalPer100g` — with an explicit note that the two are different things and neither may be omitted.
+
+- Dropped `preciseNutrition` from the requested schema. Nothing consumed it since calories became derived from grams, so it was pure output tokens and a second source of truth to disagree with.
+
+**Tests**: `npm run check:edits` now parses the example itself and asserts it is valid JSON, that both dishes are named, that every ingredient carries a weight and a density, that the shared ingredient appears under two different dishes, that every step points at a real dish, and that each dish's stated calories match `Σ(grams × density ÷ 100)` within 5%. The example is the spec now — if it drifts, generation quality degrades silently and nothing in the UI would show it.
+
 ## 2026-11-01 — Loose numbers from the model are parsed, not silently zeroed
 
 **Fixed**
