@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Modal,
   Animated,
-  Switch,
   useWindowDimensions,
   StyleSheet,
   Platform,
@@ -569,19 +568,12 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                 一次性带走所有库存档案、我的菜和菜单记录。导入只增不改，不会覆盖你现有的东西；API Key 不会导出。
               </Text>
 
-              {/* 调试用：反复检查首启流程。发布前应保持关闭 */}
-              <View style={styles.switchRow}>
-                <View style={styles.switchLabelWrap}>
-                  <Text style={styles.switchLabel}>每次启动都显示引导</Text>
-                  <Text style={styles.switchHint}>调试用。开启后下次打开会重新走一遍引导流程</Text>
-                </View>
-                <Switch
-                  value={preferences.forceOnboarding === true}
-                  onValueChange={(val) => autoSave({ forceOnboarding: val })}
-                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                  thumbColor="#fff"
-                />
-              </View>
+              {/*
+                调试开关「每次启动都显示引导」从这里撤掉了 —— 正式用户不该看见它。
+                逻辑还留着（preferences.forceOnboarding + _layout 里的判断），
+                要再测首启流程就把 src/services/settingsService.ts 的默认值临时改成 true，
+                或者直接改存储里的这个字段；测完记得改回来。
+              */}
             </>
           )}
         </ScrollView>

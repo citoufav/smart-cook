@@ -39,4 +39,40 @@ assert.equal(nextMealFor(at(7)).calorie, 300);
 assert.equal(nextMealFor(at(12)).calorie, 700);
 assert.equal(nextMealFor(at(18)).calorie, 500);
 
-console.log('✓ 下一顿推算 12 个时间点全部通过');
+// 9. 「放得有点久」的判定：本地按入库日期算，不问 AI
+import { shelfLifeDays, findAgingIngredients } from '../src/utils/shelfLife.ts';
+
+const NOW = new Date(2026, 10, 1, 12, 0, 0);
+const daysAgo = (n) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
+
+assert.equal(shelfLifeDays('猪肉'), 3, '生鲜肉只有 3 天');
+assert.equal(shelfLifeDays('虾仁'), 2, '水产最短');
+assert.equal(shelfLifeDays('菠菜'), 3, '叶菜短');
+assert.equal(shelfLifeDays('土豆'), 21, '根茎长');
+assert.equal(shelfLifeDays('大米'), 30);
+assert.equal(shelfLifeDays('神秘食材'), 7, '没见过的按保守默认值');
+
+// 猪肉存 5 天要提醒；存 3 天（刚好到期）先不吓人
+let aging = findAgingIngredients(
+  [{ name: '猪肉', createDate: daysAgo(5) }, { name: '猪肉', createDate: daysAgo(3) }],
+  NOW,
+);
+assert.equal(aging.length, 1, '只提醒超过保质期的那一份');
+
+// 超过得越多排越前
+aging = findAgingIngredients(
+  [
+    { name: '土豆', createDate: daysAgo(22) },   // 超 1 天
+    { name: '虾仁', createDate: daysAgo(9) },    // 超 7 天
+    { name: '猪肉', createDate: daysAgo(6) },    // 超 3 天
+  ],
+  NOW,
+);
+assert.deepEqual(aging.map((a) => a.name), ['虾仁', '猪肉', '土豆'], '排序不是按"超出多少天"');
+
+// 坏日期、空名字不能把人搞崩
+assert.deepEqual(findAgingIngredients([{ name: '', createDate: daysAgo(99) }], NOW), []);
+assert.deepEqual(findAgingIngredients([{ name: '猪肉', createDate: 'not-a-date' }], NOW), []);
+assert.deepEqual(findAgingIngredients([], NOW), []);
+
+console.log('✓ 下一顿推算与食材保质期 9 组全部通过');

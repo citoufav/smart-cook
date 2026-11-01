@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCooking } from '../../src/contexts/CookingContext';
+import { useInventory } from '../../src/contexts/InventoryContext';
+import { findAgingIngredients } from '../../src/utils/shelfLife';
 import { useNutrition } from '../../src/contexts/NutritionContext';
 import { useCustomAlert } from '../../src/components/CustomAlert';
 import { MenuProposal, DishPlan, NutritionalData } from '../../src/types';
@@ -22,6 +24,7 @@ import { DishEditorSheet, AddDishSheet } from '../../src/components/DishSheets';
 
 export function Stage1MenuContent() {
   const { state, dispatch } = useCooking();
+  const invState = useInventory().state;
   const { setPreciseNutrition, setEstimatedNutrition } = useNutrition();
   const { showAlert } = useCustomAlert();
   const [showReasoning, setShowReasoning] = useState(false);
@@ -32,6 +35,8 @@ export function Stage1MenuContent() {
   const menuProposal: MenuProposal | undefined = session?.stages.menu?.menuProposal;
   const requirement = session?.stages.requirement;
   const reasoningContent: string = session?.stages.menu?.reasoningContent || '';
+  // 放久了的食材：每次进页面按当前时间重算（同一份菜单放一天再看，提醒会多一条，这是对的）
+  const agingIngredients = useMemo(() => findAgingIngredients(invState.ingredients), [invState.ingredients]);
 
   /** 把改动落进 session、同步营养面板，并写回本地记录 */
   const commitMenu = useCallback(
@@ -159,6 +164,24 @@ export function Stage1MenuContent() {
             )}
           </View>
         ) : null}
+
+        {/*
+          放久了的食材：本地按入库日期算，不问 AI。
+          只提醒、不阻断，也不说"还能不能吃" —— 冷藏还是常温我们并不知道。
+        */}
+        {agingIngredients.length > 0 && (
+          <View style={styles.agingAlert}>
+            <Text style={styles.agingTitle}>⏳ 这些食材放得有点久了：</Text>
+            {agingIngredients.map((item) => (
+              <Text key={item.name} style={styles.agingItem}>
+                · {item.name} 已存 {item.days} 天（一般能放 {item.limit} 天左右）
+              </Text>
+            ))}
+            <Text style={styles.agingHint}>
+              做之前先看一眼、闻一下；这次菜单里要不要用掉它，你自己判断。
+            </Text>
+          </View>
+        )}
 
         {/* Missing-items reminder — placed between the AI summary and the dish list */}
         {menuProposal.missingItems.length > 0 && (
@@ -324,6 +347,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
   },
   addDishText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.primary, fontWeight: '600' },
+  // 放久了的食材：用橙色区分于「缺东西」的黄，但同样不抢主流程
+  agingAlert: { backgroundColor: '#FFF1E6', borderLeftWidth: 3, borderLeftColor: COLORS.primary, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.md },
+  agingTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.primaryDark, marginBottom: SPACING.xs },
+  agingItem: { fontSize: TYPOGRAPHY.caption, color: COLORS.textBody, marginBottom: 2 },
+  agingHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginTop: SPACING.xs },
   missingAlert: { backgroundColor: '#FFF8E1', borderLeftWidth: 3, borderLeftColor: COLORS.warning, padding: SPACING.md, borderRadius: BORDER_RADIUS.md, marginBottom: SPACING.md },
   missingTitle: { fontSize: TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.warningText, marginBottom: SPACING.xs },
   missingItem: { fontSize: TYPOGRAPHY.caption, color: COLORS.warningText, marginBottom: 2 },
