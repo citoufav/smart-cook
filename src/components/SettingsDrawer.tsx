@@ -439,10 +439,9 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                   autoSave(patch);
                 }}
               />
-              <Text style={styles.hint}>
-                {findProvider(apiType)?.hint
-                  ?? '选一个协议，把地址和模型名填成你的服务商提供的即可。'}
-              </Text>
+              {findProvider(apiType)?.hint ? (
+                <Text style={styles.hint}>{findProvider(apiType)?.hint}</Text>
+              ) : null}
 
               {/*
                 DeepSeek 官方什么都不给选：没有模型、没有思考开关、连 API 地址都没有。

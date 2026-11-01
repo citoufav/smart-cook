@@ -1,14 +1,19 @@
-import { useCallback, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, Linking, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../src/contexts/SettingsContext';
 import { useInventory } from '../src/contexts/InventoryContext';
 import { SelectableChip } from '../src/components/SelectableChip';
 import { Button } from '../src/components/Button';
+import { useKeyboardAwareScroll } from '../src/hooks/useKeyboardAwareScroll';
+import { validateApiKey } from '../src/utils/validation';
 import { COLORS } from '../src/constants/colors';
 import { TYPOGRAPHY } from '../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../src/constants/spacing';
+
+/** DeepSeek 开放平台的 Key 页面；没登录会自动跳登录页 */
+const DEEPSEEK_KEY_URL = 'https://platform.deepseek.com/api_keys';
 
 // Presets shown on first launch. Tapping a chip writes it into the same fields
 // the AI prompt already reads, so no extra merge/sync logic is needed.
@@ -21,12 +26,14 @@ const PANTRY_STAPLES = [
   '豆腐', '猪肉', '鸡胸肉', '牛肉', '大米', '面条', '小葱', '大蒜',
 ];
 
-const TITLES = ['你爱吃什么？', '你不能吃什么？', '家里现在有什么？'];
+const TITLES = ['先配一个 AI Key', '你爱吃什么？', '你不能吃什么？', '家里现在有什么？'];
 const SUBTITLES = [
+  '这个 App 自己不做 AI，用的是你自己的 DeepSeek 账号',
   '选几样，AI 推荐菜单时会优先照顾',
   '过敏和忌口会写进每次菜单生成，避免踩雷',
   '点选常备食材直接加入库存，重量以后随时能改',
 ];
+const TOTAL_STEPS = TITLES.length;
 
 function toggleIn(list: string[], item: string): string[] {
   return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
@@ -63,18 +70,50 @@ function ChipGroup({
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { updatePreferences } = useSettings();
+  const { state: settingsState, updatePreferences, updateApiKey } = useSettings();
   const { state: invState, addIngredient } = useInventory();
+  const { scrollRef, onScroll, captureFocus } = useKeyboardAwareScroll();
+  const keyInputRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState(0);
+  const [keyInput, setKeyInput] = useState('');
+  const [keyError, setKeyError] = useState('');
   const [taste, setTaste] = useState<string[]>([]);
   const [avoid, setAvoid] = useState<string[]>([]);
   const [pantry, setPantry] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const openDeepSeek = useCallback(async () => {
+    try {
+      await Linking.openURL(DEEPSEEK_KEY_URL);
+    } catch {
+      setKeyError('打不开浏览器，可以自己搜「DeepSeek 开放平台」');
+    }
+  }, []);
+
+  /** 输入框里填了就校验并保存；返回 false 表示格式不对，别往下走 */
+  const saveKeyIfAny = useCallback(async (): Promise<boolean> => {
+    const key = keyInput.trim();
+    if (!key) return true;
+    const error = validateApiKey(key);
+    if (error) {
+      setKeyError(error);
+      return false;
+    }
+    await updateApiKey(key);
+    setKeyInput('');
+    setKeyError('');
+    return true;
+  }, [keyInput, updateApiKey]);
+
   // Skipping still keeps whatever was already picked on earlier steps.
   const finish = useCallback(async () => {
     setSaving(true);
+    // 粘贴了但直接点「跳过/完成」的情况：合法就存下来，别让人白粘贴一次
+    const pendingKey = keyInput.trim();
+    if (pendingKey && !validateApiKey(pendingKey)) {
+      await updateApiKey(pendingKey).catch(() => {});
+    }
     await updatePreferences({
       tastePreferences: taste,
       dietaryRestrictions: avoid,
@@ -90,40 +129,94 @@ export default function OnboardingScreen() {
       }
     }
     router.replace('/(tabs)');
-  }, [taste, avoid, pantry, invState.ingredients, updatePreferences, addIngredient]);
+  }, [taste, avoid, pantry, invState.ingredients, updatePreferences, addIngredient, keyInput, updateApiKey]);
+
+  const goNext = useCallback(async () => {
+    if (step === 0 && !(await saveKeyIfAny())) return;
+    setStep(step + 1);
+  }, [step, saveKeyIfAny]);
+
+  const isLast = step === TOTAL_STEPS - 1;
+  const keyConfigured = Boolean(settingsState.preferences.apiKey);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.topRow}>
         <View style={styles.dots}>
-          {[0, 1, 2].map((i) => (
+          {Array.from({ length: TOTAL_STEPS }, (_, i) => (
             <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
           ))}
         </View>
-        {step < 2 && (
+        {!isLast && (
           <TouchableOpacity onPress={finish} hitSlop={12}>
             <Text style={styles.skip}>跳过</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.title}>{TITLES[step]}</Text>
         <Text style={styles.subtitle}>{SUBTITLES[step]}</Text>
 
         {step === 0 && (
           <>
+            <View style={styles.steps}>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepNum}>1 </Text>点下面的按钮，打开 DeepSeek 官网（手机号注册，不用翻墙）
+              </Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepNum}>2 </Text>登录后创建一个 API Key，复制那一串 sk- 开头的字符
+              </Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepNum}>3 </Text>回到这里粘贴，点「下一步」就配好了
+              </Text>
+            </View>
+
+            <Button title="打开 DeepSeek 官网获取 Key" variant="primary" onPress={openDeepSeek} />
+
+            <Text style={styles.fieldLabel}>把 Key 粘贴到这里</Text>
+            <TextInput
+              ref={keyInputRef}
+              style={[styles.keyInput, keyError ? styles.keyInputError : null]}
+              placeholder="sk-..."
+              placeholderTextColor={COLORS.textTertiary}
+              value={keyInput}
+              onChangeText={(t) => { setKeyInput(t); setKeyError(''); }}
+              onFocus={captureFocus(keyInputRef)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              accessibilityLabel="API Key 输入框"
+            />
+            {keyError ? <Text style={styles.keyError}>{keyError}</Text> : null}
+            {keyConfigured && !keyInput ? (
+              <Text style={styles.keyOk}>已经配好了，可以直接下一步。</Text>
+            ) : null}
+            <Text style={styles.note}>
+              新账号有赠送额度，用完可以充十块钱，够做很久的饭。不填也行，之后随时能在设置里补；但没 Key 的时候 AI 生成会失败。
+            </Text>
+          </>
+        )}
+        {step === 1 && (
+          <>
             <ChipGroup title="偏爱菜系" items={CUISINES} selected={taste} onChange={setTaste} />
             <ChipGroup title="口味倾向" items={FLAVORS} selected={taste} onChange={setTaste} />
           </>
         )}
-        {step === 1 && (
+        {step === 2 && (
           <>
             <ChipGroup title="过敏（务必勾选）" items={ALLERGENS} selected={avoid} onChange={setAvoid} />
             <ChipGroup title="忌口" items={AVOIDANCES} selected={avoid} onChange={setAvoid} />
           </>
         )}
-        {step === 2 && (
+        {step === 3 && (
           <ChipGroup title="常备食材" items={PANTRY_STAPLES} selected={pantry} onChange={setPantry} />
         )}
       </ScrollView>
@@ -133,11 +226,11 @@ export default function OnboardingScreen() {
           <Button title="上一步" variant="ghost" onPress={() => setStep(step - 1)} />
         )}
         <Button
-          title={step === 2 ? `完成${pantry.length > 0 ? `（加入 ${pantry.length} 项）` : ''}` : '下一步'}
+          title={isLast ? `完成${pantry.length > 0 ? `（加入 ${pantry.length} 项）` : ''}` : '下一步'}
           variant="primary"
           loading={saving}
           style={styles.grow}
-          onPress={step === 2 ? finish : () => setStep(step + 1)}
+          onPress={isLast ? finish : goNext}
         />
       </View>
     </View>
@@ -168,6 +261,39 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+
+  // API Key 那一步
+  steps: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginTop: SPACING.xl,
+    marginBottom: SPACING.lg,
+    gap: SPACING.md,
+  },
+  stepText: { fontSize: TYPOGRAPHY.bodySmall, color: COLORS.textBody, lineHeight: 20 },
+  stepNum: { fontWeight: '700', color: COLORS.primary },
+  fieldLabel: {
+    fontSize: TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginTop: SPACING.xl,
+    marginBottom: SPACING.sm,
+  },
+  keyInput: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    height: 46,
+    paddingHorizontal: SPACING.md,
+    fontSize: TYPOGRAPHY.bodySmall,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.surface,
+  },
+  keyInputError: { borderColor: COLORS.danger, backgroundColor: COLORS.dangerLight },
+  keyError: { fontSize: TYPOGRAPHY.caption, color: COLORS.danger, marginTop: SPACING.sm },
+  keyOk: { fontSize: TYPOGRAPHY.caption, color: COLORS.success, marginTop: SPACING.sm },
+  note: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 18, marginTop: SPACING.md },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
