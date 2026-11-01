@@ -28,11 +28,18 @@ export function aiProtocol(prefs: UserPreferences): AIProtocol {
 
 /** 完整请求地址，容忍用户填的地址末尾带斜杠 */
 export function aiEndpoint(prefs: UserPreferences): string {
-  const base = (prefs.apiUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  // DeepSeek 官方**不给改地址**：界面里根本没有那个输入框。
+  // 顺便避免老用户 prefs 里残留一个奇怪的地址，却没有任何地方能改回来。
+  // 想指向代理，去选「OpenAI 兼容」。
+  const base = isDeepSeekType(prefs.apiType)
+    ? DEFAULT_BASE_URL
+    : (prefs.apiUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
   return `${base}${aiProtocol(prefs) === 'anthropic' ? '/v1/messages' : '/chat/completions'}`;
 }
 
 export function aiModel(prefs: UserPreferences): string {
+  // 同理：DeepSeek 固定 flash，不读 prefs.modelName（老用户可能存着 v4-pro 却改不回来）
+  if (isDeepSeekType(prefs.apiType)) return DEFAULT_MODEL;
   return prefs.modelName || findProvider(prefs.apiType)?.model || DEFAULT_MODEL;
 }
 

@@ -445,9 +445,10 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
               </Text>
 
               {/*
-                DeepSeek 不再给模型 / 思考开关：默认 deepseek-flash + 高强度思考已经在
-                aiClient 里写死。能选的东西越多，小白越容易配错还看不出错在哪。
-                真要换模型，选「OpenAI 兼容」把地址填成 api.deepseek.com、模型名手填即可。
+                DeepSeek 官方什么都不给选：没有模型、没有思考开关、连 API 地址都没有。
+                用这个软件的人可能连电脑都没怎么用过，地址填错一个斜杠就调不通，
+                而错误信息（404）对他们是天书。地址和模型在 aiClient 里写死。
+                想自定义就去选「OpenAI 兼容」或「Anthropic 兼容」，那里字段齐全。
               */}
 
               {!isDeepSeekType(apiType) && (
@@ -479,21 +480,6 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
                     onBlur={() => { if (modelName.trim()) autoSave({ modelName: modelName.trim() }); }}
                   />
                 </>
-              )}
-              {isDeepSeekType(apiType) && (
-                <TextInput
-                  ref={apiUrlRef}
-                  style={styles.input}
-                  placeholder="API 地址 (默认 https://api.deepseek.com)"
-                  value={apiUrl}
-                  onChangeText={setApiUrl}
-                  placeholderTextColor={COLORS.textTertiary}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onFocus={captureFocus(apiUrlRef)}
-                  onSubmitEditing={() => autoSave({ apiUrl })}
-                  onBlur={() => { if (apiUrl.trim()) autoSave({ apiUrl: apiUrl.trim() }); }}
-                />
               )}
 
               <Text style={styles.apiKeyLabel}>API Key: {maskedKey}</Text>

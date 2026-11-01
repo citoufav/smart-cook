@@ -31,6 +31,7 @@ export const AI_PROVIDERS: AIProviderPreset[] = [
     protocol: 'openai',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-flash',
+    hint: '只需要一个 API Key：手机号注册 platform.deepseek.com → 创建后复制过来。',
   },
   {
     id: 'openai',

@@ -6,9 +6,11 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
 ## 2026-11-01 — Fewer dials: model and thinking are no longer choices
 
-**Removed.** The DeepSeek section had a model dropdown (flash / v4-pro), a thinking on/off switch, and a three-way effort picker. All three are gone. Menu generation is now always `deepseek-flash` with high-effort thinking, and the settings panel for DeepSeek is just: provider, hint, API key.
+**Removed.** The DeepSeek section had a model dropdown (flash / v4-pro), a thinking on/off switch, a three-way effort picker, and an API-address field. All four are gone. Menu generation is now always `deepseek-flash` with high-effort thinking, and the settings panel for DeepSeek is exactly one input: API Key.
 
-  The reasoning: a beginner cannot tell what went wrong when the output is bad, so every dial they can turn is a way to be stuck in a state they did not intend and cannot diagnose. The defaults were already the right ones.
+  The reasoning: a beginner cannot tell what went wrong when the output is bad, so every dial they can turn is a way to be stuck in a state they did not intend and cannot diagnose. A mistyped base URL produces a 404, which is completely opaque to someone who has never configured an API. `aiEndpoint` and `aiModel` therefore ignore `prefs.apiUrl` / `prefs.modelName` for the DeepSeek preset — hard-coded, so no stale value from an older install can wedge it either.
+
+  Address and model fields remain on the 「OpenAI 兼容」 and 「Anthropic 兼容」 presets, which is where anyone who wants to tinker belongs.
 
 **What changed underneath**: `aiBody` no longer reads `prefs.thinkingEnabled` or `prefs.reasoningEffort` for menu generation — it forces thinking on with effort `high`. This is deliberate rather than careless: existing installs have `thinkingEnabled: false` stored from the old default, and with the switch removed there would be no way to turn it back on, so reading the flag would permanently deny those users the new default.
 
