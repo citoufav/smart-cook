@@ -8,6 +8,14 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Onboarding chip lists grow, and every group takes a "+"
+
+**Added** — the first-run 口味 and 忌口 steps had 8 and 6 presets; they now carry 15 cuisines, 13 flavours, 12 allergens and 12 avoidances. Every group also ends with a dashed **＋** that opens an inline field (20 chars, Enter or 加上 to commit).
+
+  The custom value lives in the same `selected` array as the presets, so the chip list renders `[...presets, ...selected-minus-presets]` — a custom entry appears selected without a second source of truth to keep in sync, and it can be toggled off like any other chip.
+
+  Keyboard handling came along for free-ish: the add field lives inside a child component, which would have meant passing a `RefObject` with a types stand-off, so `useKeyboardAwareScroll` gained `captureNode(node)` — the child hands up its node on focus instead of its ref, and the parent scrolls it above the keyboard.
+
 ## 2026-11-01 — Health conditions store a sentence, not a diagnosis
 
 **Added** — 设置 → 忌口设置 grew a row of presets: 糖尿病 / 高血压 / 高血脂 / 痛风 / 胃病 / 孕期 / 素食. Tapping one appends a line to the existing 忌口 tags; tapping again removes it.
