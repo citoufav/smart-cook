@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Modal,
   Animated,
+  Switch,
   useWindowDimensions,
   StyleSheet,
   Platform,
@@ -523,6 +524,20 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
               <Text style={styles.dataHint}>
                 一次性带走所有库存档案、我的菜和菜单记录。导入只增不改，不会覆盖你现有的东西；API Key 不会导出。
               </Text>
+
+              {/* 调试用：反复检查首启流程。发布前应保持关闭 */}
+              <View style={styles.switchRow}>
+                <View style={styles.switchLabelWrap}>
+                  <Text style={styles.switchLabel}>每次启动都显示引导</Text>
+                  <Text style={styles.switchHint}>调试用。开启后下次打开会重新走一遍引导流程</Text>
+                </View>
+                <Switch
+                  value={preferences.forceOnboarding === true}
+                  onValueChange={(val) => autoSave({ forceOnboarding: val })}
+                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
             </>
           )}
         </ScrollView>

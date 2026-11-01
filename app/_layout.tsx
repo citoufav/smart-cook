@@ -31,14 +31,21 @@ function AppContent() {
   const { visible: chatSheetVisible, recipeContext, hideChatSheet } = useChatSheet();
   const { state: settingsState } = useSettings();
   const onboardingDone = settingsState.preferences.onboardingDone;
+  const forceOnboarding = settingsState.preferences.forceOnboarding === true;
+  /** 本次启动是否已经因为「强制引导」跳过一次；防止走完引导又被弹回去 */
+  const forcedThisLaunch = React.useRef(false);
 
   // First launch: send to the quick-record screen once preferences have loaded,
   // so we never redirect an existing user whose data is still being read.
+  // forceOnboarding（设置里的调试开关）= 每次启动都走一遍，用来反复测首启流程。
   React.useEffect(() => {
-    if (!settingsState.isLoading && !onboardingDone) {
+    if (settingsState.isLoading) return;
+    if (!onboardingDone || (forceOnboarding && !forcedThisLaunch.current)) {
+      // 先记下"跳过了"，否则用户走完引导（onboardingDone 变 true）会被再弹一次
+      forcedThisLaunch.current = true;
       router.replace('/onboard');
     }
-  }, [settingsState.isLoading, onboardingDone]);
+  }, [settingsState.isLoading, onboardingDone, forceOnboarding]);
 
   return (
     <View style={styles.container}>

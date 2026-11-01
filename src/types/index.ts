@@ -84,6 +84,11 @@ export interface UserPreferences {
   lastCaloriePreference?: number;
   thinkingEnabled: boolean;
   reasoningEffort: ReasoningEffort;
+  /**
+   * 调试开关：为 true 时每次启动都进引导页（默认 false = 只有第一次）。
+   * 用来反复检查首启流程，测完记得关掉。
+   */
+  forceOnboarding?: boolean;
   /** 烹饪熟练度，喂给 AI 决定步骤描述的详细程度 */
   cookingSkill: CookingSkill;
 }
