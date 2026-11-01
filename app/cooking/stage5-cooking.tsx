@@ -7,7 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useCooking } from '../../src/contexts/CookingContext';
-import { COLORS } from '../../src/constants/colors';
+import { COLORS, buildMenuIngredientColorMap } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { IngredientTagText } from '../../src/components/IngredientTagText';
@@ -23,6 +23,12 @@ export function Stage5CookingContent() {
       (menuProposal?.dishes ?? [])
         .filter((d) => d.cookingSteps.length > 0)
         .map((d) => ({ dishId: d.id, dishName: d.name, steps: d.cookingSteps })),
+    [menuProposal],
+  );
+
+  // 颜色按整份菜单统一分配，保证同一屏里不同食材不撞色
+  const ingredientColors = useMemo(
+    () => buildMenuIngredientColorMap(menuProposal?.dishes ?? []),
     [menuProposal],
   );
 
@@ -64,7 +70,7 @@ export function Stage5CookingContent() {
                 <View style={styles.stepList}>
                   {group.steps.map((step) => (
                     <View key={step.stepNumber} style={styles.stepRow}>
-                      <IngredientTagText text={step.instruction} />
+                      <IngredientTagText text={step.instruction} colorMap={ingredientColors} />
                     </View>
                   ))}
                 </View>

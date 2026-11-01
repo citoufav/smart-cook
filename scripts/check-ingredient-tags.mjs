@@ -6,6 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { parseIngredientTags } from '../src/utils/ingredientTagParser.ts';
+import { buildMenuIngredientColorMap, getTagColor } from '../src/constants/colors.ts';
 
 const tags = (text) => parseIngredientTags(text).filter((s) => s.kind === 'tag');
 
@@ -61,4 +62,30 @@ assert.deepEqual(plain, [{ kind: 'text', value: '洗净切段' }]);
 // 10. 空串不产出片段
 assert.deepEqual(parseIngredientTags(''), []);
 
-console.log('✓ 食材标签解析 10 项全部通过');
+// 11. 配色：同一份菜单里不同食材必须拿到不同颜色
+//     （纯按名字散列取色是躲不开撞色的：18 色里装 10 种食材，不撞的概率只有几个百分点）
+const dish = (ings, seas = []) => ({
+  ingredients: ings.map((name) => ({ name })),
+  seasonings: seas.map((name) => ({ name })),
+});
+const menu = [
+  dish(['鸡蛋', '番茄', '小葱'], ['食用油', '盐']),
+  dish(['豆腐', '猪肉', '大蒜', '淀粉', '生抽'], ['白砂糖']),
+];
+const colorMap = buildMenuIngredientColorMap(menu);
+const bgs = Object.values(colorMap).map((c) => c.bg);
+assert.equal(bgs.length, 11, `食材数量不对：${JSON.stringify(Object.keys(colorMap))}`);
+assert.equal(new Set(bgs).size, bgs.length, `同一份菜单里出现了撞色：${JSON.stringify(bgs)}`);
+assert.ok(
+  Object.values(colorMap).every((c) => typeof c.bg === 'string' && typeof c.text === 'string'),
+  '配色必须是 { bg, text } 成对的',
+);
+
+// 12. 重名食材只占一个颜色；空名单不炸
+assert.equal(Object.keys(buildMenuIngredientColorMap([dish(['番茄']), dish(['番茄'])])).length, 1);
+assert.deepEqual(buildMenuIngredientColorMap([]), {});
+
+// 13. 没有整份菜单上下文时，单个名字也要能取到颜色
+assert.ok(getTagColor('番茄').bg && getTagColor('番茄').text);
+
+console.log('✓ 食材标签解析与配色 13 项全部通过');

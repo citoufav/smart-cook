@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Ingredient tags are soft chips that never collide
+
+**Changed**
+
+- `TAG_COLORS` (8 saturated hex strings rendered as solid blocks behind white text) became `TAG_PALETTE`: 18 `{ bg, text }` pairs using light backgrounds with dark text, and the tag corners went from 6 to 10.
+
+  Prep and cooking pages are paragraphs of prose. Solid saturated blocks pulled the eye off the instruction being read, and eight dark hues are hard to tell apart from each other at a glance — the whole point of colouring the ingredient is to find the same ingredient again in a later step.
+
+- Colour assignment is now per menu instead of per name. `buildMenuIngredientColorMap` hashes each name to a starting slot and then **linear-probes to the next free one**, so two ingredients in the same menu can never share a colour.
+
+  Pure hashing cannot do this: with 18 colours and 10 ingredients the probability of no collision is a few percent, so collisions were effectively guaranteed. The tradeoff is that the same ingredient may take a different colour in a different menu — it is stable within one screenful, which is where it matters.
+
+**Tests**: `npm run check:tags` asserts that a 11-ingredient two-dish menu yields 11 distinct backgrounds, that duplicate names collapse to one colour, that an empty menu returns `{}`, and that `getTagColor` still works without a menu context.
+
 ## 2026-11-01 — Floating balls stop moving between pages; the assistant knows where things are
 
 **Fixed**

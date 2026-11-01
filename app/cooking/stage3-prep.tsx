@@ -9,7 +9,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useCooking } from '../../src/contexts/CookingContext';
 import { useNutrition } from '../../src/contexts/NutritionContext';
-import { COLORS } from '../../src/constants/colors';
+import { COLORS, buildMenuIngredientColorMap } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { NutritionalData } from '../../src/types';
@@ -49,6 +49,12 @@ export function Stage3PrepContent() {
       (menuProposal?.dishes ?? [])
         .filter((d) => d.prepSteps.length > 0)
         .map((d) => ({ dishId: d.id, dishName: d.name, steps: d.prepSteps })),
+    [menuProposal],
+  );
+
+  // 颜色按整份菜单统一分配，保证同一屏里不同食材不撞色
+  const ingredientColors = useMemo(
+    () => buildMenuIngredientColorMap(menuProposal?.dishes ?? []),
     [menuProposal],
   );
 
@@ -95,7 +101,7 @@ export function Stage3PrepContent() {
                         {step.quantity ? (
                           <Text style={styles.quantityText}>{step.quantity} </Text>
                         ) : null}
-                        <IngredientTagText text={step.description} />
+                        <IngredientTagText text={step.description} colorMap={ingredientColors} />
                       </Text>
                     </View>
                   ))}

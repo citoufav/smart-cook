@@ -1,19 +1,26 @@
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
-import { COLORS, getTagColor } from '../constants/colors';
+import { COLORS, getTagColor, type TagColor } from '../constants/colors';
 import { TYPOGRAPHY } from '../constants/typography';
 import { parseIngredientTags } from '../utils/ingredientTagParser';
 
 /**
- * 把文本中的 [食材(克重)] 标记渲染为实色标签。
+ * 把文本中的 [食材(克重)] 标记渲染为浅底深字的软标签。
  * stage3 备菜描述与 stage5 炒制说明共用。
  *
  * 切分逻辑在 utils/ingredientTagParser.ts —— 旧版本把正则和渲染混在这里，
  * 而那个正则会跨过 `]` 把相邻两个标签并成一个，界面上就会露出半截括号。
  *
- * 颜色由 getTagColor 按食材名散列得出，同一食材永远是同一个颜色。
+ * 颜色优先用调用方传下来的 colorMap（按整份菜单分配，保证同屏不撞色）；
+ * 没传就退回按名字散列。
  */
-export function IngredientTagText({ text }: { text: string }) {
+export function IngredientTagText({
+  text,
+  colorMap,
+}: {
+  text: string;
+  colorMap?: Record<string, TagColor>;
+}) {
   const segments = parseIngredientTags(text);
 
   return (
@@ -24,10 +31,11 @@ export function IngredientTagText({ text }: { text: string }) {
             <Text key={`t${index}`} style={tagStyles.plainText}>{seg.value}</Text>
           );
         }
+        const color = colorMap?.[seg.value] ?? getTagColor(seg.value);
         return (
           <Text
             key={`g${index}`}
-            style={[tagStyles.ingredientTag, { backgroundColor: getTagColor(seg.value) }]}
+            style={[tagStyles.ingredientTag, { backgroundColor: color.bg, color: color.text }]}
           >
             {seg.value}({seg.amount})
           </Text>
@@ -44,10 +52,9 @@ const tagStyles = StyleSheet.create({
     lineHeight: 22,
   },
   ingredientTag: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    borderRadius: 6,
-    paddingHorizontal: 6,
+    fontWeight: '700',
+    borderRadius: 10,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     overflow: 'hidden',
     fontSize: 13,
