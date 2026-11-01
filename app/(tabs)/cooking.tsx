@@ -8,7 +8,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { useInventory } from '../../src/contexts/InventoryContext';
 import { useCooking } from '../../src/contexts/CookingContext';
@@ -46,6 +46,17 @@ const LOOP_WINDOW = 600; // Detection window: last 600 chars
 const log = logger('SCREEN:COOKING');
 
 export default function CookingEntryScreen() {
+  // 引导页点「立即生成」时带过来的参数（只用于首次自动跑一次）
+  const autoParams = useLocalSearchParams<{
+    autoGenerate?: string;
+    people?: string;
+    meal?: string;
+    calorie?: string;
+  }>();
+  const autoGenerate = autoParams.autoGenerate === '1';
+  const autoPeople = autoParams.people;
+  const autoMeal = autoParams.meal;
+  const autoCalorie = autoParams.calorie;
   const [people, setPeople] = useState(1);
   const [mealType, setMealType] = useState('any');
   const [calorieTarget, setCalorieTarget] = useState<number | undefined>(undefined);
@@ -79,6 +90,9 @@ export default function CookingEntryScreen() {
   const submitToAIRef = useRef<() => void>(() => {}); // 供 submitToAI 内部重试自引用
   // 已从存储恢复上次默认值后才允许自动保存（避免挂载时用初始值覆盖已保存配置）
   const defaultsLoadedRef = useRef(false);
+  // 引导页「立即生成」：默认值落位后自动提交一次，且只提交一次
+  const [defaultsReady, setDefaultsReady] = useState(false);
+  const autoSubmittedRef = useRef(false);
   // 用户是否停留在本页（流式完成时不把其他页面的用户强行拉回）
   const isScreenFocusedRef = useRef(true);
   const isFocused = useIsFocused();
@@ -167,10 +181,26 @@ export default function CookingEntryScreen() {
         if (defaults.customMealType) setCustomMealType(defaults.customMealType);
         if (defaults.customCalorie) setCustomCalorie(defaults.customCalorie);
       }
+      // 引导页「立即生成」带过来的参数：覆盖默认值，再自动跑一次
+      if (autoGenerate) {
+        const p = Number(autoPeople);
+        setPeople(Number.isFinite(p) && p > 0 ? Math.round(p) : 1);
+        setMealType(autoMeal || 'lunch');
+        const c = Number(autoCalorie);
+        setCalorieTarget(Number.isFinite(c) && c > 0 ? Math.round(c) : 700);
+      }
       // 无论是否读到默认值，恢复完成后再开启自动保存
       defaultsLoadedRef.current = true;
+      setDefaultsReady(true);
     })();
-  }, []);
+  }, [autoGenerate, autoMeal, autoCalorie, autoPeople]);
+
+  // 引导页点「立即生成」→ 直接把这一次生成跑起来，不用用户再点一下
+  useEffect(() => {
+    if (!defaultsReady || !autoGenerate || autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    submitToAIRef.current?.();
+  }, [defaultsReady, autoGenerate]);
 
   // Auto-save: persist whenever people/meal type/calories change
   useEffect(() => {

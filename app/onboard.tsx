@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, Linking, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { SelectableChip } from '../src/components/SelectableChip';
 import { Button } from '../src/components/Button';
 import { useKeyboardAwareScroll, type Measurable } from '../src/hooks/useKeyboardAwareScroll';
 import { validateApiKey } from '../src/utils/validation';
+import { nextMealFor } from '../src/utils/mealTime';
 import { COLORS } from '../src/constants/colors';
 import { TYPOGRAPHY } from '../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../src/constants/spacing';
@@ -160,6 +161,8 @@ export default function OnboardingScreen() {
   const [pantry, setPantry] = useState<string[]>([]);
   const [pantrySeasonings, setPantrySeasonings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // 进页时算一次"下一顿"：中途跨过边界（比如 9:59 停到 10:00）不该让按钮文案变
+  const nextMeal = useMemo(() => nextMealFor(new Date()), []);
 
   const openDeepSeek = useCallback(async () => {
     try {
@@ -185,7 +188,7 @@ export default function OnboardingScreen() {
   }, [keyInput, updateApiKey]);
 
   // Skipping still keeps whatever was already picked on earlier steps.
-  const finish = useCallback(async () => {
+  const finish = useCallback(async (autoGenerate: boolean) => {
     setSaving(true);
     // 粘贴了但直接点「跳过/完成」的情况：合法就存下来，别让人白粘贴一次
     const pendingKey = keyInput.trim();
@@ -217,8 +220,21 @@ export default function OnboardingScreen() {
         // 同上：一条写失败不该把人卡在引导页
       }
     }
+    if (autoGenerate) {
+      // 落地后由做菜页自己触发一次生成：参数带过去，避免在两个页面里各写一套
+      router.replace({
+        pathname: '/(tabs)/cooking',
+        params: {
+          autoGenerate: '1',
+          people: '1',
+          meal: nextMeal.mealType,
+          calorie: String(nextMeal.calorie),
+        },
+      });
+      return;
+    }
     router.replace('/(tabs)');
-  }, [cuisines, flavors, allergens, avoidances, pantry, pantrySeasonings, invState.ingredients, invState.seasonings, updatePreferences, addIngredient, addSeasoning, keyInput, updateApiKey]);
+  }, [cuisines, flavors, allergens, avoidances, pantry, pantrySeasonings, invState.ingredients, invState.seasonings, updatePreferences, addIngredient, addSeasoning, keyInput, updateApiKey, nextMeal]);
 
   const goNext = useCallback(async () => {
     if (step === 0 && !(await saveKeyIfAny())) return;
@@ -226,6 +242,9 @@ export default function OnboardingScreen() {
   }, [step, saveKeyIfAny]);
 
   const isLast = step === TOTAL_STEPS - 1;
+  const pantryCount = pantry.length + pantrySeasonings.length;
+  /** 没配 Key 就不给"立即生成"：点下去只会弹一个失败，不如老实说"完成" */
+  const canAutoGenerate = Boolean(settingsState.preferences.apiKey);
   const keyConfigured = Boolean(settingsState.preferences.apiKey);
 
   return (
@@ -237,7 +256,7 @@ export default function OnboardingScreen() {
           ))}
         </View>
         {!isLast && (
-          <TouchableOpacity onPress={finish} hitSlop={12}>
+          <TouchableOpacity onPress={() => finish(false)} hitSlop={12}>
             <Text style={styles.skip}>跳过</Text>
           </TouchableOpacity>
         )}
@@ -334,11 +353,17 @@ export default function OnboardingScreen() {
           <Button title="上一步" variant="ghost" onPress={() => setStep(step - 1)} />
         )}
         <Button
-          title={isLast ? `完成${pantry.length + pantrySeasonings.length > 0 ? `（加入 ${pantry.length + pantrySeasonings.length} 项）` : ''}` : '下一步'}
+          title={
+            isLast
+              ? (canAutoGenerate
+                  ? `立即生成${nextMeal.label}（1 人份 · ${nextMeal.calorie} 大卡）`
+                  : `完成${pantryCount > 0 ? `（加入 ${pantryCount} 项）` : ''}`)
+              : '下一步'
+          }
           variant="primary"
           loading={saving}
           style={styles.grow}
-          onPress={isLast ? finish : goNext}
+          onPress={isLast ? () => finish(canAutoGenerate) : goNext}
         />
       </View>
     </View>
