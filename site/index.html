@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>随煮 · 下载</title>
+<meta name="description" content="随煮：用你冰箱里现有的东西，一次给你整桌菜，并带你做完。安卓版直接下载，自备 API Key，无服务器、无账号。">
+<meta property="og:title" content="随煮 · 下载">
+<meta property="og:description" content="用你冰箱里现有的东西，一次给你整桌菜，并带你做完。">
+<!-- 换下载源只改这一处（href 和这行常量保持同一个地址） -->
+<script>const APK_URL = "https://github.com/citoufav/smart-cook/releases/download/v1.0.1/suizhu-1.0.1-android.apk";</script>
+<style>
+  :root {
+    --orange: #FF6B35;
+    --orange-dark: #E85A26;
+    --ink: #1F2328;
+    --muted: #6B7280;
+    --bg: #FFF9F5;
+    --card: #FFFFFF;
+    --border: #F0E3DA;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  header { padding: 64px 0 40px; text-align: center; }
+  .logo { width: 88px; height: 88px; border-radius: 22px; box-shadow: 0 8px 24px rgba(255,107,53,.25); }
+  h1 { font-size: 34px; margin: 20px 0 8px; letter-spacing: -0.5px; }
+  .tagline { font-size: 17px; color: var(--muted); margin: 0 auto; max-width: 560px; }
+
+  .cta { margin: 32px 0 12px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--orange); color: #fff; text-decoration: none;
+    font-size: 18px; font-weight: 700;
+    padding: 16px 40px; border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(255,107,53,.32);
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn:hover { background: var(--orange-dark); transform: translateY(-1px); box-shadow: 0 14px 32px rgba(255,107,53,.38); }
+  .btn svg { width: 22px; height: 22px; }
+  .meta { font-size: 14px; color: var(--muted); margin-top: 12px; }
+  .mirror { font-size: 14px; margin-top: 6px; }
+  .mirror a { color: var(--orange); }
+
+  section { margin: 56px 0; }
+  h2 { font-size: 22px; margin: 0 0 18px; }
+  .shots { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; justify-content: center; }
+  .shots img {
+    width: 220px; border-radius: 16px; border: 1px solid var(--border);
+    box-shadow: 0 6px 20px rgba(0,0,0,.06); scroll-snap-align: start; flex: 0 0 auto;
+  }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; max-width: 760px; margin: 0 auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px 22px;
+  }
+  .card h3 { margin: 0 0 8px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card .emoji { font-size: 20px; display: block; margin-bottom: 6px; }
+
+  ol.steps { padding-left: 22px; margin: 0; }
+  ol.steps li { margin-bottom: 14px; }
+  ol.steps code {
+    background: #fff; border: 1px solid var(--border);
+    padding: 2px 7px; border-radius: 6px; font-size: 14px;
+  }
+
+  details {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;
+  }
+  details summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin: 10px 0 0; font-size: 15px; }
+
+  footer {
+    border-top: 1px solid var(--border); margin-top: 64px; padding: 28px 0 48px;
+    text-align: center; color: var(--muted); font-size: 14px;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <img class="logo" src="assets/icon.png" alt="随煮">
+    <h1>随煮</h1>
+    <p class="tagline">用你冰箱里现有的东西，一次给你整桌菜 —— 然后一页一页带你做完。</p>
+
+    <div class="cta">
+      <a class="btn" id="download"
+         href="https://github.com/citoufav/smart-cook/releases/download/v1.0.1/suizhu-1.0.1-android.apk"
+         onclick="this.href=APK_URL">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        下载安卓版
+      </a>
+      <div class="meta">27.6 MB · Android 7.0 以上 · arm64</div>
+      <div class="mirror">
+        下载不动？试 <a href="https://github.com/citoufav/smart-cook/releases/latest">GitHub 官方页面</a>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="shots">
+      <img src="assets/screen-inventory.png" alt="库存页">
+      <img src="assets/screen-menu.png" alt="生成的整桌菜单">
+      <img src="assets/screen-cooking.png" alt="炒制步骤">
+    </div>
+  </section>
+
+  <section>
+    <h2>它做什么</h2>
+    <div class="cards">
+      <div class="card">
+        <span class="emoji">🧊</span>
+        <h3>从库存出发</h3>
+        <p>手动录入，或者对着冰箱拍一张，AI 认出食材和调料，你确认后才入库。</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🍽️</span>
+        <h3>一次出整桌</h3>
+        <p>几道菜搭配好的一桌饭：谁先做、缺什么要买、每道多少克、热量多少。</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🔪</span>
+        <h3>带着你做完</h3>
+        <p>菜谱 → 备菜 → 炒制，一页一页翻；中途退出去，下次接着做。</p>
+      </div>
+      <div class="card">
+        <span class="emoji">📚</span>
+        <h3>做过的菜会留下</h3>
+        <p>每道菜自动进「我的菜」，下次复用只调份量，换几个人吃都不用重配。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>装之前要知道</h2>
+    <ol class="steps">
+      <li><strong>允许安装未知来源。</strong> 首次打开会提示，选择「允许」即可 —— 这不是商店包，是本机安装。</li>
+      <li><strong>准备一个 API Key。</strong> 应用本身不做 AI，用的是你自己的 DeepSeek 账号（几块钱能用很久）。没有账号也不想充，可以先用别的功能。</li>
+      <li><strong>数据只在本机。</strong> 没有服务器、没有注册、不上传任何东西；Key 存在系统加密存储里，只发给你配置的那个接口。</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>常见问题</h2>
+    <details>
+      <summary>下载很慢或者打不开？</summary>
+      <p>下载文件托管在 GitHub，国内访问不稳定。可以试试上面的「GitHub 官方页面」，或者过一会儿再试；镜像地址会陆续补到这个按钮上。</p>
+    </details>
+    <details>
+      <summary>安装时报「应用未安装 / 解析错误」</summary>
+      <p>大概率是设备不是 64 位 arm64（这个包只支持 arm64）。2018 年之后的主流安卓手机都是。</p>
+    </details>
+    <details>
+      <summary>开了以后什么都不生成？</summary>
+      <p>检查设置里有没有填 API Key，以及余额是否够。应用不会替你去请求任何你没配置的地址。</p>
+    </details>
+    <details>
+      <summary>会收集我的数据吗？</summary>
+      <p>不会。库存、菜谱、记录全部存在手机本地，代码在 <a href="https://github.com/citoufav/smart-cook">GitHub</a> 上可以自己看。</p>
+    </details>
+  </section>
+
+  <footer>
+    <p>MIT 协议 · <a href="https://github.com/citoufav/smart-cook">源码</a> · <a href="https://github.com/citoufav/smart-cook/releases">更新日志</a></p>
+    <p>随煮 1.0.1</p>
+  </footer>
+
+</div>
+</body>
+</html>
