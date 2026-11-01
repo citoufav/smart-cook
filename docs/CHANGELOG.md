@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Loose numbers from the model are parsed, not silently zeroed
+
+**Fixed**
+
+- **A generated dish arriving with every ingredient at 0 g.** The model frequently writes `"estimatedWeight": "200g"` — a string — and `z.coerce.number('200g')` is `NaN`, which the fallback turned into `0`. The same mechanism had already eaten the dish `name` once. `src/utils/looseNumber.ts` (`readNumber` / `pickNumber`) now extracts the number from `200`, `"200g"`, `"约 200 克"`, `"290大卡"`, and returns `0` only for genuinely non-numeric text such as `"适量"`. Ingredient and seasoning objects are no longer field-coerced by zod at all — they are taken as `z.any()` and normalised explicitly, so a numeric field can never be silently replaced by `0` on the way in.
+
+- The single-dish prompt now contains a **complete filled-in JSON example** instead of "same format as the schema above". Asking for a subset of a whole-menu schema confused the model; both observed failures (missing `name`, missing weights) happened on that path only. The prompt states three hard requirements — `name`, integer `estimatedWeight`, and `kcalPer100g` — and spells out that the latter two are different things and neither may be omitted.
+
+- A dish whose ingredients are all 0 g is rejected with an actionable message rather than entering the menu, where it would put "buy 0 g" in the shopping list and never accumulate calories. The parse step also logs the model's actual shape when this happens.
+
+**Tests**: the loose-number parsing is covered by `npm run check:edits`.
+
 ## 2026-11-01 — Calories are computed from grams, not asserted by the model
 
 **Added**

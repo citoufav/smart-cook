@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { maskApiKey } from '../utils/maskApiKey';
 import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
+import { pickNumber, readNumber } from '../utils/looseNumber';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
 import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
@@ -26,41 +27,26 @@ const numField = z.coerce.number().transform((v) => (Number.isFinite(v) ? v : 0)
 /** 可选字符串字段：非字符串/空串 → undefined */
 const optionalStr = z.any().transform((v) => (typeof v === 'string' && v.trim() ? v : undefined));
 
-const nutritionSchema = z.object({
-  calories: numField.catch(0),
-  protein: numField.catch(0),
-  fat: numField.catch(0),
-  carbs: numField.catch(0),
-});
+function readNutrition(raw: any) {
+  return {
+    calories: readNumber(raw?.calories),
+    protein: readNumber(raw?.protein),
+    fat: readNumber(raw?.fat),
+    carbs: readNumber(raw?.carbs),
+  };
+}
 
 const dishSchema = z
   .object({
-    // 菜名是菜品的身份：既用于显示，也是对话增删改时定位菜品的主键。
+    // 菜名是菜品的身份：既用于显示，也是增删改时定位菜品的主键。
     // 兜底成空串而不是"未命名菜品"——非空兜底值会骗过下游 `if (!name)` 的守卫，
     // 让假菜一路通过（历史 bug：想加个牛奶，结果多出一个"未命名菜品"）。
-    // 同时容忍模型偶尔换用的同义键，见 pickDishName。
+    // 食材/调料整项都用 z.any() 收下，字段取值交给下面的 normalize* 处理：
+    // 数字可能是 "200g"，键名可能被换掉，交给 zod 逐字段强转只会静默变 0。
     name: z.any(),
-    ingredients: z
-      .array(
-        z.object({
-          name: z.string().catch(''),
-          estimatedWeight: numField.catch(0),
-          isInInventory: z.boolean().catch(false),
-          kcalPer100g: numField.catch(0),
-        }),
-      )
-      .catch([]),
-    seasonings: z
-      .array(
-        z.object({
-          name: z.string().catch(''),
-          amount: z.string().catch(''),
-          isInInventory: z.boolean().catch(false),
-          kcalPer100g: numField.catch(0),
-        }),
-      )
-      .catch([]),
-    estimatedNutrition: nutritionSchema.catch({ calories: 0, protein: 0, fat: 0, carbs: 0 }),
+    ingredients: z.array(z.any()).catch([]),
+    seasonings: z.array(z.any()).catch([]),
+    estimatedNutrition: z.any(),
   })
   .passthrough();
 
@@ -71,6 +57,31 @@ function pickDishName(raw: any): string {
     if (typeof c === 'string' && c.trim()) return c.trim();
   }
   return '';
+}
+
+function normalizeIngredient(raw: any): DishPlan['ingredients'][number] | null {
+  const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
+  if (!name) return null;
+  const density = pickNumber(raw, ['kcalPer100g', 'caloriesPer100g', 'kcal', 'energyPer100g', '每100克热量']);
+  return {
+    name,
+    estimatedWeight: pickNumber(raw, ['estimatedWeight', 'weight', 'grams', 'gram', '克数', '数量']),
+    isInInventory: raw?.isInInventory === true,
+    kcalPer100g: density > 0 ? density : undefined,
+  };
+}
+
+function normalizeSeasoning(raw: any): DishPlan['seasonings'][number] | null {
+  const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
+  if (!name) return null;
+  const amount = typeof raw?.amount === 'string' ? raw.amount : readNumber(raw?.amount) > 0 ? `${readNumber(raw?.amount)}g` : '';
+  const density = pickNumber(raw, ['kcalPer100g', 'caloriesPer100g', 'kcal', 'energyPer100g', '每100克热量']);
+  return {
+    name,
+    amount,
+    isInInventory: raw?.isInInventory === true,
+    kcalPer100g: density > 0 ? density : undefined,
+  };
 }
 
 const prepStepSchema = z
@@ -116,7 +127,6 @@ const stage1ResultSchema = z
     dishes: z.array(dishSchema).catch([]),
     prepSteps: z.array(prepStepSchema).catch([]),
     cookingSteps: z.array(cookingStepSchema).catch([]),
-    preciseNutrition: z.array(nutritionSchema).catch([]),
     missingItems: z.array(missingItemSchema).catch([]),
     cookingOrderDescription: z.string().catch(''),
     flavorDescription: z.string().catch(''),
@@ -154,19 +164,13 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
   const dishes: DishPlan[] = kept.map((d) => ({
     id: generateId(),
     name: d.name as string,
-    ingredients: (d.ingredients ?? []).map((i: any) => ({
-      name: i.name,
-      estimatedWeight: i.estimatedWeight,
-      isInInventory: i.isInInventory,
-      kcalPer100g: i.kcalPer100g > 0 ? i.kcalPer100g : undefined,
-    })),
-    seasonings: (d.seasonings ?? []).map((s: any) => ({
-      name: s.name,
-      amount: s.amount,
-      isInInventory: s.isInInventory,
-      kcalPer100g: s.kcalPer100g > 0 ? s.kcalPer100g : undefined,
-    })),
-    estimatedNutrition: { ...d.estimatedNutrition },
+    ingredients: (d.ingredients ?? [])
+      .map((i: any) => normalizeIngredient(i))
+      .filter((i: DishPlan['ingredients'][number] | null): i is DishPlan['ingredients'][number] => i !== null),
+    seasonings: (d.seasonings ?? [])
+      .map((s: any) => normalizeSeasoning(s))
+      .filter((s: DishPlan['seasonings'][number] | null): s is DishPlan['seasonings'][number] => s !== null),
+    estimatedNutrition: readNutrition(d.estimatedNutrition),
     prepSteps: [],
     cookingSteps: [],
   }));
@@ -177,6 +181,14 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
       dropped: rawDishes.length - dishes.length,
       shape: JSON.stringify(rawDishes).slice(0, 400),
     });
+  }
+  for (const d of dishes) {
+    if (d.ingredients.length > 0 && !d.ingredients.some((i) => i.estimatedWeight > 0)) {
+      log.warn('菜品所有食材克数都是 0', {
+        dish: d.name,
+        shape: JSON.stringify(rawDishes.find((x) => pickDishName(x) === d.name) ?? {}).slice(0, 400),
+      });
+    }
   }
   if (dishes.length === 0) {
     return {
@@ -661,8 +673,39 @@ ${formatIngredientLines(context.ingredients)}
 ${formatSeasoningLines(context.seasonings)}
 
 【输出要求】
-只输出 1 道菜：dishes 数组长度必须为 1，**且这道菜必须有 name（菜名）**，prepSteps 与 cookingSteps 只写这道菜的。
-每个食材都要带 kcalPer100g（每 100 克大卡，参考大米346/鸡蛋143/食用油899/牛奶54）。
-summary.description 用一句话说明这道菜；missingItems、preciseNutrition 可以是空数组。
-其余格式与上面的 JSON Schema 完全一致。`;
+**只输出 1 道菜**，严格照下面这份完整样例输出（把内容换成本次要做的菜，结构一个字段都不能少、不能改名）：
+
+{
+  "summary": { "description": "一句话说明这道菜", "cookingOrder": "", "flavorNotes": "" },
+  "dishes": [
+    {
+      "name": "番茄炒蛋",
+      "ingredients": [
+        { "name": "番茄", "estimatedWeight": 200, "kcalPer100g": 20, "isInInventory": true },
+        { "name": "鸡蛋", "estimatedWeight": 100, "kcalPer100g": 143, "isInInventory": true }
+      ],
+      "seasonings": [
+        { "name": "食用油", "amount": "10g", "kcalPer100g": 899, "isInInventory": true },
+        { "name": "盐", "amount": "2g", "kcalPer100g": 0, "isInInventory": true }
+      ],
+      "estimatedNutrition": { "calories": 290, "protein": 15, "fat": 12, "carbs": 30 }
+    }
+  ],
+  "prepSteps": [
+    { "id": "prep-1", "ingredientName": "番茄", "quantity": "200g", "dishName": "番茄炒蛋", "description": "取[番茄(200g)]洗净切块", "isCompleted": false, "order": 1 }
+  ],
+  "cookingSteps": [
+    { "stepNumber": 1, "dishName": "番茄炒蛋", "instruction": "热锅下[食用油(10g)]，倒入[鸡蛋(100g)]炒散", "isCompleted": false }
+  ],
+  "missingItems": [],
+  "cookingOrderDescription": "",
+  "flavorDescription": ""
+}
+
+三个硬性要求，缺一个这份输出就不合格：
+1. dishes 里那道菜必须有 name（菜名），不能省略、不能为空。
+2. 每个食材必须有 estimatedWeight：整数克数（${r.personCount} 人份的用量），写成数字 200，不要写成 "200g" 这种字符串。
+3. 每个食材/调料必须有 kcalPer100g：每 100 克多少大卡（大米346 / 鸡蛋143 / 食用油899 / 牛奶54 / 蔬菜15~40）。
+   estimatedWeight 和 kcalPer100g 是两件事：前者是"用多少克"，后者是"每 100 克多少大卡"，不能只给一个。
+   estimatedNutrition 仍要给，客户端会用它和"克数×密度"交叉校验。`;
 }

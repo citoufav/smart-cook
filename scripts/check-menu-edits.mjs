@@ -15,6 +15,7 @@ import {
   recomputeNutrition,
   hasFullDensity,
 } from '../src/services/menuEditService.ts';
+import { pickNumber, readNumber } from '../src/utils/looseNumber.ts';
 
 const requirement = { personCount: 2, mealType: 'dinner', caloriePreference: undefined, customRequirement: '' };
 
@@ -213,5 +214,20 @@ const orphanCount = attachStepsToDishes(
 assert.equal(orphanCount, 1, '孤儿步骤没有被告警');
 assert.equal(orphanHosts[0].prepSteps.length, 1);
 assert.equal(orphanHosts[1].prepSteps.length, 0);
+
+// 17. 模型把数字写成字符串时必须能读出来 —— 这就是"加一道菜生成出来全是 0 克"的根因
+//     （z.coerce.number('200g') 是 NaN，兜底成 0）
+assert.equal(readNumber('200g'), 200);
+assert.equal(readNumber('约 200 克'), 200);
+assert.equal(readNumber('290大卡'), 290);
+assert.equal(readNumber(200), 200);
+assert.equal(readNumber('适量'), 0, '解析不出数字的文本必须当 0，不能瞎猜');
+assert.equal(readNumber(undefined), 0);
+assert.equal(pickNumber({ weight: '200g' }, ['estimatedWeight', 'weight']), 200, '同义键没被读到');
+assert.equal(
+  pickNumber({ estimatedWeight: 0, grams: '150g' }, ['estimatedWeight', 'grams']),
+  150,
+  '前一个键是 0 不该挡住后面的同义键',
+);
 
 console.log('✓ 菜单编辑 17 项全部通过');
