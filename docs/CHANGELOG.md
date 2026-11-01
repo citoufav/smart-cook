@@ -8,6 +8,14 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — CI on every push
+
+**Added** — GitHub Actions runs `npm run typecheck` and `npm run check` (all seven self-check scripts) on every push to `master` and on pull requests, Node 24 with a cached `npm ci`. README carries the badge.
+
+**Why Node 24** — the check scripts import `.ts` files directly and depend on Node's type stripping; 20 and 22 need a flag for that.
+
+**Not added** — eslint is left out of CI on purpose: the repo has pre-existing `react-hooks/exhaustive-deps` warnings that would have to be cleaned up first, and a red badge over cosmetic warnings teaches you to ignore it.
+
 ## 2026-11-01 — 拍照识别食材
 
 **Added** — the ＋ button on 库存 now opens a sheet with two choices: 拍照识别 and 手动输入. A photo goes to the model, which answers with a JSON list of ingredient names; the list lands in a confirm sheet where each name can be edited or deleted before 「加入库存」 writes them.

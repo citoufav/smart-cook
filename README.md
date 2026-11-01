@@ -1,5 +1,7 @@
 # SmartCook (随煮)
 
+[![CI](https://github.com/citoufav/smart-cook/actions/workflows/ci.yml/badge.svg)](https://github.com/citoufav/smart-cook/actions/workflows/ci.yml)
+
 > Turn whatever is already in your fridge into a complete meal — then cook it, step by step.
 
 SmartCook is a React Native (Expo) cooking app. It reads your fridge inventory, asks three questions (people, meal, calorie target), and streams back a **whole menu** — several dishes that share the ingredients you own, with nutrition, a shopping list for what is missing, prep steps, and cooking steps. Then it walks you through the kitchen with a pager you can leave and resume.
@@ -138,6 +140,7 @@ No test framework — seven assertion scripts, each pinning the logic that is ot
 
 ```bash
 npm run typecheck     # tsc --noEmit
+npm run check         # all of the below, in one go (what CI runs)
 npm run check:ai      # request body per protocol (OpenAI vs Anthropic)
 npm run check:vision  # photo-recognition parsing + image block shapes
 npm run check:edits   # menu edits, scaling, nutrition recompute, format samples
