@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Fewer dials: model and thinking are no longer choices
+
+**Removed.** The DeepSeek section had a model dropdown (flash / v4-pro), a thinking on/off switch, and a three-way effort picker. All three are gone. Menu generation is now always `deepseek-flash` with high-effort thinking, and the settings panel for DeepSeek is just: provider, hint, API key.
+
+  The reasoning: a beginner cannot tell what went wrong when the output is bad, so every dial they can turn is a way to be stuck in a state they did not intend and cannot diagnose. The defaults were already the right ones.
+
+**What changed underneath**: `aiBody` no longer reads `prefs.thinkingEnabled` or `prefs.reasoningEffort` for menu generation — it forces thinking on with effort `high`. This is deliberate rather than careless: existing installs have `thinkingEnabled: false` stored from the old default, and with the switch removed there would be no way to turn it back on, so reading the flag would permanently deny those users the new default.
+
+  `thinkingEnabled` / `reasoningEffort` stay in `UserPreferences` (dropping them means a storage migration for no user-visible gain, and they are the obvious place to hang an advanced toggle if one ever comes back). Nothing reads them today.
+
+**Escape hatch**: anybody who wants `deepseek-v4-pro` selects 「OpenAI 兼容」, points the URL at `api.deepseek.com`, and types the model name. The comment in the drawer says exactly that.
+
+**Also**: the loading overlay's "AI 深度思考中…" panel now follows `aiSupportsThinking(prefs)` instead of the dead preference — otherwise an OpenAI-compatible provider that does not think would show a permanently empty thinking box.
+
 ## 2026-11-01 — Two protocols instead of a vendor list
 
 **Changed — one DeepSeek, one OpenAI-compatible, one Anthropic-compatible.** The dropdown had grown to seven vendors, which meant maintaining seven sets of base URLs and default model names that drift out of date. Almost every provider offers one of two compatibility endpoints, so the list shrank to: DeepSeek (official), OpenAI 兼容, Anthropic 兼容.
