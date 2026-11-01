@@ -1,7 +1,5 @@
-import React, { useMemo } from 'react';
-import { StyleSheet } from 'react-native';
+import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { useCooking } from '../contexts/CookingContext';
 import { COLORS } from '../constants/colors';
 import { DraggableBall, BallRect } from './DraggableBall';
 
@@ -16,19 +14,11 @@ interface ChatBallProps {
 
 /** 聊天悬浮球：点击打开菜谱助手（拖拽/碰撞逻辑见 DraggableBall） */
 export function ChatBall({ visible, otherBallRect, onPress, onPositionUpdate }: ChatBallProps) {
-  const { state: cookingState } = useCooking();
-
-  // Reserve space for the bottom action bar only during active stages (prep/cooking)
-  const isInteractive = useMemo(() => {
-    return cookingState.session?.status === 'prep' || cookingState.session?.status === 'cooking';
-  }, [cookingState.session?.status]);
-
   return (
     <DraggableBall
       visible={visible}
       color={COLORS.primary}
       snapSide="left"
-      isInteractive={isInteractive}
       otherBallRect={otherBallRect}
       onPositionUpdate={onPositionUpdate}
       onPress={onPress}

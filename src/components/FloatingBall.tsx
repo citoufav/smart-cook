@@ -1,7 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import { useNutrition } from '../contexts/NutritionContext';
-import { useCooking } from '../contexts/CookingContext';
 import { COLORS } from '../constants/colors';
 import { getPerPersonNutrition } from '../utils/nutrition';
 import { DraggableBall, BallRect } from './DraggableBall';
@@ -16,12 +15,6 @@ interface FloatingBallProps {
 /** 营养悬浮球：显示每人摄入大卡，点击打开营养详情（拖拽/碰撞逻辑见 DraggableBall） */
 export function FloatingBall({ otherBallRect, onPositionUpdate }: FloatingBallProps) {
   const { state, dispatch } = useNutrition();
-  const { state: cookingState } = useCooking();
-
-  // Reserve space for the bottom action bar only during active stages (prep/cooking)
-  const isInteractive = useMemo(() => {
-    return cookingState.session?.status === 'prep' || cookingState.session?.status === 'cooking';
-  }, [cookingState.session?.status]);
 
   const perPerson = getPerPersonNutrition(state.totalNutrition, state.personCount);
   const calories = Math.round(perPerson.calories);
@@ -31,7 +24,6 @@ export function FloatingBall({ otherBallRect, onPositionUpdate }: FloatingBallPr
       visible={state.isVisible}
       color={COLORS.primary}
       snapSide="right"
-      isInteractive={isInteractive}
       otherBallRect={otherBallRect}
       onPositionUpdate={onPositionUpdate}
       onPress={() => dispatch({ type: 'OPEN_SHEET' })}

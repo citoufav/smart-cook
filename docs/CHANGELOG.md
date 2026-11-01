@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Floating balls stop moving between pages; the assistant knows where things are
+
+**Fixed**
+
+- The two floating balls sat at one height on the recipe page and another on prep/cooking, and a dragged position was reset every time the user paged back to the recipe overview.
+
+  Cause: the bottom offset was derived from `session.status` (`'prep'`/`'cooking'` reserved 76 px for the bottom bar, anything else 16 px), and swiping the pager dispatches `SET_CURRENT_STAGE`, which rewrites `status`. So merely changing pages changed the ball's bounds, and an effect keyed on that offset snapped the ball back to the default.
+
+  The bottom bar exists on **every** page of that screen, so the offset is now a constant, and the reset-on-offset-change effect is gone. Dragging persists across pages; the only remaining reset is entering the screen fresh.
+
+**Changed**
+
+- The assistant's system prompt now carries a 【界面位置】 table — where to edit a gram value, delete a dish, add one, redo the method, open the shopping list, see nutrition, switch stages, finish cooking, and open settings. It is also told that prep and cooking are read-only execution views, so when a user asks to change a number while looking at prep steps, it sends them back to the recipe page instead of pretending it can help.
+
+  This started as "the assistant has no permission to edit, so it should say where to go" — but "直接在菜谱页点编辑" was too vague to be useful when the edit affordance is a pencil icon inside a card.
+
 ## 2026-11-01 — The editor only adjusts numbers; anything else is a redo
 
 **Removed**

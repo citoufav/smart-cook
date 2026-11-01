@@ -6,8 +6,14 @@ import { SHADOWS } from '../constants/spacing';
 const BALL_SIZE = 56;
 const EDGE_MARGIN = 8;
 const TAB_BAR_HEIGHT = 56;
+/**
+ * 给底部「完成做菜」按钮留的高度。
+ *
+ * 以前这个值按 session.status 在 76 / 16 之间切换，结果球在菜谱页和备菜/炒制页
+ * 是两个高度，而且每翻一页位置就被重置（status 会跟着翻页变）。
+ * 球只在这几页上显示，而那几页底部**始终**有这条按钮，所以直接当成常量。
+ */
 const BOTTOM_BAR_OFFSET = 76;
-const NO_BAR_OFFSET = 16;
 const TAP_THRESHOLD = 6;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -23,8 +29,6 @@ interface DraggableBallProps {
   color: string;
   /** 停靠侧：left = 默认贴左边缘 / right = 默认贴右边缘 */
   snapSide: 'left' | 'right';
-  /** prep/cooking 阶段为底部操作栏预留更多空间 */
-  isInteractive: boolean;
   /** 另一颗球的屏幕坐标，用于碰撞分离 */
   otherBallRect?: React.MutableRefObject<BallRect | null>;
   /** 位置更新回调（供另一颗球做碰撞检测） */
@@ -41,7 +45,6 @@ export function DraggableBall({
   visible,
   color,
   snapSide,
-  isInteractive,
   otherBallRect,
   onPositionUpdate,
   onPress,
@@ -60,20 +63,15 @@ export function DraggableBall({
   const onPressRef = useRef(onPress);
   onPressRef.current = onPress;
 
-  const bottomOffset = useMemo(
-    () => (isInteractive ? BOTTOM_BAR_OFFSET : NO_BAR_OFFSET),
-    [isInteractive],
-  );
-
   const constraints = useMemo(() => {
     const tabBarSafeArea = insets.bottom + TAB_BAR_HEIGHT;
     return {
       minX: EDGE_MARGIN,
       maxX: SCREEN_WIDTH - BALL_SIZE - EDGE_MARGIN,
       minY: insets.top + EDGE_MARGIN + 8,
-      maxY: SCREEN_HEIGHT - BALL_SIZE - tabBarSafeArea - bottomOffset,
+      maxY: SCREEN_HEIGHT - BALL_SIZE - tabBarSafeArea - BOTTOM_BAR_OFFSET,
     };
-  }, [insets, bottomOffset]);
+  }, [insets]);
 
   // PanResponder 闭包只捕获首帧值：经 ref 读取最新约束，避免 bottomOffset 变化后拖拽边界失效
   const constraintsRef = useRef(constraints);
@@ -147,14 +145,6 @@ export function DraggableBall({
       },
     }),
   ).current;
-
-  // Reset position when stage/mode changes
-  useEffect(() => {
-    lastPos.current = { x: defaultX, y: defaultY };
-    positionAnim.setValue({ x: defaultX, y: defaultY });
-    onPositionUpdate?.(defaultX, defaultY);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bottomOffset]);
 
   // Show/hide
   useEffect(() => {
