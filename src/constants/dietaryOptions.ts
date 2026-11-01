@@ -42,3 +42,15 @@ export const PANTRY_SEASONINGS = [
 ];
 
 
+
+/**
+ * 已保存的口味标签该归到哪一组（设置里分开显示用）。
+ *
+ * 存的仍是一个数组（tastePreferences），归类靠查表：预设认识的进菜系/口味，
+ * 自己加的词进「其他」—— 不硬塞进某一边，塞错了比不分类更让人糊涂。
+ */
+export function classifyTasteTag(tag: string): 'cuisine' | 'flavor' | 'other' {
+  if (CUISINES.includes(tag)) return 'cuisine';
+  if (FLAVORS.includes(tag)) return 'flavor';
+  return 'other';
+}

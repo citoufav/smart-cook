@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,7 @@ import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
 import { useKeyboardAwareScroll } from '../hooks/useKeyboardAwareScroll';
 import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProviders';
 import { HEALTH_CONDITIONS } from '../constants/healthConditions';
+import { classifyTasteTag } from '../constants/dietaryOptions';
 import { TagChipGroup } from './TagChipGroup';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
@@ -223,6 +224,21 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
     await updatePreferences({ tastePreferences: newTags });
   }, [updatePreferences]);
 
+  /** 口味与菜系在界面上分三组显示，但存的是同一个数组 —— 改一组时把另外两组原样带上 */
+  const tasteGroups = useMemo(() => {
+    const groups = { cuisine: [] as string[], flavor: [] as string[], other: [] as string[] };
+    for (const tag of tasteTags) groups[classifyTasteTag(tag)].push(tag);
+    return groups;
+  }, [tasteTags]);
+
+  const handleTasteGroupChange = useCallback(
+    (group: 'cuisine' | 'flavor' | 'other', next: string[]) => {
+      const kept = tasteTags.filter((t) => classifyTasteTag(t) !== group);
+      handleTasteChange([...kept, ...next]);
+    },
+    [tasteTags, handleTasteChange],
+  );
+
   const handleSaveApiKey = useCallback(async () => {
     const trimmed = apiKeyInput.trim();
     if (!trimmed) {
@@ -328,14 +344,40 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           </TouchableOpacity>
           {expandedSections.has('taste') && (
             <>
+              {/*
+                菜系和口味是两个概念，混成一片分不出来（"川菜"和"香辣"挨着，谁是谁？）。
+                存还是一个数组，显示时按预设表归类；自己加的词进「其他」，不硬塞。
+              */}
+              <Text style={styles.groupLabel}>菜系</Text>
               <TagChipGroup
                 items={[]}
-                selected={tasteTags}
-                onChange={handleTasteChange}
-                addPlaceholder="其他偏好，如：咖喱"
+                selected={tasteGroups.cuisine}
+                onChange={(next) => handleTasteGroupChange('cuisine', next)}
+                addPlaceholder="其他菜系，如：潮汕菜"
                 onlySelected
                 onInputFocus={captureNode}
               />
+              <Text style={styles.groupLabel}>口味</Text>
+              <TagChipGroup
+                items={[]}
+                selected={tasteGroups.flavor}
+                onChange={(next) => handleTasteGroupChange('flavor', next)}
+                addPlaceholder="其他口味，如：咖喱"
+                onlySelected
+                onInputFocus={captureNode}
+              />
+              {tasteGroups.other.length > 0 && (
+                <>
+                  <Text style={styles.groupLabel}>其他</Text>
+                  <TagChipGroup
+                    items={[]}
+                    selected={tasteGroups.other}
+                    onChange={(next) => handleTasteGroupChange('other', next)}
+                    onlySelected
+                    onInputFocus={captureNode}
+                  />
+                </>
+              )}
               <Text style={styles.itemCount}>
                 {tasteTags.length > 0 ? `${tasteTags.length} 项，点一下取消` : '还没设置'}
               </Text>
@@ -706,6 +748,13 @@ const styles = StyleSheet.create({
 
   // Hint
   hint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, marginBottom: SPACING.sm },
+  groupLabel: {
+    fontSize: TYPOGRAPHY.caption,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
   itemCount: {
     fontSize: TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
