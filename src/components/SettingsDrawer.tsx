@@ -33,7 +33,6 @@ import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
 import { useKeyboardAwareScroll } from '../hooks/useKeyboardAwareScroll';
 import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProviders';
 import { HEALTH_CONDITIONS } from '../constants/healthConditions';
-import { TASTE_TAGS, DIETARY_TAGS } from '../constants/dietaryOptions';
 import { TagChipGroup } from './TagChipGroup';
 import { SelectableChip } from './SelectableChip';
 
@@ -324,13 +323,16 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           {expandedSections.has('taste') && (
             <>
               <TagChipGroup
-                items={TASTE_TAGS}
+                items={[]}
                 selected={tasteTags}
                 onChange={handleTasteChange}
                 addPlaceholder="其他偏好，如：咖喱"
+                onlySelected
                 onInputFocus={captureNode}
               />
-              <Text style={styles.itemCount}>{tasteTags.length} 项</Text>
+              <Text style={styles.itemCount}>
+                {tasteTags.length > 0 ? `${tasteTags.length} 项，点一下取消` : '还没设置'}
+              </Text>
             </>
           )}
 
@@ -342,13 +344,16 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
           {expandedSections.has('diet') && (
             <>
               <TagChipGroup
-                items={DIETARY_TAGS}
+                items={[]}
                 selected={dietaryTags}
                 onChange={handleDietaryChange}
                 addPlaceholder="其他忌口，如：不吃苦瓜"
+                onlySelected
                 onInputFocus={captureNode}
               />
-              <Text style={styles.itemCount}>{dietaryTags.length} 项</Text>
+              <Text style={styles.itemCount}>
+                {dietaryTags.length > 0 ? `${dietaryTags.length} 项，点一下取消` : '还没设置'}
+              </Text>
 
               {/*
                 长期疾病折起来：不是给所有人看的，摆在外面既长又忌讳。

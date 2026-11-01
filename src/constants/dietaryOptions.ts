@@ -41,9 +41,4 @@ export const PANTRY_SEASONINGS = [
   '蚝油', '胡椒粉', '辣椒油', '香油', '花椒', '豆瓣酱',
 ];
 
-/**
- * 设置抽屉里「口味与菜系」是一个标签清单（存进 tastePreferences 一个数组），
- * 所以两边合并成一份；同理忌口那份是 allergens + avoidances。
- */
-export const TASTE_TAGS = [...CUISINES, ...FLAVORS];
-export const DIETARY_TAGS = [...ALLERGENS, ...AVOIDANCES];
+

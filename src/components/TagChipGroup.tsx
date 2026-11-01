@@ -23,6 +23,7 @@ export function TagChipGroup({
   addPlaceholder = '自己写一个',
   maxLength = 20,
   autoFocusInput = false,
+  onlySelected = false,
   onInputFocus,
   style,
 }: {
@@ -33,6 +34,12 @@ export function TagChipGroup({
   addPlaceholder?: string;
   maxLength?: number;
   autoFocusInput?: boolean;
+  /**
+   * 只显示已保存的（设置抽屉用）。
+   * 引导页要的是"从一堆预设里挑"，抽屉要的是"看看我现在存了什么、点掉不想要的" ——
+   * 把整张预设表铺在设置里，那是雷霆大表，不是设置。
+   */
+  onlySelected?: boolean;
   /** 键盘弹起时把输入框滚上来；子组件自己持 ref，所以交节点而不是 ref */
   onInputFocus?: (node: Measurable | null) => void;
   style?: object;
@@ -42,7 +49,7 @@ export function TagChipGroup({
   const inputRef = useRef<TextInput>(null);
 
   const extras = selected.filter((s) => !items.includes(s));
-  const all = [...items, ...extras];
+  const all = onlySelected ? selected : [...items, ...extras];
 
   const toggle = (item: string) =>
     onChange(selected.includes(item) ? selected.filter((x) => x !== item) : [...selected, item]);
@@ -58,6 +65,9 @@ export function TagChipGroup({
     <View style={style}>
       {title ? <Text style={styles.title}>{title}</Text> : null}
       <View style={styles.chipWrap}>
+        {all.length === 0 && onlySelected ? (
+          <Text style={styles.empty}>还没有，点右边＋添加</Text>
+        ) : null}
         {all.map((item) => (
           <SelectableChip
             key={item}
@@ -119,6 +129,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, alignItems: 'center' },
+  empty: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary },
   addChip: {
     width: 36,
     height: 34,
