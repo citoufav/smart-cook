@@ -8,6 +8,14 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — The pantry step gains seasonings, and the ingredient list nearly doubles
+
+**Added** — 家里现在有什么 used to be 16 ingredients only. It is now 29 ingredients plus a second group of 14 common seasonings (食用油 / 盐 / 生抽 / 白糖 / 淀粉 …). Selected seasonings are written straight into the seasoning inventory with status 充足, since ticking one means "I have this in the cupboard" — quantity can come later. Both groups get the same **＋** as the earlier steps.
+
+  Ingredients are ordered 蔬菜 → 蛋白 → 主食 → 葱姜蒜 rather than alphabetically, so a person scanning for 土豆 or 鸡蛋 finds the cluster they expect instead of reading all 29.
+
+  Seasonings matter more than they look: the shopping list and the "调料库存不足" warnings are driven entirely by this data. Skipping this step is why a brand-new install used to be told to buy salt and oil.
+
 ## 2026-11-01 — Four chip groups, four sets of state (a regression I caused)
 
 **Fixed** — picking 西北菜 under 偏爱菜系 made it appear under 口味倾向 too, and picking 芒果 under 过敏 made it appear under 忌口. Screenshot-obvious, shipped for one turn.
