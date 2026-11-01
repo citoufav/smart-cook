@@ -141,8 +141,13 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [keyInput, setKeyInput] = useState('');
   const [keyError, setKeyError] = useState('');
-  const [taste, setTaste] = useState<string[]>([]);
-  const [avoid, setAvoid] = useState<string[]>([]);
+  // 四组各存各的。菜系和口味最后都并进 tastePreferences、过敏和忌口都并进
+  // dietaryRestrictions，但**界面上是两组**：共用一个数组会让「自己加的项」
+  // 串到另一组去显示（选西北菜，口味那一组也会冒出来）
+  const [cuisines, setCuisines] = useState<string[]>([]);
+  const [flavors, setFlavors] = useState<string[]>([]);
+  const [allergens, setAllergens] = useState<string[]>([]);
+  const [avoidances, setAvoidances] = useState<string[]>([]);
   const [pantry, setPantry] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -178,8 +183,9 @@ export default function OnboardingScreen() {
       await updateApiKey(pendingKey).catch(() => {});
     }
     await updatePreferences({
-      tastePreferences: taste,
-      dietaryRestrictions: avoid,
+      // 合并回两个存储字段；用 Set 去重，万一两组里加了同一个自定义项
+      tastePreferences: [...new Set([...cuisines, ...flavors])],
+      dietaryRestrictions: [...new Set([...allergens, ...avoidances])],
       onboardingDone: true,
     });
     const existing = new Set(invState.ingredients.map((i) => i.name));
@@ -192,7 +198,7 @@ export default function OnboardingScreen() {
       }
     }
     router.replace('/(tabs)');
-  }, [taste, avoid, pantry, invState.ingredients, updatePreferences, addIngredient, keyInput, updateApiKey]);
+  }, [cuisines, flavors, allergens, avoidances, pantry, invState.ingredients, updatePreferences, addIngredient, keyInput, updateApiKey]);
 
   const goNext = useCallback(async () => {
     if (step === 0 && !(await saveKeyIfAny())) return;
@@ -285,14 +291,14 @@ export default function OnboardingScreen() {
         )}
         {step === 1 && (
           <>
-            <ChipGroup title="偏爱菜系" items={CUISINES} selected={taste} onChange={setTaste} addPlaceholder="其他菜系，如：东北菜" onInputFocus={captureNode} />
-            <ChipGroup title="口味倾向" items={FLAVORS} selected={taste} onChange={setTaste} addPlaceholder="其他口味，如：咖喱" onInputFocus={captureNode} />
+            <ChipGroup title="偏爱菜系" items={CUISINES} selected={cuisines} onChange={setCuisines} addPlaceholder="其他菜系，如：东北菜" onInputFocus={captureNode} />
+            <ChipGroup title="口味倾向" items={FLAVORS} selected={flavors} onChange={setFlavors} addPlaceholder="其他口味，如：咖喱" onInputFocus={captureNode} />
           </>
         )}
         {step === 2 && (
           <>
-            <ChipGroup title="过敏（务必勾选）" items={ALLERGENS} selected={avoid} onChange={setAvoid} addPlaceholder="其他过敏原，如：菠萝" onInputFocus={captureNode} />
-            <ChipGroup title="忌口" items={AVOIDANCES} selected={avoid} onChange={setAvoid} addPlaceholder="其他忌口，如：不吃苦瓜" onInputFocus={captureNode} />
+            <ChipGroup title="过敏（务必勾选）" items={ALLERGENS} selected={allergens} onChange={setAllergens} addPlaceholder="其他过敏原，如：菠萝" onInputFocus={captureNode} />
+            <ChipGroup title="忌口" items={AVOIDANCES} selected={avoidances} onChange={setAvoidances} addPlaceholder="其他忌口，如：不吃苦瓜" onInputFocus={captureNode} />
           </>
         )}
         {step === 3 && (
