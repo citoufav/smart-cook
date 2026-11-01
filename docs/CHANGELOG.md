@@ -8,6 +8,20 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Settings reordered, health conditions folded away, and a data-loss bug I caused
+
+**Fixed — onboarding wiped existing preferences.** `finish()` wrote `tastePreferences` and `dietaryRestrictions` from its own selection state unconditionally. On a *re-run* (the debug switch, or pressing 跳过 from step 1) those arrays are empty, so finishing wrote empty arrays over whatever was already stored. Anyone who had set preferences and then walked the onboarding again lost them.
+
+  The guard is now: if nothing was picked, keep the stored values. Clearing them is done in settings by unticking, not by "select nothing and finish". The trade is deliberate — "I didn't touch this step" and "I want this empty" look identical from the array, and losing data is the worse failure.
+
+**Changed — section order**: 口味与菜系 moved to the top (it is the thing people actually adjust), 忌口设置 second, then 熟练度 / 模型与 API / 数据管理. `SECTION_KEYS` is the order, so the persisted expand/collapse state followed automatically.
+
+**Changed — 忌口 and 口味 are now chip rows.** The old control was a permanent input + 添加 button + removable tags, which is a form; it is now the same "chips, with a ＋ at the end" pattern as onboarding — the input only appears after ＋ is pressed. Presets come from `src/constants/dietaryOptions.ts`, shared with onboarding, so a new cuisine or allergen is added in exactly one place. The drawer shows 菜系 + 口味 as one list and 过敏 + 忌口 as one list, because that is how they are stored (`tastePreferences`, `dietaryRestrictions`) — one group, one array, so the cross-group leak fixed earlier cannot happen here.
+
+**Changed — 长期疾病 is collapsed.** It sits behind 「▸ 有长期疾病或特殊饮食方式？」 inside 忌口设置, closed by default. Listing 糖尿病 / 痛风 as a row of buttons in a settings drawer is both long and a little tactless for everyone who does not need it.
+
+**Also**: the onboarding chip group became `TagChipGroup`, shared by both screens; `DietaryTagInput` was deleted.
+
 ## 2026-11-01 — "完成做菜" only exists on the last page
 
 **Fixed** — all three pager pages shared one green 完成做菜 button, so the recipe overview offered to finish a cook that had not started. A user who pressed it there never discovered that 备菜 and 炒制 existed at all: the app happily filed the menu away as done, every time.
