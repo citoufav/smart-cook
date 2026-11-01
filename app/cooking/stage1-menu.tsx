@@ -17,7 +17,7 @@ import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS } from '../../src/constants/spacing';
 import { Card } from '../../src/components/Card';
-import { applyEdits, MenuEdit } from '../../src/services/menuEditService';
+import { applyEdits, hasFullDensity, MenuEdit } from '../../src/services/menuEditService';
 import { cookingProgressService } from '../../src/services/cookingProgressService';
 import { DishEditorSheet, AddDishSheet } from '../../src/components/DishSheets';
 
@@ -44,11 +44,10 @@ export function Stage1MenuContent() {
       const personCount = requirement?.personCount ?? 1;
       const byDish: Record<string, NutritionalData> = {};
       for (const d of nextMenu.dishes) {
-        const n = d.preciseNutrition ?? d.estimatedNutrition;
-        if (n) byDish[d.name] = { ...n, source: d.preciseNutrition ? 'precise' : 'estimated' };
+        byDish[d.name] = { ...d.estimatedNutrition, source: hasFullDensity(d) ? 'precise' : 'estimated' };
       }
       if (Object.keys(byDish).length > 0) {
-        if (nextMenu.dishes.some((d) => d.preciseNutrition)) {
+        if (nextMenu.dishes.some((d) => hasFullDensity(d))) {
           setPreciseNutrition(byDish, personCount);
         } else {
           setEstimatedNutrition(byDish, personCount);

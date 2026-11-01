@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — Calories are computed from grams, not asserted by the model
+
+**Added**
+
+- `DishIngredient.kcalPer100g` / `DishSeasoning.kcalPer100g` — energy density per 100 g, requested from the model for every ingredient and seasoning.
+
+  **Per 100 g, not per gram or per kilogram.** The Chinese food composition table, nutrition labels, and USDA all publish per 100 g, and that is the form the model has seen in training — it is copying a number rather than converting one. Per gram yields small decimals (`1.43 kcal/g`) that models round badly; per kilogram requires multiplying by ten first. Every avoidable conversion is another chance to be wrong.
+
+- `computeCalories` / `recomputeNutrition` / `hasFullDensity` in `menuEditService`. A dish's calories are now `Σ(grams × kcalPer100g ÷ 100)`, recomputed in a single pass after every edit and after the serving-count rescale. Seasonings count only when their `amount` parses as grams (`10g`, `约10ml`); "适量" and "1汤匙" are skipped rather than guessed, so the figure leans slightly low instead of inventing a number.
+
+  Protein/fat/carbs are not computed independently — that would need three more densities per ingredient and multiply the output size. They scale with the calorie change so the four numbers stay mutually consistent. The estimate itself is ±20% anyway.
+
+- 「整道菜按比例」 in the dish editor (`×½ / ×1.5 / ×2`) for "the portion was too small" — one tap scales every ingredient instead of retyping each. The editor also shows a live calorie readout while you type.
+
+**Removed**
+
+- `DishPlan.preciseNutrition`. Once calories are derived from grams there is only one correct number, and keeping the model's second opinion meant the nutrition panel could keep showing a stale value after an edit. `estimatedNutrition` is now the single source; the panel labels it 「精确」 only when every ingredient has a density.
+
+**Fixed**
+
+- A generated dish with no `name` was being dropped and surfaced as "AI 没有给出菜品" — technically correct but useless when the user asked for 油条 and the model simply forgot the key. `pickDishName` now accepts `dishName` / `title` / `菜名`, accepts a dish placed directly at the root without a `dishes` wrapper, and the drop warning logs the model's actual shape so the next occurrence is diagnosable. Both prompts now state that `name` is required.
+- Serving-count rescaling also scales seasoning amounts (`10g` → `20g`); previously the oil stayed at 10 g while everything else doubled.
+
 ## 2026-11-01 — A dish is a module; the chat assistant stops editing
 
 **Changed**

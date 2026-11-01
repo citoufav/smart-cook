@@ -13,6 +13,7 @@ import { COLORS } from '../../src/constants/colors';
 import { TYPOGRAPHY } from '../../src/constants/typography';
 import { SPACING, BORDER_RADIUS, SHADOWS } from '../../src/constants/spacing';
 import { NutritionalData } from '../../src/types';
+import { hasFullDensity } from '../../src/services/menuEditService';
 import { IngredientTagText } from '../../src/components/IngredientTagText';
 
 export function Stage3PrepContent() {
@@ -30,10 +31,10 @@ export function Stage3PrepContent() {
         nutritionShownRef.current = true;
         const nutritionByDish: Record<string, NutritionalData> = {};
         for (const dish of menuProposal.dishes) {
-          const n = dish.preciseNutrition ?? dish.estimatedNutrition;
-          if (n) {
-            nutritionByDish[dish.name] = { ...n, source: dish.preciseNutrition ? 'precise' : 'estimated' };
-          }
+          nutritionByDish[dish.name] = {
+            ...dish.estimatedNutrition,
+            source: hasFullDensity(dish) ? 'precise' : 'estimated',
+          };
         }
         if (Object.keys(nutritionByDish).length > 0) {
           setPreciseNutrition(nutritionByDish, personCount);

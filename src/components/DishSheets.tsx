@@ -19,7 +19,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useInventory } from '../contexts/InventoryContext';
 import { useCooking } from '../contexts/CookingContext';
 import { generateOneDishStream } from '../services/aiService';
-import type { MenuEdit } from '../services/menuEditService';
+import { computeCalories, type MenuEdit } from '../services/menuEditService';
 import type { DishPlan } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,16 @@ function SheetShell({
 interface IngredientDraft {
   name: string;
   grams: string;
+  /** 每 100 克大卡；带着它才能在编辑时就地把热量算出来 */
+  kcalPer100g?: number;
 }
+
+/** 一键把整道菜的用量按比例放大/缩小 */
+const SCALE_STEPS: { label: string; factor: number }[] = [
+  { label: '×½', factor: 0.5 },
+  { label: '×1.5', factor: 1.5 },
+  { label: '×2', factor: 2 },
+];
 
 /**
  * 编辑一道菜的抽屉。
@@ -101,7 +110,13 @@ export function DishEditorSheet({
   useEffect(() => {
     if (!visible || !dish) return;
     setName(dish.name);
-    setRows(dish.ingredients.map((i) => ({ name: i.name, grams: String(i.estimatedWeight) })));
+    setRows(
+      dish.ingredients.map((i) => ({
+        name: i.name,
+        grams: String(i.estimatedWeight),
+        kcalPer100g: i.kcalPer100g,
+      })),
+    );
     setNewName('');
     setNewGrams('');
     setError(null);
@@ -114,6 +129,33 @@ export function DishEditorSheet({
   const removeRow = useCallback((name: string) => {
     setRows((prev) => prev.filter((r) => r.name !== name));
   }, []);
+
+  /** 量不够时不用一个个改：整道菜的食材一起按比例走 */
+  const scaleAll = useCallback((factor: number) => {
+    setRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        grams: String(Math.max(1, Math.round((Number(r.grams) || 0) * factor))),
+      })),
+    );
+  }, []);
+
+  // 边改边算热量：改完立刻看得到，不用保存后才知道
+  const liveCalories = useMemo(() => {
+    if (!dish) return null;
+    const draftDish: DishPlan = {
+      ...dish,
+      ingredients: rows.map((r) => ({
+        name: r.name,
+        estimatedWeight: Number(r.grams) || 0,
+        isInInventory: false,
+        kcalPer100g: r.kcalPer100g,
+      })),
+    };
+    const { kcal, covered } = computeCalories(draftDish);
+    if (covered === 0) return null;
+    return { kcal: Math.round(kcal), partial: covered < rows.length };
+  }, [dish, rows]);
 
   const addRow = useCallback(() => {
     const n = newName.trim();
@@ -130,6 +172,7 @@ export function DishEditorSheet({
       setError('克数要填一个大于 0 的整数');
       return;
     }
+    // 新加的食材没有密度，热量会按"部分缺密度"标出来，不会假装精确
     setRows((prev) => [...prev, { name: n, grams: g }]);
     setNewName('');
     setNewGrams('');
@@ -224,7 +267,31 @@ export function DishEditorSheet({
           placeholderTextColor={COLORS.textTertiary}
         />
 
-        <Text style={styles.fieldLabel}>食材</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.fieldLabel}>食材</Text>
+          {liveCalories ? (
+            <Text style={styles.liveCalories}>
+              约 {liveCalories.kcal} 大卡{liveCalories.partial ? '（部分食材缺热量密度）' : ''}
+            </Text>
+          ) : (
+            <Text style={styles.liveCaloriesStale}>改克数不会重算热量</Text>
+          )}
+        </View>
+
+        {!liveCalories && (
+          <Text style={styles.staleHint}>
+            这道菜是旧版本存的，AI 没给每种食材的热量密度，所以热量没法按克数算。重新生成一份菜单就可以。
+          </Text>
+        )}
+
+        <View style={styles.scaleRow}>
+          <Text style={styles.scaleHint}>整道菜按比例：</Text>
+          {SCALE_STEPS.map((s) => (
+            <TouchableOpacity key={s.label} style={styles.scaleChip} onPress={() => scaleAll(s.factor)} activeOpacity={0.7}>
+              <Text style={styles.scaleChipText}>{s.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         {rows.length === 0 ? (
           <Text style={styles.emptyHint}>还没有食材，加一个吧</Text>
         ) : (
@@ -485,6 +552,27 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     marginTop: SPACING.md,
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  liveCalories: { fontSize: TYPOGRAPHY.caption, color: COLORS.primary, fontWeight: '600' },
+  liveCaloriesStale: { fontSize: TYPOGRAPHY.caption, color: COLORS.warningText },
+  staleHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary, lineHeight: 18, marginBottom: SPACING.sm },
+  scaleRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.sm },
+  scaleHint: { fontSize: TYPOGRAPHY.caption, color: COLORS.textTertiary },
+  scaleChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryBg,
+  },
+  scaleChipText: { fontSize: TYPOGRAPHY.caption, color: COLORS.primary, fontWeight: '600' },
   input: {
     borderWidth: 1.5,
     borderColor: COLORS.border,

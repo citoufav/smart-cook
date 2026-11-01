@@ -91,12 +91,22 @@ export interface DishIngredient {
   name: string;
   estimatedWeight: number;
   isInInventory: boolean;
+  /**
+   * 每 100 克的能量（大卡）。有它就能由克数直接算出热量，
+   * 改克数/加食材/换人数都不用再问模型。
+   *
+   * 单位刻意用「每 100 克」：中国食物成分表、营养成分表、USDA 都是这个口径，
+   * 模型是原样抄而不是换算，正确率最高。每克会出现小数、每千克要多乘 10。
+   */
+  kcalPer100g?: number;
 }
 
 export interface DishSeasoning {
   name: string;
   amount: string;
   isInInventory: boolean;
+  /** 同 DishIngredient.kcalPer100g；amount 能解析出克数时才参与计算 */
+  kcalPer100g?: number;
 }
 
 export interface DishNutrition {
@@ -118,12 +128,12 @@ export interface DishPlan {
   name: string;
   ingredients: DishIngredient[];
   seasonings: DishSeasoning[];
-  estimatedNutrition: DishNutrition;
   /**
-   * AI 按最终克重重算的一份营养估算（同一份响应里给的 preciseNutrition）。
-   * 有值时营养面板按"精确"显示，没有就退回 estimatedNutrition。
+   * 这道菜的热量。只要食材带了 kcalPer100g，这个值就由克数算出来
+   * （见 menuEditService 的 recomputeNutrition），不是模型给的独立数字，
+   * 所以改完克数它一定跟着变。模型没给密度时才退回模型的估算。
    */
-  preciseNutrition?: DishNutrition;
+  estimatedNutrition: DishNutrition;
   prepSteps: PrepStep[];
   cookingSteps: CookingStep[];
 }

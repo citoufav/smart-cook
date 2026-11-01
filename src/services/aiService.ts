@@ -6,7 +6,7 @@ import { maskApiKey } from '../utils/maskApiKey';
 import { daysSince } from '../utils/daysSince';
 import { generateId } from '../utils/uuid';
 import { aiEndpoint, aiHeaders, aiModel } from './aiClient';
-import { attachStepsToDishes } from './menuEditService';
+import { attachStepsToDishes, recomputeNutrition } from './menuEditService';
 
 const log = logger('SVC:AI');
 
@@ -36,15 +36,17 @@ const nutritionSchema = z.object({
 const dishSchema = z
   .object({
     // 菜名是菜品的身份：既用于显示，也是对话增删改时定位菜品的主键。
-    // 这里兜底成空串而不是"未命名菜品"——否则模型漏写 name 时会凭空多出一道
-    // 假菜（历史 bug：想加个牛奶，结果多出一个"未命名菜品"）。
-    name: z.string().catch(''),
+    // 兜底成空串而不是"未命名菜品"——非空兜底值会骗过下游 `if (!name)` 的守卫，
+    // 让假菜一路通过（历史 bug：想加个牛奶，结果多出一个"未命名菜品"）。
+    // 同时容忍模型偶尔换用的同义键，见 pickDishName。
+    name: z.any(),
     ingredients: z
       .array(
         z.object({
           name: z.string().catch(''),
           estimatedWeight: numField.catch(0),
           isInInventory: z.boolean().catch(false),
+          kcalPer100g: numField.catch(0),
         }),
       )
       .catch([]),
@@ -54,12 +56,22 @@ const dishSchema = z
           name: z.string().catch(''),
           amount: z.string().catch(''),
           isInInventory: z.boolean().catch(false),
+          kcalPer100g: numField.catch(0),
         }),
       )
       .catch([]),
     estimatedNutrition: nutritionSchema.catch({ calories: 0, protein: 0, fat: 0, carbs: 0 }),
   })
   .passthrough();
+
+/** 模型偶尔会把菜名写在同义键上，别因为这个丢掉整道菜 */
+function pickDishName(raw: any): string {
+  const candidates = [raw?.name, raw?.dishName, raw?.title, raw?.菜名, raw?.dish];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
 
 const prepStepSchema = z
   .object({
@@ -125,22 +137,46 @@ const stage1ResultSchema = z
 export function parseStage1Result(raw: unknown, reasoningContent: string): Stage1AIResult {
   const parsed = stage1ResultSchema.parse(raw);
 
-  const dishes: DishPlan[] = parsed.dishes
-    .filter((d) => d.name.trim().length > 0)
-    .map((d, i) => ({
-      id: generateId(),
-      name: d.name.trim(),
-      ingredients: d.ingredients.map((i2) => ({ ...i2 })),
-      seasonings: d.seasonings.map((s) => ({ ...s })),
-      estimatedNutrition: { ...d.estimatedNutrition },
-      // preciseNutrition 是按 dishes 下标对齐的另一份估算，挂进对应的菜
-      preciseNutrition: parsed.preciseNutrition[i] ? { ...parsed.preciseNutrition[i] } : undefined,
-      prepSteps: [],
-      cookingSteps: [],
-    }));
+  // 模型偶尔把整道菜直接放在根上（没有 dishes 包一层），照单收下
+  let rawDishes: any[] = parsed.dishes;
+  if (rawDishes.length === 0 && pickDishName(raw) && Array.isArray((raw as any)?.ingredients)) {
+    log.warn('模型把菜品放在了根上，已按单道菜处理');
+    rawDishes = [raw];
+  }
 
-  if (dishes.length < parsed.dishes.length) {
-    log.warn('已丢弃缺少菜名的菜品', { dropped: parsed.dishes.length - dishes.length });
+  const kept: any[] = [];
+  for (const d of rawDishes) {
+    const name = pickDishName(d);
+    if (!name) continue;
+    kept.push({ ...d, name });
+  }
+
+  const dishes: DishPlan[] = kept.map((d) => ({
+    id: generateId(),
+    name: d.name as string,
+    ingredients: (d.ingredients ?? []).map((i: any) => ({
+      name: i.name,
+      estimatedWeight: i.estimatedWeight,
+      isInInventory: i.isInInventory,
+      kcalPer100g: i.kcalPer100g > 0 ? i.kcalPer100g : undefined,
+    })),
+    seasonings: (d.seasonings ?? []).map((s: any) => ({
+      name: s.name,
+      amount: s.amount,
+      isInInventory: s.isInInventory,
+      kcalPer100g: s.kcalPer100g > 0 ? s.kcalPer100g : undefined,
+    })),
+    estimatedNutrition: { ...d.estimatedNutrition },
+    prepSteps: [],
+    cookingSteps: [],
+  }));
+
+  if (dishes.length < rawDishes.length) {
+    // 把模型实际给的字段留下来，下次再出这种毛病能直接看出它写成了什么
+    log.warn('已丢弃缺少菜名的菜品', {
+      dropped: rawDishes.length - dishes.length,
+      shape: JSON.stringify(rawDishes).slice(0, 400),
+    });
   }
   if (dishes.length === 0) {
     return {
@@ -159,8 +195,9 @@ export function parseStage1Result(raw: unknown, reasoningContent: string): Stage
     log.warn('有步骤找不到所属菜品，已挂到第一道菜', { orphans });
   }
 
+  // 热量以「克数 × 每100克大卡」为准，模型给的 estimatedNutrition 只当兜底
   return {
-    dishes,
+    dishes: dishes.map(recomputeNutrition),
     missingItems: parsed.missingItems,
     reasoningContent,
     summary: parsed.summary,
@@ -188,6 +225,11 @@ export const SYSTEM_PROMPT_CN = `你是一位专业的家庭厨师和营养顾�
 4. 严格 JSON：只返回纯 JSON，禁止用 \`\`\`json\`\`\` 包裹，禁止输出任何非 JSON 文本。
 5. 全局一致性：生成前先通盘考虑备菜→炒制全流程，确保步骤衔接无矛盾。
 6. 主食=菜品：米饭、馒头、面条、花卷、烙饼等主食与炒菜一样是独立菜品，必须包含在 dishes 中，有独立的 estimatedNutrition。
+6.1 **每个食材和调料都必须给 kcalPer100g**（每 100 克多少大卡），按中国食物成分表口径、生重计算。
+    参考值：大米 346、面粉 366、鸡蛋 143、番茄 20、猪肉(瘦) 143、牛肉(瘦) 106、鸡胸肉 133、
+    食用油 899、白砂糖 400、牛奶 54、豆腐 82。调料按用量估算时同样给这个密度。
+    客户端会用「克数 × kcalPer100g ÷ 100」自己算总热量，所以这个数字必须给对；
+    estimatedNutrition 仍然要填，用作交叉校验（两者差太多说明密度给错了）。
 
 【营养与搭配】
 7. 热量以用户消息里的「热量目标」为准。只有那里写"不限"时，才用这组默认区间：
@@ -296,7 +338,7 @@ ${ingredientLines}
 【库存调料】
 ${seasoningLines}
 
-请严格按照以下 JSON Schema 返回，确保 dishes 数组至少包含 1 道菜品。
+请严格按照以下 JSON Schema 返回，确保 dishes 数组至少包含 1 道菜品，且每道菜都必须有 name（菜名），不能省略。
 
 【prepSteps 生成规则】
 - 按菜品分组：每道菜自己的备菜步骤，dishName 必须填，不要跨菜合并
@@ -322,10 +364,10 @@ JSON Schema（数字与布尔按此写法，不要写成"克数""true或false"�
     {
       "name": "菜名",
       "ingredients": [
-        { "name": "食材名", "estimatedWeight": 200, "isInInventory": true }
+        { "name": "食材名", "estimatedWeight": 200, "kcalPer100g": 143, "isInInventory": true }
       ],
       "seasonings": [
-        { "name": "调料名", "amount": "用量描述", "isInInventory": true }
+        { "name": "调料名", "amount": "用量描述", "kcalPer100g": 899, "isInInventory": true }
       ],
       "estimatedNutrition": { "calories": 350, "protein": 20, "fat": 12, "carbs": 40 }
     }
@@ -614,7 +656,8 @@ ${formatIngredientLines(context.ingredients)}
 ${formatSeasoningLines(context.seasonings)}
 
 【输出要求】
-只输出 1 道菜：dishes 数组长度必须为 1，prepSteps 与 cookingSteps 只写这道菜的。
+只输出 1 道菜：dishes 数组长度必须为 1，**且这道菜必须有 name（菜名）**，prepSteps 与 cookingSteps 只写这道菜的。
+每个食材都要带 kcalPer100g（每 100 克大卡，参考大米346/鸡蛋143/食用油899/牛奶54）。
 summary.description 用一句话说明这道菜；missingItems、preciseNutrition 可以是空数组。
 其余格式与上面的 JSON Schema 完全一致。`;
 }

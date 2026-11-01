@@ -92,6 +92,72 @@ function scaleNutrition(n: DishNutrition | undefined, factor: number): DishNutri
   };
 }
 
+/** 把「10g」「10 克」「约10ml」这类用量解析成克数；解析不出（适量/1汤匙）就返回 0 */
+function parseGramAmount(amount: string): number {
+  const m = /^约?\s*(\d+(?:\.\d+)?)\s*(g|克|ml|毫升)?\s*(左右)?$/.exec((amount || '').trim());
+  return m ? parseFloat(m[1]) : 0;
+}
+
+/**
+ * 按「克数 × 每100克大卡 ÷ 100」算这道菜的热量。
+ * 解析不出克数的调料（"适量""1汤匙"）不计入，宁可略低也不要瞎猜。
+ *
+ * ponytail: 调料只认 g/克/ml/毫升 这类明确单位，要更准就得让模型给确切克数。
+ */
+export function computeCalories(dish: DishPlan): { kcal: number; covered: number } {
+  let kcal = 0;
+  let covered = 0;
+
+  for (const i of dish.ingredients) {
+    const density = i.kcalPer100g ?? 0;
+    if (density > 0) {
+      kcal += (i.estimatedWeight * density) / 100;
+      covered++;
+    }
+  }
+  for (const s of dish.seasonings) {
+    const density = s.kcalPer100g ?? 0;
+    if (density <= 0) continue;
+    const grams = parseGramAmount(s.amount);
+    if (grams > 0) {
+      kcal += (grams * density) / 100;
+      covered++;
+    }
+  }
+
+  return { kcal, covered };
+}
+
+/**
+ * 由克数算出这道菜的热量，写回 estimatedNutrition。
+ *
+ * 只在至少一个食材带了 kcalPer100g 时才动手；老数据没有密度，就保留模型给的估算。
+ * 蛋白/脂肪/碳水不做独立计算（那要为每个食材再要三个密度，token 翻几倍），
+ * 而是按热量变化同比缩放，保证四项互相自洽 —— 反正这份估算本身就有 ±20% 误差。
+ */
+export function recomputeNutrition(dish: DishPlan): DishPlan {
+  const { kcal, covered } = computeCalories(dish);
+  if (covered === 0) return dish;
+
+  const calories = Math.round(kcal);
+  const base = dish.estimatedNutrition ?? ZERO_NUTRITION;
+  const factor = base.calories > 0 ? calories / base.calories : 1;
+  return {
+    ...dish,
+    estimatedNutrition: {
+      calories,
+      protein: Math.round(base.protein * factor),
+      fat: Math.round(base.fat * factor),
+      carbs: Math.round(base.carbs * factor),
+    },
+  };
+}
+
+/** 所有食材都带密度 = 热量是按克数实算的，可以标"精确" */
+export function hasFullDensity(dish: DishPlan): boolean {
+  return dish.ingredients.length > 0 && dish.ingredients.every((i) => (i.kcalPer100g ?? 0) > 0);
+}
+
 export function sumNutrition(dishes: DishPlan[]): NutritionInfo {
   return dishes.reduce<NutritionInfo>(
     (sum, d) => ({
@@ -110,7 +176,6 @@ function cloneDish(d: DishPlan): DishPlan {
     ingredients: (d.ingredients ?? []).map((i) => ({ ...i })),
     seasonings: (d.seasonings ?? []).map((s) => ({ ...s })),
     estimatedNutrition: { ...(d.estimatedNutrition ?? ZERO_NUTRITION) },
-    preciseNutrition: d.preciseNutrition ? { ...d.preciseNutrition } : undefined,
     prepSteps: (d.prepSteps ?? []).map((s) => ({ ...s })),
     cookingSteps: (d.cookingSteps ?? []).map((s) => ({ ...s })),
   };
@@ -200,7 +265,6 @@ export function createDish(input: {
   ingredients: DishPlan['ingredients'];
   seasonings?: DishPlan['seasonings'];
   estimatedNutrition?: DishNutrition;
-  preciseNutrition?: DishNutrition;
 }): DishPlan {
   return {
     id: newDishId(),
@@ -208,7 +272,6 @@ export function createDish(input: {
     ingredients: [...input.ingredients],
     seasonings: [...(input.seasonings ?? [])],
     estimatedNutrition: { ...(input.estimatedNutrition ?? ZERO_NUTRITION) },
-    preciseNutrition: input.preciseNutrition ? { ...input.preciseNutrition } : undefined,
     prepSteps: [],
     cookingSteps: [],
   };
@@ -225,7 +288,6 @@ export function migrateMenuProposal(raw: any): MenuProposal | undefined {
 
   const legacyPrep: FlatPrepStep[] = Array.isArray(raw.prepSteps) ? raw.prepSteps : [];
   const legacyCooking: FlatCookingStep[] = Array.isArray(raw.cookingSteps) ? raw.cookingSteps : [];
-  const legacyPrecise: DishNutrition[] = Array.isArray(raw.preciseNutrition) ? raw.preciseNutrition : [];
 
   const dishes: DishPlan[] = raw.dishes
     .filter((d: any) => d && typeof d.name === 'string' && d.name.trim())
@@ -237,7 +299,6 @@ export function migrateMenuProposal(raw: any): MenuProposal | undefined {
         ingredients: Array.isArray(d.ingredients) ? d.ingredients : [],
         seasonings: Array.isArray(d.seasonings) ? d.seasonings : [],
         estimatedNutrition: d.estimatedNutrition ?? { ...ZERO_NUTRITION },
-        preciseNutrition: d.preciseNutrition ?? legacyPrecise[i],
         // 已经是新结构就原样保留，否则留空等下面统一挂
         prepSteps: alreadyNested ? d.prepSteps : [],
         cookingSteps: alreadyNested ? d.cookingSteps : [],
@@ -377,7 +438,7 @@ export function applyEdits(
     }
   }
 
-  // ---- 人数缩放：菜品用量、步骤文案、营养一起动 ----
+  // ---- 人数缩放：菜品用量、步骤文案一起动 ----
   if (scaleFactor !== 1) {
     dishes = dishes.map((d) => ({
       ...d,
@@ -385,10 +446,11 @@ export function applyEdits(
         ...i,
         estimatedWeight: Math.max(1, Math.round(i.estimatedWeight * scaleFactor)),
       })),
+      seasonings: d.seasonings.map((s) => ({
+        ...s,
+        amount: scaleQuantity(s.amount, scaleFactor),
+      })),
       estimatedNutrition: scaleNutrition(d.estimatedNutrition, scaleFactor),
-      preciseNutrition: d.preciseNutrition
-        ? scaleNutrition(d.preciseNutrition, scaleFactor)
-        : undefined,
       prepSteps: d.prepSteps.map((s) => ({
         ...s,
         description: scaleGramsInText(s.description, scaleFactor),
@@ -400,6 +462,10 @@ export function applyEdits(
       })),
     }));
   }
+
+  // ---- 按最终克数重算每道菜的热量 ----
+  // 放在缩放之后：此时克数已经是最终值，算出来的热量自然对得上。
+  dishes = dishes.map(recomputeNutrition);
 
   // ---- 重算派生字段 ----
   const purchasedKeys = new Set(
