@@ -33,9 +33,18 @@ const AVOIDANCES = [
   '不吃辣', '不吃猪肉', '不吃牛肉', '不吃羊肉', '不吃鸡肉', '不吃内脏',
   '不吃海鲜', '不吃鸡蛋', '不吃香菜', '不吃葱蒜', '不吃姜', '不吃菌菇',
 ];
+// 常备食材：按「蔬菜 → 蛋白 → 主食 → 葱姜蒜」排，用户扫一眼就知道自己那几样在哪
 const PANTRY_STAPLES = [
-  '鸡蛋', '番茄', '土豆', '洋葱', '青椒', '胡萝卜', '白菜', '西兰花',
-  '豆腐', '猪肉', '鸡胸肉', '牛肉', '大米', '面条', '小葱', '大蒜',
+  '番茄', '土豆', '洋葱', '青椒', '胡萝卜', '白菜', '西兰花', '黄瓜',
+  '茄子', '豆角', '菠菜', '香菇', '南瓜', '豆芽',
+  '鸡蛋', '豆腐', '猪肉', '五花肉', '鸡胸肉', '牛肉', '虾仁', '鱼',
+  '大米', '面条', '馒头', '红薯',
+  '小葱', '大蒜', '姜',
+];
+// 常备调料：选中的直接以「充足」状态进调料库
+const PANTRY_SEASONINGS = [
+  '食用油', '盐', '生抽', '老抽', '醋', '料酒', '白糖', '淀粉',
+  '蚝油', '胡椒粉', '辣椒油', '香油', '花椒', '豆瓣酱',
 ];
 
 const TITLES = ['先配一个 AI Key', '你爱吃什么？', '你不能吃什么？', '家里现在有什么？'];
@@ -43,7 +52,7 @@ const SUBTITLES = [
   '这个 App 自己不做 AI，用的是你自己的 DeepSeek 账号。全程大约 5 分钟',
   '选几样，AI 推荐菜单时会优先照顾',
   '过敏和忌口会写进每次菜单生成，避免踩雷',
-  '点选常备食材直接加入库存，重量以后随时能改',
+  '点选常备食材和调料直接加入库存，重量以后随时能改',
 ];
 const TOTAL_STEPS = TITLES.length;
 
@@ -134,7 +143,7 @@ function ChipGroup({
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { state: settingsState, updatePreferences, updateApiKey } = useSettings();
-  const { state: invState, addIngredient } = useInventory();
+  const { state: invState, addIngredient, addSeasoning } = useInventory();
   const { scrollRef, onScroll, captureFocus, captureNode } = useKeyboardAwareScroll();
   const keyInputRef = useRef<TextInput>(null);
 
@@ -149,6 +158,7 @@ export default function OnboardingScreen() {
   const [allergens, setAllergens] = useState<string[]>([]);
   const [avoidances, setAvoidances] = useState<string[]>([]);
   const [pantry, setPantry] = useState<string[]>([]);
+  const [pantrySeasonings, setPantrySeasonings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const openDeepSeek = useCallback(async () => {
@@ -197,8 +207,18 @@ export default function OnboardingScreen() {
         // One failed write must not trap the user on the onboarding screen.
       }
     }
+    const existingSeasonings = new Set(invState.seasonings.map((s) => s.name));
+    for (const name of pantrySeasonings) {
+      if (existingSeasonings.has(name)) continue;
+      try {
+        // 勾了就是"家里有"，所以直接记成充足；量以后再说
+        await addSeasoning(name, 'sufficient');
+      } catch {
+        // 同上：一条写失败不该把人卡在引导页
+      }
+    }
     router.replace('/(tabs)');
-  }, [cuisines, flavors, allergens, avoidances, pantry, invState.ingredients, updatePreferences, addIngredient, keyInput, updateApiKey]);
+  }, [cuisines, flavors, allergens, avoidances, pantry, pantrySeasonings, invState.ingredients, invState.seasonings, updatePreferences, addIngredient, addSeasoning, keyInput, updateApiKey]);
 
   const goNext = useCallback(async () => {
     if (step === 0 && !(await saveKeyIfAny())) return;
@@ -302,7 +322,10 @@ export default function OnboardingScreen() {
           </>
         )}
         {step === 3 && (
-          <ChipGroup title="常备食材" items={PANTRY_STAPLES} selected={pantry} onChange={setPantry} />
+          <>
+            <ChipGroup title="常备食材" items={PANTRY_STAPLES} selected={pantry} onChange={setPantry} addPlaceholder="其他食材，如：玉米" onInputFocus={captureNode} />
+            <ChipGroup title="常备调料" items={PANTRY_SEASONINGS} selected={pantrySeasonings} onChange={setPantrySeasonings} addPlaceholder="其他调料，如：咖喱块" onInputFocus={captureNode} />
+          </>
         )}
       </ScrollView>
 
@@ -311,7 +334,7 @@ export default function OnboardingScreen() {
           <Button title="上一步" variant="ghost" onPress={() => setStep(step - 1)} />
         )}
         <Button
-          title={isLast ? `完成${pantry.length > 0 ? `（加入 ${pantry.length} 项）` : ''}` : '下一步'}
+          title={isLast ? `完成${pantry.length + pantrySeasonings.length > 0 ? `（加入 ${pantry.length + pantrySeasonings.length} 项）` : ''}` : '下一步'}
           variant="primary"
           loading={saving}
           style={styles.grow}
