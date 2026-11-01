@@ -8,6 +8,12 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Two taps that deleted data now ask first
+
+**Added — confirmation before un-ticking a saved tag.** The drawer's chip rows remove on tap, which was fine as an interaction but wrong as a consequence: one stray tap deletes a saved preference, and nothing on screen tells you it happened. Only in 只显示已保存 mode (`onlySelected`) does it ask — in onboarding, tapping a chip is just turning off an unsaved choice, and interrogating people mid-selection would be obnoxious.
+
+**Added — confirmation before resetting an ingredient's storage date.** The ↻ button on 库存 rewrites `createDate` to now so "已存 N 天" restarts. It was one tap with a toast afterwards, which is backwards: the toast reports the damage after the fact. Now 「重置入库时间？」 explains what will change, then a toast confirms it happened.
+
 ## 2026-11-01 — 口味与菜系 split back into two visible groups
 
 **Changed** — the saved-tag row was a single blob: 家常菜 sat next to 香辣 with no way to tell which was which. 口味与菜系 now renders 菜系 / 口味 as separate labelled groups, plus 「其他」 when a custom tag does not belong to either.
