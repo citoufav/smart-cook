@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "check:tags": "node scripts/check-ingredient-tags.mjs",
-    "check:edits": "node scripts/check-menu-edits.mjs"
+    "check:edits": "node scripts/check-menu-edits.mjs",
+    "check:dishes": "node scripts/check-dish-library.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "15",

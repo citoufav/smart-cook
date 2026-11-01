@@ -144,6 +144,32 @@ export interface MenuSummary {
   flavorNotes: string;
 }
 
+// ============ Dish Library ============
+
+/**
+ * 菜品库里的一道菜。
+ *
+ * 身份（id）= 归一化后的菜名，不是生成时那个随机 id —— 同一道「米饭」在十份菜单里
+ * 出现过十次，库里也只有一条，`timesCooked` 累加到 10。
+ * 代价是旧配方不保留：库里永远存最近一次做的那版。
+ */
+export interface SavedDish {
+  /** 归一化菜名，稳定不变 */
+  id: string;
+  /** 展示用名字（最近一次做的那版） */
+  name: string;
+  ingredients: DishIngredient[];
+  seasonings: DishSeasoning[];
+  estimatedNutrition: DishNutrition;
+  prepSteps: PrepStep[];
+  cookingSteps: CookingStep[];
+  /** ★ 存进来时是几人份。复用时要据此按新人数缩放，没有它存的克重就没有意义 */
+  basePersonCount: number;
+  timesCooked: number;
+  lastCookedAt: string;
+  createdAt: string;
+}
+
 export interface ShoppingItem {
   id: string;
   type: 'ingredient' | 'seasoning';

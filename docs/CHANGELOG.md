@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — The dish library: a dish is identified by its name, not by an instance id
+
+**Added**
+
+- `SavedDish` and the dish library. Completing a cook splits the menu into individual dishes and files each one away; a third tab 「我的菜」 lists them as cards (name, calories, how many times cooked, when last), and tapping one opens an ingredient list plus its prep and cooking steps, with a delete action.
+
+- `normalizeDishName` / `mergeDishIntoLibrary` in `src/utils/dishLibrary.ts` — pure, so the rules are covered by `npm run check:dishes`.
+
+**The identity question.** A generated dish already carries a unique `DishPlan.id` (timestamp + random), so every instance is distinguishable. The library deliberately does **not** use it: a dish's identity is its normalised name.
+
+  - 米饭 appearing in ten different menus is one saved dish with `timesCooked: 10`, not ten entries. That is the entire point of a library — you look for a dish, not for an occasion.
+  - Two identically-named dishes in the *same* menu count once, or a single cook would double the counter.
+  - Normalisation only merges genuine spelling variants: outer whitespace, runs of whitespace, full-width spaces, full-width parentheses. It deliberately does **not** fuzzy-match: 麻婆豆腐 and 麻婆豆腐（不辣版） are different dishes, and merging them would be wrong.
+  - The tradeoff is that a recipe is overwritten rather than versioned — the library always holds the most recent version of how you cooked it.
+
+- `basePersonCount` is recorded at the moment of saving. Without it, a stored "200 g" is meaningless — you cannot tell whether it was for two people or four, and therefore cannot rescale it when a dish is reused.
+
+- Entries are filed when the cook **finishes**, not when the menu is generated — otherwise "做过 N 次" would actually mean "generated N times".
+
+- Capacity is 200 dishes; when full, the least-recently-cooked is dropped.
+
+**Tests**: `npm run check:dishes` covers normalisation (including the 麻婆豆腐 / 不辣版 non-merge), first save, repeat save (counter increments, `createdAt` preserved, content replaced, `basePersonCount` updated), duplicate names within one menu, ordering by recency, empty names being skipped, and eviction at the cap.
+
 ## 2026-11-01 — Colour table gets a character-level fallback, and why not embeddings
 
 **Added**

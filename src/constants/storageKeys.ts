@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   COOKING_INPUT_DEFAULTS: '@v1:cooking:input_defaults',
   STORAGE_VERSION: '@v1:system:storageVersion',
   DIET_MEMORY: '@v1:diet:memory',
+  DISH_LIBRARY: '@v1:dishes:library',
   CHAT_HISTORY: '@v1:chat:history',
 } as const;
 

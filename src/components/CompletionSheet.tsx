@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCooking } from '../contexts/CookingContext';
 import { useInventory } from '../contexts/InventoryContext';
 import { cookingProgressService } from '../services/cookingProgressService';
+import { dishLibraryService } from '../services/dishLibraryService';
 import { addMeals } from '../services/dietMemoryService';
 import { SeasoningStatus } from '../types';
 import { COLORS } from '../constants/colors';
@@ -184,6 +185,12 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
     const sessionId = cookingState.session?.id;
     if (sessionId) {
       await cookingProgressService.markCompleted(sessionId);
+    }
+    // 做完饭才把菜拆进菜品库：生成时入库会让"做过几次"变成"生成过几次"
+    const menuDishes = cookingState.session?.stages.menu?.menuProposal?.dishes ?? [];
+    const personCount = cookingState.session?.stages.requirement?.personCount ?? 1;
+    if (menuDishes.length > 0) {
+      await dishLibraryService.saveMenu(menuDishes, personCount).catch(() => {});
     }
     setConfirmed(true);
     setTimeout(() => {

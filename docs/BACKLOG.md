@@ -63,18 +63,18 @@
 
 **分两期：**
 
-### P2 · 菜品库本体（约 350 行）⬜
+### P2 · 菜品库本体（约 350 行）🟡 数据层 + 浏览已完成，生成时勾选未做
 
-数据模型 `SavedDish`：
+数据模型 `SavedDish`（已落在 `src/types/index.ts`）：
 
 ```ts
 {
-  id: string;                 // 归一化菜名派生，稳定
+  id: string;                 // ★ 归一化菜名，不是生成时那个随机 id
   name: string;
   ingredients: DishIngredient[];
   seasonings: DishSeasoning[];
   estimatedNutrition: DishNutrition;
-  prepSteps: PrepStep[];      // 已是按菜分组，可直接存
+  prepSteps: PrepStep[];
   cookingSteps: CookingStep[];
   basePersonCount: number;    // ★ 存下来时是几人份，复用时要据此缩放
   timesCooked: number;
@@ -83,11 +83,17 @@
 }
 ```
 
-- `src/services/dishLibraryService.ts`：读写 + 同名合并 + 数量上限（200 道，超出丢最久没做的）
-- 做完菜（`CompletionSheet`）→ 菜单里每道菜写库
-- `app/dishes/index.tsx` 卡片列表（两列）：菜名 / 热量 / 做过几次 / 上次日期；**纯文字卡片，没图**
-- `app/dishes/[id].tsx` 详情：备菜 + 炒制 + 删除
-- 入口待定（独立 Tab「我的菜」/ 做菜首页横向条）
+**已完成（2026-11-01）**
+
+- `src/utils/dishLibrary.ts`：`normalizeDishName` + `mergeDishIntoLibrary`（纯函数，可单测）
+- `src/services/dishLibraryService.ts`：读写、损坏备份、200 条上限
+- `CompletionSheet` 点「完成做菜」时入库（不是生成时，否则"做过几次"会变成"生成过几次"）
+- `app/(tabs)/dishes.tsx` 两列卡片 + `app/dish/[id].tsx` 详情（含删除）
+- 入口定为第三个 Tab「我的菜」
+- `scripts/check-dish-library.mjs`（`npm run check:dishes`）7 组断言
+
+**未做**：P3（生成时勾选）。
+
 
 ### P3 · 生成时勾选（约 300 行）⬜
 
