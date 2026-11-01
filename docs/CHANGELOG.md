@@ -8,6 +8,18 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — Health conditions become their own list, with a "+" of their own
+
+**Changed — `healthConditions` is a separate preference.** They used to be written into `dietaryRestrictions` as pre-formatted sentences. That worked, but it made every condition a 忌口 entry: 「有没有别的忌口」的标签行里会出现一条「糖尿病：控糖、少精制碳水、低GI」，而这一行本来是回答「不吃什么」的。
+
+  Now the drawer keeps them apart: `dietaryRestrictions` answers 不吃 X, `healthConditions` answers 有 X 病。The folded block gets its own ＋, so a condition the presets do not cover (肾病, 甲状腺) can be added like any other tag — and it appears right where it was added, not up in the 忌口 list.
+
+  At prompt time the two are rendered differently on purpose: 忌口 is one line of items, health conditions become 「健康约束：…」 with the note *these are long-term, not "not in the mood for it today"*. A preset expands to its written rule (糖尿病 → 控糖、少精制碳水、低GI); anything the user typed themselves is passed through verbatim, because they know their own condition better than a table does.
+
+**Migration**: conditions saved by the previous build sit in `dietaryRestrictions` as long sentence strings. They still read as 忌口 entries and still reach the model, so nothing breaks — they just live in the other list. Not worth a migration for a feature that shipped an hour earlier.
+
+**Tests**: `check:ai` asserts the preset table still writes 「标签：做法」, that a preset expands to its rule, that a user-typed 肾病 survives, and that an empty selection produces no prompt line at all.
+
 ## 2026-11-01 — Settings reordered, health conditions folded away, and a data-loss bug I caused
 
 **Fixed — onboarding wiped existing preferences.** `finish()` wrote `tastePreferences` and `dietaryRestrictions` from its own selection state unconditionally. On a *re-run* (the debug switch, or pressing 跳过 from step 1) those arrays are empty, so finishing wrote empty arrays over whatever was already stored. Anyone who had set preferences and then walked the onboarding again lost them.
