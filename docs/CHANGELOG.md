@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 The project is **pre-release** (v1.0.0). Early development history before 2026-08-13 is reconstructed from internal design records and grouped by milestone rather than exact dates.
 
+## 2026-11-01 — First run now asks for the API key, with a button that goes and gets one
+
+**Added — the key step is the first thing onboarding shows.** It used to go straight to 「你爱吃什么？」 and leave the key as an unmentioned prerequisite somewhere in settings. Four steps now: 配 Key → 口味 → 忌口 → 常备食材.
+
+  The page explains in three numbered lines what to do (open the site, create the key, paste it back), and the primary button opens `platform.deepseek.com/api_keys` directly. The key field is right there, so the flow never requires finding the settings drawer. A key pasted but then abandoned with 跳过/完成 is still saved — losing it because someone changed their mind about the remaining steps would be its own small betrayal.
+
+  Still skippable: the note says the key can be added later from settings, and that generation will fail without one. Blocking a curious user at the door is worse than letting them look around first.
+
+**Removed** the DeepSeek hint line in settings — now that onboarding explains it, repeating it in the drawer is noise. Only the OpenAI/Anthropic-compatible presets still carry a hint, and those are aimed at people who want details.
+
 ## 2026-11-01 — Fewer dials: model and thinking are no longer choices
 
 **Removed.** The DeepSeek section had a model dropdown (flash / v4-pro), a thinking on/off switch, a three-way effort picker, and an API-address field. All four are gone. Menu generation is now always `deepseek-flash` with high-effort thinking, and the settings panel for DeepSeek is exactly one input: API Key.
