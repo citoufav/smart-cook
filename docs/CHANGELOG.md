@@ -8,6 +8,16 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — The key page now serves two kinds of user instead of half-serving one
+
+**Rewritten — the first-run key step.** It had three bullet points that skipped the two hardest parts (where to top up, where the API key page even is). It now spells out the actual five steps a person has to do, in order, each with a bold lead-in: 注册 → 充值 → 找到 API keys（左上角菜单） → 创建 → 复制粘贴. "全程大约 5 分钟" is stated up front so the page does not feel open-ended.
+
+**Added — a second path, for people who already know.** Below the beginner walkthrough, separated by a rule, is 「已经习惯自己配 API？」: skip this step, go to 设置 → 模型与 API, pick OpenAI 兼容 or Anthropic 兼容, fill in your own base URL and model. It carries a tappable 「打开模型与 API 设置 ›」 shortcut so that audience does not have to hunt through the drawer.
+
+  The two audiences are genuinely different. One needs the beginner steps written out as if they have never configured an API; the other needs a link and to be left alone. Previously the page was written for neither — vague enough to lose beginners, verbose enough to annoy experts.
+
+**Kept deliberately**: the step is still skippable, and the note still says what happens without a key (generation fails). Blocking the door is a worse greeting than letting someone look around.
+
 ## 2026-11-01 — First run now asks for the API key, with a button that goes and gets one
 
 **Added — the key step is the first thing onboarding shows.** It used to go straight to 「你爱吃什么？」 and leave the key as an unmentioned prerequisite somewhere in settings. Four steps now: 配 Key → 口味 → 忌口 → 常备食材.
