@@ -24,7 +24,9 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 **Fixed**
 
 - **Proportional scaling was one-directional**: editing an ingredient rescaled the seasonings, but editing a seasoning left every ingredient where it was. Both directions now work; a seasoning's ratio is derived from its gram amount, and `"适量"` / `"1汤匙"` cannot yield a ratio so nothing is rescaled (rather than guessing).
-- The editor sheet's footer was pushed past the bottom of the screen once the content grew, letting the page behind show through underneath. The scroll area is now allowed to shrink (`flexShrink: 1`) and the bottom padding respects the safe-area inset with a floor, so the buttons stay on screen.
+- The editor sheet's footer was pushed past the bottom of the screen once the content grew, letting the page behind show through underneath. The scroll area is now allowed to shrink (`flexShrink: 1`) so the buttons stay on screen.
+
+- **The strip of page visible below the sheet was the Modal window itself, not the sheet's padding.** On Android a `transparent` Modal is inset by the system navigation bar unless it is told to draw behind it, so the sheet ended above the bar and the Activity content showed through in the gap — most visible on edge-to-edge / gesture-nav devices. Both bottom sheets (`DishSheets`, `CompletionSheet`) now pass `statusBarTranslucent` and `navigationBarTranslucent`, and the safe-area inset does its job again.
 - Editor copy trimmed to state the consequence in one clause instead of explaining the reasoning: 「改用量会同步到步骤」, 「改一个，其余按同倍数跟着变」, 「写「10g」计入热量，「适量」不计」. The one explanation kept is 「整道菜替换，上面改的不生效」, because it prevents silently losing work.
 
 **Tests**: `parseGramAmount` (`10g`, `约 15 克`, `20`, and the zeros for `适量` / `1汤匙`) added; the `add_ingredient` case removed.

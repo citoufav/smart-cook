@@ -195,7 +195,15 @@ export default function CompletionSheet({ visible, onClose }: CompletionSheetPro
   const seasonings = items.filter((i) => i.type === 'seasoning');
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      // 同 DishSheets：不加这两个，Modal 的窗口会被系统导航栏让开一条，底部会露出下面的页面
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <View style={styles.modalRoot}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>

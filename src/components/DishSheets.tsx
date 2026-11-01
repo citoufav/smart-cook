@@ -49,7 +49,17 @@ function SheetShell({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      // 不加这两个，Modal 的窗口会被系统状态栏/导航栏让开一条，
+      // 底部就露出下面页面的文字（异形屏上尤其明显）。加了才真正铺满全屏，
+      // 再由下面的 safe-area padding 把按钮托到手势条上方。
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View
