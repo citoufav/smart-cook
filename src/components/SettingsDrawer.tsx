@@ -32,6 +32,8 @@ import { backupService, describeImport } from '../services/backupService';
 import { MAX_BACKUP_CHARS } from '../utils/backupFormat';
 import { useKeyboardAwareScroll } from '../hooks/useKeyboardAwareScroll';
 import { AI_PROVIDERS, findProvider, isDeepSeekType } from '../constants/aiProviders';
+import { HEALTH_CONDITIONS } from '../constants/healthConditions';
+import { SelectableChip } from './SelectableChip';
 
 // 2026-10 官方模型列表：deepseek-v4-pro（旗舰，纯文本）与 deepseek-flash（快速，支持图片输入）。
 // 旧的 deepseek-v4-flash / deepseek-v4-flash-vision-exp 仍被接受但已退役，请求实际由 V4.1-Flash 承接。
@@ -374,6 +376,30 @@ export default function SettingsDrawer({ visible, onClose }: SettingsDrawerProps
             <>
               <DietaryTagInput tags={dietaryTags} onTagsChange={handleDietaryChange} />
               <Text style={styles.itemCount}>{dietaryTags.length} 项</Text>
+
+              {/* 长期疾病/饮食习惯：点一下就往忌口里加一条写清楚的约束 */}
+              <Text style={styles.conditionTitle}>长期疾病或饮食方式</Text>
+              <View style={styles.conditionChips}>
+                {HEALTH_CONDITIONS.map((c) => {
+                  const on = dietaryTags.includes(c.rule);
+                  return (
+                    <SelectableChip
+                      key={c.label}
+                      label={c.label}
+                      selected={on}
+                      role="checkbox"
+                      onPress={() =>
+                        handleDietaryChange(
+                          on ? dietaryTags.filter((t) => t !== c.rule) : [...dietaryTags, c.rule],
+                        )
+                      }
+                    />
+                  );
+                })}
+              </View>
+              <Text style={styles.conditionNote}>
+                只是让 AI 避开相应的食材和做法，不能代替医生或营养师的建议。
+              </Text>
             </>
           )}
 
@@ -697,6 +723,22 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+
+  // 长期疾病/饮食方式
+  conditionTitle: {
+    fontSize: TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  conditionChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  conditionNote: {
+    fontSize: TYPOGRAPHY.caption,
+    color: COLORS.textTertiary,
+    lineHeight: 17,
     marginTop: SPACING.sm,
   },
 

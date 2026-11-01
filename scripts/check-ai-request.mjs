@@ -8,6 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildChatBody } from '../src/utils/aiRequest.ts';
+import { HEALTH_CONDITIONS, findConditionByRule } from '../src/constants/healthConditions.ts';
 
 const messages = [
   { role: 'system', content: '你是厨师' },
@@ -114,4 +115,15 @@ body = buildChatBody({
 });
 assert.equal(body.thinking, undefined);
 
-console.log('✓ AI 请求体协议差异 7 组全部通过');
+// 8. 疾病预设存的是"标签：具体做法"整串，AI 才不会被"糖尿病"三个字自由发挥
+const diabetes = HEALTH_CONDITIONS.find((c) => c.label === '糖尿病');
+assert.ok(diabetes, '糖尿病预设没了');
+assert.ok(diabetes.rule.includes('控糖'), `糖尿病那条要写清"控糖"，现在是：${diabetes.rule}`);
+assert.ok(diabetes.rule.includes('糖尿病'), '存的整串要带病名，否则用户在忌口列表里看不出这是什么');
+assert.equal(findConditionByRule(diabetes.rule)?.label, '糖尿病');
+assert.equal(findConditionByRule('不吃香菜'), undefined, '用户自己敲的忌口不该被认成预设');
+for (const c of HEALTH_CONDITIONS) {
+  assert.ok(c.rule.startsWith(`${c.label}：`), `${c.label} 的规则要写成「标签：做法」`);
+}
+
+console.log('✓ AI 请求体协议差异 8 组全部通过');
