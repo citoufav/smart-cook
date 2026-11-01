@@ -1,7 +1,7 @@
 import { UserPreferences, DishPlan } from '../types';
 import { sseStreamFetch, SSEStreamController } from '../utils/sseStream';
 import { trimContext } from './chatHistoryService';
-import { aiEndpoint, aiHeaders, aiBody, aiProtocol, type AIChatMessage } from './aiClient';
+import { aiEndpoint, aiHeaders, aiBody, aiProtocol } from './aiClient';
 
 /**
  * 菜谱助手**只回答问题和给建议，不改菜谱**。
@@ -86,7 +86,9 @@ export function callAIChatStream(
   const url = aiEndpoint(prefs);
   const recipeText = buildRecipeContextText(recipeContext);
 
-  let apiMessages: AIChatMessage[] = [
+  // 聊天永远是纯文字消息（图片只走拍照识别那一条路），所以这里刻意用窄类型：
+  // trimContext 按字符串算 token，块数组喂进去会算成 "[object Object]" 的长度
+  let apiMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: CHAT_SYSTEM_PROMPT },
     { role: 'user', content: `以下是当前菜谱的完整信息，请在后续对话中基于此信息回答用户问题：\n\n${recipeText}` },
     { role: 'assistant', content: '好的，我已经了解了当前的菜谱。请问有什么可以帮助你的？' },

@@ -27,6 +27,7 @@ import { useCustomAlert } from '../../src/components/CustomAlert';
 import { useSettingsDrawer } from '../../src/contexts/SettingsDrawerContext';
 import HeaderBar from '../../src/components/HeaderBar';
 import { InventoryProfileChip, InventoryProfileSheet } from '../../src/components/InventoryProfileSheet';
+import { IngredientScanSheet } from '../../src/components/IngredientScanSheet';
 import { useKeyboardHeight } from '../../src/hooks/useKeyboardHeight';
 import { daysSince } from '../../src/utils/daysSince';
 
@@ -34,6 +35,7 @@ export default function InventoryScreen() {
   const { state, addIngredient, deleteIngredient, updateIngredient, addSeasoning, deleteSeasoning, updateSeasoning } = useInventory();
   const { hideBall } = useNutrition();
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+  const [scanSheetOpen, setScanSheetOpen] = useState(false);
   const keyboardHeight = useKeyboardHeight();
 
   useFocusEffect(
@@ -219,6 +221,22 @@ export default function InventoryScreen() {
       },
     ] });
   }, [activeTab, deleteIngredient, deleteSeasoning, showAlert]);
+
+  /**
+   * 拍照识别回来的食材：逐个写库。
+   * 重量留空（照片里看不出克数）、日期默认今天，跟前台手动加一样。
+   */
+  const handleAddScanned = useCallback(async (names: string[]) => {
+    for (const name of names) {
+      try {
+        await addIngredient(name, null);
+      } catch {
+        // 一条写失败不该让后面的一起消失
+        showAlert({ title: '有一条没加上', message: `「${name}」保存失败，其他的已经加进去了。` });
+        break;
+      }
+    }
+  }, [addIngredient, showAlert]);
 
   const handleOpenDatePicker = useCallback(() => {
     if (formDate) {
@@ -465,7 +483,20 @@ export default function InventoryScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {!showForm && <FAB icon="＋" onPress={() => setShowForm(true)} accessibilityLabel="添加" />}
+      {!showForm && (
+        <FAB
+          icon="＋"
+          onPress={() => setScanSheetOpen(true)}
+          accessibilityLabel="添加食材或拍照识别"
+        />
+      )}
+
+      <IngredientScanSheet
+        visible={scanSheetOpen}
+        onClose={() => setScanSheetOpen(false)}
+        onManual={() => setShowForm(true)}
+        onAdd={handleAddScanned}
+      />
 
       <InventoryProfileSheet visible={profileSheetOpen} onClose={() => setProfileSheetOpen(false)} />
     </View>

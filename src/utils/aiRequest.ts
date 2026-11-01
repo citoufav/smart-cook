@@ -12,9 +12,57 @@
 
 export type AIProtocol = 'openai' | 'anthropic';
 
+/**
+ * 消息内容块。图片只支持 `data:image/...;base64,` 形式 ——
+ * 拍完照直接内联发，不用 Files API（那要多一次上传，还得管文件生命周期）。
+ * DeepSeek 的 `deepseek-flash` 和两家协议都认这种内联图，见
+ * https://api-docs.deepseek.com/zh-cn/guides/vision
+ */
+export type AIContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; dataUrl: string };
+
 export interface AIChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | AIContentBlock[];
+}
+
+const DATA_URL = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/;
+
+/** 纯文本消息原样返回；块数组拼出它的文字部分（system 合并要用） */
+function textOf(content: AIChatMessage['content']): string {
+  if (typeof content === 'string') return content;
+  return content
+    .filter((b) => b.type === 'text')
+    .map((b) => (b as { type: 'text'; text: string }).text)
+    .join('\n');
+}
+
+/**
+ * 块数组 → 对应协议的内容块。**认不出 data URL 的图片块直接丢掉**：
+ * 少一张图顶多识别得差一点，拼一个畸形请求进去是 400。
+ */
+function mapContent(content: AIChatMessage['content'], protocol: AIProtocol): unknown {
+  if (typeof content === 'string') return content;
+  const out: unknown[] = [];
+  for (const block of content) {
+    if (block.type === 'text') {
+      out.push({ type: 'text', text: block.text });
+      continue;
+    }
+    const m = DATA_URL.exec(block.dataUrl);
+    if (!m) continue;
+    out.push(
+      protocol === 'anthropic'
+        // Anthropic 用 image 块，base64 要拆成 media_type + data
+        ? { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }
+        // OpenAI 兼容（含 DeepSeek）：image_url 装整个 data URL。
+        // detail 给 auto：图片本来就会缩到约 1300×1300、单图最多算 1024 token，
+        // 省不了多少，但识别准确率是实打实的
+        : { type: 'image_url', image_url: { url: block.dataUrl, detail: 'auto' } },
+    );
+  }
+  return out;
 }
 
 export interface ChatBodyInput {
@@ -43,13 +91,15 @@ export function buildChatBody(input: ChatBodyInput): Record<string, unknown> {
   if (protocol === 'anthropic') {
     const system = messages
       .filter((m) => m.role === 'system')
-      .map((m) => m.content)
+      .map((m) => textOf(m.content))
       .join('\n\n');
     const body: Record<string, unknown> = {
       model,
       max_tokens: maxTokens,
       // Anthropic 的 messages 里只能有 user/assistant
-      messages: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content })),
+      messages: messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ role: m.role, content: mapContent(m.content, 'anthropic') })),
       stream: true,
     };
     if (system) body.system = system;
@@ -66,7 +116,7 @@ export function buildChatBody(input: ChatBodyInput): Record<string, unknown> {
 
   const body: Record<string, unknown> = {
     model,
-    messages,
+    messages: messages.map((m) => ({ role: m.role, content: mapContent(m.content, 'openai') })),
     stream: true,
     max_tokens: maxTokens,
   };

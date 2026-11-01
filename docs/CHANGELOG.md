@@ -8,6 +8,16 @@ The project is **pre-release** (v1.0.0). Early development history before 2026-0
 
   Turning it on does not stick in the shipped build — the persisted flag defaults to `false`, and the guard is a per-launch ref so finishing onboarding never bounces the user straight back into it.
 
+## 2026-11-01 — 拍照识别食材
+
+**Added** — the ＋ button on 库存 now opens a sheet with two choices: 拍照识别 and 手动输入. A photo goes to the model, which answers with a JSON list of ingredient names; the list lands in a confirm sheet where each name can be edited or deleted before 「加入库存」 writes them.
+
+**Why the two-step.** A wrong name is invisible once it is in the inventory — 老抽 recognised as 可乐 sits there for weeks. Weights are always left empty: a photo cannot show grams, and a made-up number poisons every later "how much to use" calculation.
+
+**API note.** DeepSeek's `deepseek-flash` does take images, inline as a base64 `image_url` block (no Files API, no second key, one request). `buildChatBody` now maps a protocol-neutral block array to each protocol's own shape — `image_url` for OpenAI-compatible, `image` + `source.base64` for Anthropic — and drops any block whose data URL cannot be parsed instead of sending a malformed request. `check:vision` pins the parsing rules: fences, small talk before the JSON, 「五花肉（约500g）」 cleanup, dedupe, caps, and the two protocol shapes.
+
+**Deliberately not done** — no floating action bubbles (pure animation for a smaller tap target; the sheet already has room for the confirm list), no gallery picker, no batch of multiple photos, no re-run on a single item, and nothing about the photo is stored.
+
 ## 2026-11-01 — 库存档案可以删了
 
 **Added** — each profile row in 库存档案 carries a 🗑 when there is more than one profile. Deleting asks first, because it takes that profile's inventory with it.
