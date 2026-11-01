@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -63,10 +64,19 @@ export default function DishesScreen() {
     }, []),
   );
 
+  /**
+   * 两列固定各占一半（减去内边距和列间距）。
+   *
+   * 之前用 flex:1 让卡片自己撑开：最后一行只有一张时，它会横跨整行，
+   * 宽度和其它卡片完全不一样，看着像出了 bug。宁可写死宽度。
+   */
+  const { width: screenWidth } = useWindowDimensions();
+  const cardWidth = (screenWidth - SPACING.md * 2 - SPACING.md) / 2;
+
   const renderItem = useCallback(
     ({ item }: { item: SavedDish }) => (
       <TouchableOpacity
-        style={styles.card}
+        style={[styles.card, { width: cardWidth }]}
         activeOpacity={0.75}
         onPress={() => router.push({ pathname: '/dish/[id]', params: { id: item.id } })}
       >
@@ -80,7 +90,7 @@ export default function DishesScreen() {
         </Text>
       </TouchableOpacity>
     ),
-    [],
+    [cardWidth],
   );
 
   return (
@@ -124,7 +134,6 @@ const styles = StyleSheet.create({
   list: { padding: SPACING.md, gap: SPACING.md },
   row: { gap: SPACING.md },
   card: {
-    flex: 1,
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
     padding: SPACING.md,

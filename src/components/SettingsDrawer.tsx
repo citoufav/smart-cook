@@ -689,7 +689,18 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.lg },
 
   // Collapsible section header
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: SPACING.md, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  // marginBottom 才是"分割线和下面的内容之间的空隙"：只加 padding 的话，
+  // 线是 borderBottom，它下面紧贴着的还是下一行内容
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.md,
+    marginBottom: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
   sectionHeaderText: { fontSize: TYPOGRAPHY.body, fontWeight: '600', color: COLORS.textPrimary },
   chevron: { fontSize: 16, color: COLORS.textTertiary },
 
